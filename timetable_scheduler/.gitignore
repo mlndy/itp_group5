@@ -1,6 +1,6 @@
 # Generated runtime outputs
-timetable_scheduler/generated/
-timetable_scheduler/output_files/
+/timetable_scheduler/generated/
+/timetable_scheduler/output_files/
 
 # Python cache
 __pycache__/
