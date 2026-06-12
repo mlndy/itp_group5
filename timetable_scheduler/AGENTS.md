@@ -171,10 +171,7 @@ Risks are stated honestly
 Current focus:
 
 ```text
-Milestone 4: Strict Template 2 exporter
-```
-
-Milestone 4 must make the timetable export closer to the provided Template 2 workbook.
+Milestone 5: Optimiser tuning and soft-score improvement
 
 Key rule:
 
