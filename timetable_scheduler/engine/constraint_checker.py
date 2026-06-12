@@ -6,6 +6,7 @@ from collections import defaultdict
 
 from config import (
     BLOCKED_START_TIMES,
+    BLOCKED_WEEKS,
     EARLIEST_START_HOUR,
     FIRST_SLOT,
     LAST_SLOT_STARTS,
@@ -14,7 +15,9 @@ from config import (
     MAX_CONSECUTIVE_HOURS,
     MAX_TUTOR_IDLE_GAP_HOURS,
     MIN_ROOM_UTILISATION,
+    SOFT_VIOLATION_WEIGHTS,
     PUBLIC_HOLIDAY_WEEKS,
+    TERM_BREAK_WEEKS,
     VALID_DAYS,
 )
 from data.models import Assignment, Course
@@ -139,6 +142,21 @@ def check_time_window(assignment: Assignment) -> list[str]:
     return violations
 
 
+def check_blocked_week(assignment: Assignment) -> list[str]:
+    """Check academic calendar week blocks."""
+    if assignment.timeslot is None:
+        return []
+    week = assignment.timeslot.week
+    violations: list[str] = []
+    if week in PUBLIC_HOLIDAY_WEEKS:
+        violations.append("Class scheduled during public holiday week")
+    if week in TERM_BREAK_WEEKS:
+        violations.append("Class scheduled during term break week")
+    if week in BLOCKED_WEEKS and week not in PUBLIC_HOLIDAY_WEEKS and week not in TERM_BREAK_WEEKS:
+        violations.append("Class scheduled during blocked academic week")
+    return violations
+
+
 def check_blocked_time(assignment: Assignment) -> list[str]:
     """Check institutional blocked day/time rules."""
     if assignment.timeslot is None:
@@ -149,8 +167,7 @@ def check_blocked_time(assignment: Assignment) -> list[str]:
     violations: list[str] = []
     if occupied & blocked:
         violations.append(f"Blocked time used on {day}: {sorted(occupied & blocked)}")
-    if assignment.timeslot.week in PUBLIC_HOLIDAY_WEEKS:
-        violations.append(f"Public holiday week used: {assignment.timeslot.week}")
+    violations.extend(check_blocked_week(assignment))
     return violations
 
 
@@ -241,13 +258,15 @@ def check_room_utilisation(assignment: Assignment) -> list[str]:
 
 
 def check_first_or_last_slot(assignment: Assignment) -> list[str]:
-    """Penalise very early or very late teaching slots."""
+    """Penalise very early, last-slot, or late-finishing teaching slots."""
     if assignment.timeslot is None:
         return []
     issues: list[str] = []
     if assignment.timeslot.start_time == FIRST_SLOT:
         issues.append("Uses first teaching slot")
-    if assignment.timeslot.start_time in LAST_SLOT_STARTS or assignment_end_hour(assignment) > 17:
+    if assignment.timeslot.start_time in LAST_SLOT_STARTS:
+        issues.append("Uses last teaching slot")
+    if assignment_end_hour(assignment) > 17:
         issues.append("Class does not end by 17:00")
     return issues
 
@@ -375,3 +394,50 @@ def count_soft_violations(assignments: list[Assignment]) -> int:
     """Count soft violations in a schedule."""
     annotate_schedule_violations(assignments)
     return sum(len(assignment.soft_violations) for assignment in assignments)
+
+
+def _soft_violation_category(violation: str) -> str | None:
+    """Map a soft violation message to a scoring category."""
+    text = violation.lower()
+    if text.startswith("adjacent online/f2f switch for same staff"):
+        return "online_f2f_switch_staff"
+    if text.startswith("adjacent online/f2f switch for same group"):
+        return "online_f2f_switch_group"
+    if text.startswith("tutor idle gap longer than"):
+        return "tutor_idle_gap_long"
+    if text.startswith("tutor timetable has wasted free slot"):
+        return "tutor_idle_gap_short"
+    if text.startswith("back-to-back classes exceed"):
+        return "group_back_to_back_hours"
+    if text.startswith("more than") and "consecutive teaching hours" in text:
+        return "group_consecutive_hours"
+    if text.startswith("low room utilisation"):
+        return "room_utilisation"
+    if text.startswith("uses first teaching slot"):
+        return "first_slot"
+    if text.startswith("uses last teaching slot"):
+        return "last_slot"
+    if text.startswith("class does not end by 17:00"):
+        return "ends_after_17"
+    return None
+
+
+def soft_violation_breakdown(assignments: list[Assignment]) -> dict[str, int]:
+    """Return weighted soft-violation categories for a schedule."""
+    annotate_schedule_violations(assignments)
+    breakdown: dict[str, int] = defaultdict(int)
+    for assignment in assignments:
+        for violation in assignment.soft_violations:
+            category = _soft_violation_category(violation)
+            if category is not None:
+                breakdown[category] += 1
+    return dict(breakdown)
+
+
+def soft_score(assignments: list[Assignment]) -> int:
+    """Return an explainable weighted soft-violation score."""
+    breakdown = soft_violation_breakdown(assignments)
+    score = 0
+    for category, count in breakdown.items():
+        score += SOFT_VIOLATION_WEIGHTS.get(category, 1) * count
+    return score

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from data.models import Assignment, Course, Room, TimeSlot
-from engine.constraint_checker import check_hard_constraints
+from engine.constraint_checker import check_hard_constraints, count_hard_violations
 
 
 def make_course(**overrides: object) -> Course:
@@ -189,3 +189,336 @@ def test_exporter_puts_assigned_room_id_in_room1() -> None:
     assert row["Room1"] == "PGB-LT-01"
     assert row["Location Hostkey"] == "PGB-LT-01"
     assert row["Group"] == "DSC/YR 1"
+
+
+def test_public_holiday_week_causes_hard_violation(monkeypatch) -> None:
+    """Public holiday weeks should be blocked by hard constraints."""
+    import engine.constraint_checker as checker
+
+    monkeypatch.setattr(checker, "PUBLIC_HOLIDAY_WEEKS", {4})
+    monkeypatch.setattr(checker, "BLOCKED_WEEKS", {4})
+    assignment = Assignment(
+        course=make_course(teaching_weeks=[4]),
+        room=Room("R1", 100, "physical"),
+        timeslot=TimeSlot("Monday", "09:00", 4),
+    )
+
+    violations = check_hard_constraints(assignment, [])
+
+    assert "Class scheduled during public holiday week" in violations
+
+
+def test_term_break_week_causes_hard_violation() -> None:
+    """Term break weeks should be blocked by hard constraints."""
+    assignment = Assignment(
+        course=make_course(teaching_weeks=[7]),
+        room=Room("R1", 100, "physical"),
+        timeslot=TimeSlot("Monday", "09:00", 7),
+    )
+
+    violations = check_hard_constraints(assignment, [])
+
+    assert "Class scheduled during term break week" in violations
+
+
+def test_scheduler_does_not_generate_timeslots_for_blocked_weeks(monkeypatch) -> None:
+    """Candidate timeslots should exclude blocked academic weeks."""
+    import generator.scheduler as scheduler
+
+    monkeypatch.setattr(scheduler, "BLOCKED_WEEKS", {2})
+
+    timeslots = scheduler.generate_timeslots([1, 2, 3])
+
+    assert {slot.week for slot in timeslots} == {1, 3}
+
+
+def test_normal_teaching_week_remains_valid() -> None:
+    """A normal teaching week should not trigger calendar hard violations."""
+    assignment = Assignment(
+        course=make_course(teaching_weeks=[1]),
+        room=Room("R1", 100, "physical"),
+        timeslot=TimeSlot("Monday", "09:00", 1),
+    )
+
+    violations = check_hard_constraints(assignment, [])
+
+    assert violations == []
+
+
+def test_indexed_scheduler_still_prevents_room_clashes(monkeypatch) -> None:
+    """The indexed scheduler should avoid assigning two classes to the same room and slot."""
+    from generator import scheduler
+
+    monkeypatch.setattr(scheduler, "VALID_DAYS", ["Monday"])
+    monkeypatch.setattr(scheduler, "VALID_START_TIMES", ["09:00"])
+
+    courses = [
+        make_course(module_code="DSC2001", prog_yr="DSC/YR 1", staff_ids=["S001"]),
+        make_course(module_code="DSC2002", prog_yr="DSC/YR 2", staff_ids=["S002"]),
+    ]
+    rooms = [Room("R1", 100, "physical")]
+
+    schedule = scheduler.generate_schedule(courses, rooms, allow_weekly_fallback=False)
+
+    scheduled = [item for item in schedule if item.room is not None and item.timeslot is not None]
+    assert len(scheduled) == 1
+    assert scheduled[0].room.room_id == "R1"
+
+
+def test_indexed_scheduler_still_prevents_tutor_clashes(monkeypatch) -> None:
+    """The indexed scheduler should avoid tutor double-booking."""
+    from generator import scheduler
+
+    monkeypatch.setattr(scheduler, "VALID_DAYS", ["Monday"])
+    monkeypatch.setattr(scheduler, "VALID_START_TIMES", ["09:00"])
+
+    courses = [
+        make_course(module_code="DSC3001", prog_yr="DSC/YR 1", staff_ids=["S001"]),
+        make_course(module_code="DSC3002", prog_yr="DSC/YR 2", staff_ids=["S001"]),
+    ]
+    rooms = [Room("R1", 100, "physical"), Room("R2", 100, "physical")]
+
+    schedule = scheduler.generate_schedule(courses, rooms, allow_weekly_fallback=False)
+
+    scheduled = [item for item in schedule if item.room is not None and item.timeslot is not None]
+    assert len(scheduled) == 1
+
+
+def test_indexed_scheduler_still_prevents_group_clashes(monkeypatch) -> None:
+    """The indexed scheduler should avoid student group double-booking."""
+    from generator import scheduler
+
+    monkeypatch.setattr(scheduler, "VALID_DAYS", ["Monday"])
+    monkeypatch.setattr(scheduler, "VALID_START_TIMES", ["09:00"])
+
+    courses = [
+        make_course(module_code="DSC4001", prog_yr="DSC/YR 1", staff_ids=["S001"]),
+        make_course(module_code="DSC4002", prog_yr="DSC/YR 1", staff_ids=["S002"]),
+    ]
+    rooms = [Room("R1", 100, "physical"), Room("R2", 100, "physical")]
+
+    schedule = scheduler.generate_schedule(courses, rooms, allow_weekly_fallback=False)
+
+    scheduled = [item for item in schedule if item.room is not None and item.timeslot is not None]
+    assert len(scheduled) == 1
+
+
+def test_room_ordering_prefers_smaller_sufficient_rooms() -> None:
+    """Room ordering should try the tightest sufficient room first."""
+    from generator.scheduler import get_candidate_rooms
+
+    course = make_course(class_size=50)
+    rooms = [Room("LARGE", 120, "physical"), Room("SMALL", 60, "physical")]
+
+    ordered = get_candidate_rooms(course, rooms)
+
+    assert [room.room_id for room in ordered] == ["SMALL", "LARGE"]
+
+
+def test_engineering_candidate_generation_excludes_blocked_weeks(monkeypatch) -> None:
+    """Engineering candidate generation should skip blocked weeks before search."""
+    from generator import scheduler
+
+    monkeypatch.setattr(scheduler, "BLOCKED_WEEKS", {7})
+
+    timeslots = scheduler.generate_timeslots([6, 7, 8])
+
+    assert {slot.week for slot in timeslots} == {6, 8}
+
+
+def test_dsc_input_still_has_zero_hard_violations() -> None:
+    """The DSC schedule should remain hard-feasible after scheduler changes."""
+    from config import DEFAULT_COMMON_MODULE_FILE, DEFAULT_COURSE_FILE, DEFAULT_ROOM_FILE
+    from data.loader import load_common_modules, load_courses_from_requirements, load_rooms_from_csv
+    from engine.constraint_checker import count_hard_violations
+    from generator.scheduler import generate_schedule
+
+    common_modules = load_common_modules(DEFAULT_COMMON_MODULE_FILE)
+    courses, _ = load_courses_from_requirements(DEFAULT_COURSE_FILE, common_modules=common_modules)
+    rooms = load_rooms_from_csv(DEFAULT_ROOM_FILE)
+
+    schedule = generate_schedule(courses, rooms)
+
+    assert count_hard_violations(schedule) == 0
+
+
+
+def test_retry_pass_can_schedule_failed_assignment(monkeypatch) -> None:
+    """The retry pass should recover a course that the first pass left unscheduled."""
+    from generator import scheduler
+
+    monkeypatch.setattr(scheduler, "VALID_DAYS", ["Monday"])
+    monkeypatch.setattr(scheduler, "VALID_START_TIMES", ["09:00"])
+
+    existing = [
+        Assignment(
+            course=make_course(module_code="DSC5001", prog_yr="DSC/YR 1", staff_ids=["S001"]),
+            room=Room("R1", 100, "physical"),
+            timeslot=TimeSlot("Monday", "09:00", 1),
+        )
+    ]
+    failed = Assignment(
+        course=make_course(module_code="DSC5002", prog_yr="DSC/YR 2", staff_ids=["S002"]),
+        room=None,
+        timeslot=None,
+        hard_violations=["Could not find feasible weekly room/day/start pattern"],
+    )
+
+    result = scheduler.retry_unscheduled_assignments(existing + [failed], [Room("R1", 100, "physical"), Room("R2", 100, "physical")], scheduler.build_schedule_index(existing))
+    scheduled = [item for item in result if item.room is not None and item.timeslot is not None]
+
+    assert len(scheduled) == 2
+    assert count_hard_violations(result) == 0
+
+
+def test_retry_pass_targets_failed_week_only(monkeypatch) -> None:
+    """The retry pass should not reschedule weeks that already have placements."""
+    from generator import scheduler
+
+    monkeypatch.setattr(scheduler, "VALID_DAYS", ["Monday"])
+    monkeypatch.setattr(scheduler, "VALID_START_TIMES", ["09:00", "10:00"])
+
+    course = make_course(
+        module_code="DSC5050",
+        activity="Quiz",
+        prog_yr="DSC/YR 2",
+        staff_ids=["S002"],
+        duration_hrs=1,
+        teaching_weeks=[1, 2],
+    )
+    existing = [
+        Assignment(
+            course=course,
+            room=Room("R1", 100, "physical"),
+            timeslot=TimeSlot("Monday", "09:00", 1),
+        )
+    ]
+    failed = Assignment(
+        course=course,
+        room=None,
+        timeslot=None,
+        hard_violations=["Could not find feasible slot for week 2"],
+    )
+
+    result = scheduler.retry_unscheduled_assignments(existing + [failed], [Room("R1", 100, "physical")], scheduler.build_schedule_index(existing))
+    scheduled_weeks = sorted(item.timeslot.week for item in result if item.timeslot is not None)
+
+    assert scheduled_weeks == [1, 2]
+    assert count_hard_violations(result) == 0
+
+
+def test_retry_pass_does_not_create_room_clashes(monkeypatch) -> None:
+    """The retry pass should keep room occupancy clash-free."""
+    from generator import scheduler
+
+    monkeypatch.setattr(scheduler, "VALID_DAYS", ["Monday"])
+    monkeypatch.setattr(scheduler, "VALID_START_TIMES", ["09:00", "10:00"])
+
+    existing = [
+        Assignment(
+            course=make_course(module_code="DSC5101", activity="Quiz", prog_yr="DSC/YR 1", staff_ids=["S001"], duration_hrs=1),
+            room=Room("R1", 100, "physical"),
+            timeslot=TimeSlot("Monday", "09:00", 1),
+        )
+    ]
+    failed = Assignment(
+        course=make_course(module_code="DSC5102", activity="Quiz", prog_yr="DSC/YR 2", staff_ids=["S002"], duration_hrs=1),
+        room=None,
+        timeslot=None,
+        hard_violations=["Could not find feasible weekly room/day/start pattern"],
+    )
+
+    result = scheduler.retry_unscheduled_assignments(existing + [failed], [Room("R1", 100, "physical"), Room("R2", 100, "physical")], scheduler.build_schedule_index(existing))
+    scheduled = [item for item in result if item.room is not None and item.timeslot is not None]
+
+    occupied = {(item.timeslot.week, item.timeslot.day, item.timeslot.start_time, item.room.room_id) for item in scheduled}
+    assert len(occupied) == len(scheduled)
+    assert count_hard_violations(result) == 0
+
+
+def test_retry_pass_does_not_create_tutor_clashes(monkeypatch) -> None:
+    """The retry pass should keep tutor occupancy clash-free."""
+    from generator import scheduler
+
+    monkeypatch.setattr(scheduler, "VALID_DAYS", ["Monday"])
+    monkeypatch.setattr(scheduler, "VALID_START_TIMES", ["09:00", "10:00"])
+
+    existing = [
+        Assignment(
+            course=make_course(module_code="DSC5201", activity="Quiz", prog_yr="DSC/YR 1", staff_ids=["S001"], duration_hrs=1),
+            room=Room("R1", 100, "physical"),
+            timeslot=TimeSlot("Monday", "09:00", 1),
+        )
+    ]
+    failed = Assignment(
+        course=make_course(module_code="DSC5202", activity="Quiz", prog_yr="DSC/YR 2", staff_ids=["S001"], duration_hrs=1),
+        room=None,
+        timeslot=None,
+        hard_violations=["Could not find feasible weekly room/day/start pattern"],
+    )
+
+    result = scheduler.retry_unscheduled_assignments(existing + [failed], [Room("R1", 100, "physical"), Room("R2", 100, "physical")], scheduler.build_schedule_index(existing))
+    scheduled = [item for item in result if item.room is not None and item.timeslot is not None]
+
+    assert len(scheduled) == 2
+    assert count_hard_violations(result) == 0
+
+
+def test_retry_pass_does_not_create_group_clashes(monkeypatch) -> None:
+    """The retry pass should keep student-group occupancy clash-free."""
+    from generator import scheduler
+
+    monkeypatch.setattr(scheduler, "VALID_DAYS", ["Monday"])
+    monkeypatch.setattr(scheduler, "VALID_START_TIMES", ["09:00", "10:00"])
+
+    existing = [
+        Assignment(
+            course=make_course(module_code="DSC5301", activity="Quiz", prog_yr="DSC/YR 1", staff_ids=["S001"], duration_hrs=1),
+            room=Room("R1", 100, "physical"),
+            timeslot=TimeSlot("Monday", "09:00", 1),
+        )
+    ]
+    failed = Assignment(
+        course=make_course(module_code="DSC5302", activity="Quiz", prog_yr="DSC/YR 1", staff_ids=["S002"], duration_hrs=1),
+        room=None,
+        timeslot=None,
+        hard_violations=["Could not find feasible weekly room/day/start pattern"],
+    )
+
+    result = scheduler.retry_unscheduled_assignments(existing + [failed], [Room("R1", 100, "physical"), Room("R2", 100, "physical")], scheduler.build_schedule_index(existing))
+    scheduled = [item for item in result if item.room is not None and item.timeslot is not None]
+
+    assert len(scheduled) == 2
+    assert count_hard_violations(result) == 0
+
+
+def test_retry_pass_keeps_unscheduled_assignments_reported_separately(monkeypatch) -> None:
+    """Impossible courses should remain unscheduled after the retry pass."""
+    from generator import scheduler
+
+    monkeypatch.setattr(scheduler, "VALID_DAYS", ["Monday"])
+    monkeypatch.setattr(scheduler, "VALID_START_TIMES", ["09:00"])
+
+    existing = [
+        Assignment(
+            course=make_course(module_code="DSC5401", prog_yr="DSC/YR 1", staff_ids=["S001"]),
+            room=Room("R1", 10, "physical"),
+            timeslot=TimeSlot("Monday", "09:00", 1),
+        )
+    ]
+    failed = Assignment(
+        course=make_course(module_code="DSC5402", activity="Quiz", prog_yr="DSC/YR 2", class_size=50, staff_ids=["S002"], duration_hrs=1),
+        room=None,
+        timeslot=None,
+        hard_violations=["Could not find feasible weekly room/day/start pattern"],
+    )
+
+    result = scheduler.retry_unscheduled_assignments(existing + [failed], [Room("R1", 10, "physical")], scheduler.build_schedule_index(existing))
+    scheduled = [item for item in result if item.room is not None and item.timeslot is not None]
+    unscheduled = [item for item in result if item.room is None or item.timeslot is None]
+
+    assert len(scheduled) == 1
+    assert len(unscheduled) == 1
+    assert unscheduled[0].room is None
+    assert unscheduled[0].timeslot is None
+    assert unscheduled[0].hard_violations
