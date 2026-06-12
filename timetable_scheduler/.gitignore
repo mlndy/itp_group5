@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.log
+.DS_Store
+
+# Optional: keep generated outputs out of Git
+output_files/
+*.xlsx.tmp
+
+# VS Code
+.vscode/
