@@ -44,10 +44,15 @@ Hard constraints are treated as feasibility rules. The optimiser only accepts a 
 - F2F classes do not use virtual room
 - Week pattern compliance
 - No classes outside 09:00-18:00
+- No classes during configured public holiday or term break weeks
 - No Wednesday afternoon classes from 13:00
 - No Friday 12:00-14:00 classes
 - No Friday classes after 17:00
 - Flexible lunch break for student groups
+
+## Calendar assumption
+
+The prototype input data provides teaching week numbers rather than exact calendar dates. Public holidays and term breaks are therefore represented as blocked teaching weeks in `config.py`.
 
 ## Main soft constraints implemented
 

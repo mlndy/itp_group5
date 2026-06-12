@@ -6,6 +6,7 @@ from collections import defaultdict
 
 from config import (
     BLOCKED_START_TIMES,
+    BLOCKED_WEEKS,
     EARLIEST_START_HOUR,
     FIRST_SLOT,
     LAST_SLOT_STARTS,
@@ -15,6 +16,7 @@ from config import (
     MAX_TUTOR_IDLE_GAP_HOURS,
     MIN_ROOM_UTILISATION,
     PUBLIC_HOLIDAY_WEEKS,
+    TERM_BREAK_WEEKS,
     VALID_DAYS,
 )
 from data.models import Assignment, Course
@@ -139,6 +141,21 @@ def check_time_window(assignment: Assignment) -> list[str]:
     return violations
 
 
+def check_blocked_week(assignment: Assignment) -> list[str]:
+    """Check academic calendar week blocks."""
+    if assignment.timeslot is None:
+        return []
+    week = assignment.timeslot.week
+    violations: list[str] = []
+    if week in PUBLIC_HOLIDAY_WEEKS:
+        violations.append("Class scheduled during public holiday week")
+    if week in TERM_BREAK_WEEKS:
+        violations.append("Class scheduled during term break week")
+    if week in BLOCKED_WEEKS and week not in PUBLIC_HOLIDAY_WEEKS and week not in TERM_BREAK_WEEKS:
+        violations.append("Class scheduled during blocked academic week")
+    return violations
+
+
 def check_blocked_time(assignment: Assignment) -> list[str]:
     """Check institutional blocked day/time rules."""
     if assignment.timeslot is None:
@@ -149,8 +166,7 @@ def check_blocked_time(assignment: Assignment) -> list[str]:
     violations: list[str] = []
     if occupied & blocked:
         violations.append(f"Blocked time used on {day}: {sorted(occupied & blocked)}")
-    if assignment.timeslot.week in PUBLIC_HOLIDAY_WEEKS:
-        violations.append(f"Public holiday week used: {assignment.timeslot.week}")
+    violations.extend(check_blocked_week(assignment))
     return violations
 
 

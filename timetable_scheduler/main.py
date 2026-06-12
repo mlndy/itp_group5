@@ -3,16 +3,24 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 
 from config import (
     DEFAULT_COMMON_MODULE_FILE,
     DEFAULT_COURSE_FILE,
     DEFAULT_ENGINEERING_FOLDER,
+    DEFAULT_LOADER_REPORT_FILE,
     DEFAULT_ROOM_FILE,
     OUTPUT_DIR,
 )
-from data.loader import load_common_modules, load_courses_from_folder, load_courses_from_requirements, load_rooms_from_csv
+from data.loader import (
+    LoaderReport,
+    export_loader_report,
+    load_common_modules,
+    load_courses_from_folder,
+    load_courses_from_requirements,
+    load_rooms_from_csv,
+)
+from data.models import Course
 from engine.constraint_checker import annotate_schedule_violations, count_hard_violations, count_soft_violations
 from generator.scheduler import generate_schedule
 from optimiser.local_search import optimise_schedule
@@ -28,12 +36,14 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def load_courses(scope: str) -> list:
+def load_courses(scope: str, common_modules: set[str]) -> tuple[list[Course], LoaderReport]:
     """Load either DSC-only or Engineering-cluster requirement files."""
-    common_modules = load_common_modules(DEFAULT_COMMON_MODULE_FILE)
     if scope == "eng" and DEFAULT_ENGINEERING_FOLDER.exists():
         return load_courses_from_folder(DEFAULT_ENGINEERING_FOLDER, common_modules=common_modules)
-    return load_courses_from_requirements(DEFAULT_COURSE_FILE, common_modules=common_modules)
+    courses, workbook_report = load_courses_from_requirements(DEFAULT_COURSE_FILE, common_modules=common_modules)
+    report = LoaderReport()
+    report.add(workbook_report)
+    return courses, report
 
 
 def export_outputs(assignments: list, scope: str) -> None:
@@ -57,12 +67,23 @@ def main() -> None:
     args = parse_args()
     print("Loading input data...")
     common_modules = load_common_modules(DEFAULT_COMMON_MODULE_FILE)
-    courses = load_courses(args.scope)
+    courses, loader_report = load_courses(args.scope, common_modules)
     rooms = load_rooms_from_csv(DEFAULT_ROOM_FILE)
+    export_loader_report(loader_report, DEFAULT_LOADER_REPORT_FILE)
+
     print(f"Scope: {args.scope}")
     print(f"Courses loaded: {len(courses)}")
     print(f"Rooms loaded: {len(rooms)}")
     print(f"Common modules loaded: {len(common_modules)}")
+    print(f"Skipped workbooks: {loader_report.skipped_workbooks}")
+    print(f"Loader report: {DEFAULT_LOADER_REPORT_FILE}")
+    for workbook in loader_report.workbooks:
+        if workbook.status != "parsed":
+            missing = f" | missing: {', '.join(workbook.missing_columns)}" if workbook.missing_columns else ""
+            print(
+                f"Loader notice: {workbook.file_path} [{workbook.sheet_name}] - "
+                f"{workbook.status} - {workbook.reason}{missing}"
+            )
 
     print("\nGenerating initial schedule...")
     initial_schedule = generate_schedule(courses, rooms)

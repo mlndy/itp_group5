@@ -5,10 +5,12 @@ from __future__ import annotations
 import csv
 import math
 import re
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Optional
 
 import pandas as pd
+from openpyxl import load_workbook
 
 from config import (
     ACTIVITY_DURATION_HOURS,
@@ -23,7 +25,7 @@ from data.models import Course, Room
 COMMON_COLUMNS = {
     "prog_yr": ["Prog/Yr", "Prog Yr", "Programme/Year", "Programme Year"],
     "class_size": ["Class Size", "Size", "Enrolment"],
-    "module_code": ["Module Code", "Module", "Course Code"],
+    "module_code": ["Module Code", "Module", "Course Code", "Module code"],
     "activity": ["Activity", "Class Type", "Activity Type"],
     "delivery_mode": ["Delivery Mode", "Mode"],
     "teaching_weeks": ["Teaching Weeks", "Tri Week", "Weeks"],
@@ -37,17 +39,90 @@ COMMON_COLUMNS = {
 }
 
 
+@dataclass(slots=True)
+class WorkbookDiagnostic:
+    """Diagnostic information for one workbook load attempt."""
+
+    file_path: str
+    sheet_name: str
+    status: str
+    reason: str
+    missing_columns: list[str] = field(default_factory=list)
+    rows_parsed: int = 0
+    rows_skipped: int = 0
+
+
+@dataclass(slots=True)
+class LoaderReport:
+    """Collection of workbook diagnostics from a loading run."""
+
+    workbooks: list[WorkbookDiagnostic] = field(default_factory=list)
+
+    def add(self, diagnostic: WorkbookDiagnostic) -> None:
+        """Store one workbook diagnostic."""
+        self.workbooks.append(diagnostic)
+
+    @property
+    def skipped_workbooks(self) -> int:
+        """Return the number of fully skipped workbooks."""
+        return sum(1 for item in self.workbooks if item.status == "skipped")
+
+    @property
+    def partial_workbooks(self) -> int:
+        """Return the number of partially parsed workbooks."""
+        return sum(1 for item in self.workbooks if item.status == "partial")
+
+    @property
+    def parsed_workbooks(self) -> int:
+        """Return the number of fully parsed workbooks."""
+        return sum(1 for item in self.workbooks if item.status == "parsed")
+
+    def diagnostics_dataframe(self) -> pd.DataFrame:
+        """Return workbook diagnostics as a DataFrame."""
+        rows = [
+            {
+                "File Path": item.file_path,
+                "Sheet Name": item.sheet_name,
+                "Status": item.status,
+                "Reason": item.reason,
+                "Missing Columns": ", ".join(item.missing_columns),
+                "Rows Parsed": item.rows_parsed,
+                "Rows Skipped": item.rows_skipped,
+            }
+            for item in self.workbooks
+        ]
+        columns = ["File Path", "Sheet Name", "Status", "Reason", "Missing Columns", "Rows Parsed", "Rows Skipped"]
+        return pd.DataFrame(rows, columns=columns)
+
+    def summary_dataframe(self) -> pd.DataFrame:
+        """Return a compact summary DataFrame."""
+        total_rows = sum(item.rows_parsed for item in self.workbooks)
+        skipped_rows = sum(item.rows_skipped for item in self.workbooks)
+        return pd.DataFrame(
+            [
+                {"Metric": "Workbooks scanned", "Value": len(self.workbooks)},
+                {"Metric": "Workbooks parsed", "Value": self.parsed_workbooks},
+                {"Metric": "Workbooks partially parsed", "Value": self.partial_workbooks},
+                {"Metric": "Workbooks skipped", "Value": self.skipped_workbooks},
+                {"Metric": "Parsed course rows", "Value": total_rows},
+                {"Metric": "Skipped course rows", "Value": skipped_rows},
+            ]
+        )
+
+
 def _normalise_header(value: object) -> str:
-    """Return a comparable column header string."""
-    return re.sub(r"\s+", " ", str(value or "").strip())
+    """Return a case-insensitive, punctuation-tolerant header key."""
+    text = str(value or "").strip().casefold()
+    return re.sub(r"[^0-9a-z]+", " ", text).strip()
 
 
 def _find_header_row(path: Path, sheet_name: str) -> int:
     """Find the row index containing the Module sheet headers."""
     preview = pd.read_excel(path, sheet_name=sheet_name, header=None, nrows=20, engine="openpyxl")
+    module_markers = {"module", "module code", "course code"}
     for idx, row in preview.iterrows():
         values = {_normalise_header(value) for value in row.tolist()}
-        if "Module Code" in values and "Activity" in values:
+        if values & module_markers and "activity" in values:
             return int(idx)
     return 0
 
@@ -56,8 +131,9 @@ def _get_column(df: pd.DataFrame, candidates: Iterable[str]) -> Optional[str]:
     """Return the first matching column from candidate names."""
     normalised = {_normalise_header(col): col for col in df.columns}
     for candidate in candidates:
-        if candidate in normalised:
-            return normalised[candidate]
+        key = _normalise_header(candidate)
+        if key in normalised:
+            return normalised[key]
     return None
 
 
@@ -178,18 +254,112 @@ def load_common_modules(path: str | Path) -> set[str]:
     return modules
 
 
+def _resolve_sheet_name(path: Path, preferred_sheet_name: str) -> tuple[Optional[str], str]:
+    """Resolve a workbook sheet name without guessing aggressively."""
+    try:
+        workbook = load_workbook(path, read_only=True)
+    except Exception as exc:  # pragma: no cover - exercised via load failure tests
+        return None, f"Unable to open workbook: {exc}"
+
+    try:
+        sheet_lookup = {_normalise_header(sheet_name): sheet_name for sheet_name in workbook.sheetnames}
+        preferred_key = _normalise_header(preferred_sheet_name)
+        if preferred_key in sheet_lookup:
+            return sheet_lookup[preferred_key], ""
+        if preferred_sheet_name in workbook.sheetnames:
+            return preferred_sheet_name, ""
+        return None, f"Sheet '{preferred_sheet_name}' not found"
+    finally:
+        workbook.close()
+
+
+def _required_column_names() -> dict[str, str]:
+    """Return human-friendly labels for the required loader fields."""
+    return {
+        "prog_yr": " / ".join(COMMON_COLUMNS["prog_yr"]),
+        "class_size": " / ".join(COMMON_COLUMNS["class_size"]),
+        "module_code": " / ".join(COMMON_COLUMNS["module_code"]),
+        "activity": " / ".join(COMMON_COLUMNS["activity"]),
+        "delivery_mode": " / ".join(COMMON_COLUMNS["delivery_mode"]),
+        "teaching_weeks": " / ".join(COMMON_COLUMNS["teaching_weeks"]),
+    }
+
+
+def _missing_required_columns(df: pd.DataFrame) -> list[str]:
+    """List any missing required semantic columns."""
+    field_names = ["prog_yr", "class_size", "module_code", "activity", "delivery_mode", "teaching_weeks"]
+    missing: list[str] = []
+    for field_name in field_names:
+        if _get_column(df, COMMON_COLUMNS[field_name]) is None:
+            missing.append(_required_column_names()[field_name])
+    return missing
+
+
+def _build_diagnostic(
+    *,
+    path: Path,
+    sheet_name: str,
+    status: str,
+    reason: str,
+    missing_columns: Optional[list[str]] = None,
+    rows_parsed: int = 0,
+    rows_skipped: int = 0,
+) -> WorkbookDiagnostic:
+    """Create a workbook diagnostic entry."""
+    return WorkbookDiagnostic(
+        file_path=str(path),
+        sheet_name=sheet_name,
+        status=status,
+        reason=reason,
+        missing_columns=missing_columns or [],
+        rows_parsed=rows_parsed,
+        rows_skipped=rows_skipped,
+    )
+
+
 def load_courses_from_requirements(
     path: str | Path,
     common_modules: Optional[set[str]] = None,
     sheet_name: str = "Module",
-) -> list[Course]:
+) -> tuple[list[Course], WorkbookDiagnostic]:
     """Load course activities from a requirements workbook."""
     path = Path(path)
     common_modules = common_modules or set()
-    header_row = _find_header_row(path, sheet_name)
-    df = pd.read_excel(path, sheet_name=sheet_name, header=header_row, engine="openpyxl")
-    df = df.loc[:, ~df.columns.astype(str).str.startswith("Unnamed")]
-    df.columns = [_normalise_header(col) for col in df.columns]
+
+    resolved_sheet, sheet_reason = _resolve_sheet_name(path, sheet_name)
+    if resolved_sheet is None:
+        diagnostic = _build_diagnostic(
+            path=path,
+            sheet_name=sheet_name,
+            status="skipped",
+            reason=sheet_reason,
+        )
+        return [], diagnostic
+
+    try:
+        header_row = _find_header_row(path, resolved_sheet)
+        df = pd.read_excel(path, sheet_name=resolved_sheet, header=header_row, engine="openpyxl")
+        df = df.loc[:, ~df.columns.astype(str).str.startswith("Unnamed")]
+        df.columns = [str(col).strip() for col in df.columns]
+    except Exception as exc:
+        diagnostic = _build_diagnostic(
+            path=path,
+            sheet_name=resolved_sheet,
+            status="skipped",
+            reason=f"Unable to read sheet: {exc}",
+        )
+        return [], diagnostic
+
+    missing_columns = _missing_required_columns(df)
+    if missing_columns:
+        diagnostic = _build_diagnostic(
+            path=path,
+            sheet_name=resolved_sheet,
+            status="skipped",
+            reason="Missing required columns",
+            missing_columns=missing_columns,
+        )
+        return [], diagnostic
 
     prog_col = _get_column(df, COMMON_COLUMNS["prog_yr"])
     size_col = _get_column(df, COMMON_COLUMNS["class_size"])
@@ -199,14 +369,19 @@ def load_courses_from_requirements(
     weeks_col = _get_column(df, COMMON_COLUMNS["teaching_weeks"])
     remarks_col = _get_column(df, COMMON_COLUMNS["remarks"])
 
-    required = [prog_col, size_col, module_col, activity_col, mode_col, weeks_col]
-    if any(col is None for col in required):
-        raise ValueError(f"Missing required columns in {path.name}. Found: {list(df.columns)}")
+    # The required-column check above guarantees these are present.
+    assert prog_col is not None
+    assert size_col is not None
+    assert module_col is not None
+    assert activity_col is not None
+    assert mode_col is not None
+    assert weeks_col is not None
 
     for col in [prog_col, size_col, module_col]:
         df[col] = df[col].ffill()
 
     courses: list[Course] = []
+    skipped_rows = 0
     for _, row in df.iterrows():
         module_code = _clean_text(row.get(module_col)).upper()
         activity = _clean_text(row.get(activity_col))
@@ -214,8 +389,10 @@ def load_courses_from_requirements(
         delivery_mode = _clean_text(row.get(mode_col), default="f2f")
 
         if not module_code or not activity or not prog_yr:
+            skipped_rows += 1
             continue
         if module_code.lower() in {"module code", "nan"}:
+            skipped_rows += 1
             continue
 
         weeks = parse_teaching_weeks(row.get(weeks_col))
@@ -242,18 +419,50 @@ def load_courses_from_requirements(
                 group_ids=[prog_yr],
             )
         )
-    return courses
+
+    if not courses:
+        diagnostic = _build_diagnostic(
+            path=path,
+            sheet_name=resolved_sheet,
+            status="skipped",
+            reason="No valid course rows were found",
+            rows_parsed=0,
+            rows_skipped=skipped_rows,
+        )
+        return [], diagnostic
+
+    status = "parsed" if skipped_rows == 0 else "partial"
+    reason = "Workbook parsed successfully" if skipped_rows == 0 else f"Parsed with {skipped_rows} skipped row(s)"
+    diagnostic = _build_diagnostic(
+        path=path,
+        sheet_name=resolved_sheet,
+        status=status,
+        reason=reason,
+        rows_parsed=len(courses),
+        rows_skipped=skipped_rows,
+    )
+    return courses, diagnostic
 
 
-def load_courses_from_folder(folder: str | Path, common_modules: Optional[set[str]] = None) -> list[Course]:
+def load_courses_from_folder(folder: str | Path, common_modules: Optional[set[str]] = None) -> tuple[list[Course], LoaderReport]:
     """Load courses from all requirement workbooks in a folder."""
     courses: list[Course] = []
+    report = LoaderReport()
     for path in sorted(Path(folder).glob("*.xlsx")):
-        try:
-            courses.extend(load_courses_from_requirements(path, common_modules=common_modules))
-        except Exception as exc:
-            print(f"Skipped {path.name}: {exc}")
-    return courses
+        if path.name.startswith("~$"):
+            report.add(
+                _build_diagnostic(
+                    path=path,
+                    sheet_name="Unknown",
+                    status="skipped",
+                    reason="Temporary Excel lock file was ignored",
+                )
+            )
+            continue
+        workbook_courses, diagnostic = load_courses_from_requirements(path, common_modules=common_modules)
+        courses.extend(workbook_courses)
+        report.add(diagnostic)
+    return courses, report
 
 
 def _parse_capacity(value: object) -> int:
@@ -291,3 +500,15 @@ def load_rooms_from_csv(path: str | Path) -> list[Room]:
                 )
             )
     return rooms
+
+
+def export_loader_report(report: LoaderReport, output_path: str | Path) -> None:
+    """Export loader diagnostics to an Excel report."""
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    summary_df = report.summary_dataframe()
+    diagnostics_df = report.diagnostics_dataframe()
+
+    with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
+        summary_df.to_excel(writer, sheet_name="Summary", index=False)
+        diagnostics_df.to_excel(writer, sheet_name="Diagnostics", index=False)
