@@ -189,3 +189,57 @@ def test_exporter_puts_assigned_room_id_in_room1() -> None:
     assert row["Room1"] == "PGB-LT-01"
     assert row["Location Hostkey"] == "PGB-LT-01"
     assert row["Group"] == "DSC/YR 1"
+
+
+def test_public_holiday_week_causes_hard_violation(monkeypatch) -> None:
+    """Public holiday weeks should be blocked by hard constraints."""
+    import engine.constraint_checker as checker
+
+    monkeypatch.setattr(checker, "PUBLIC_HOLIDAY_WEEKS", {4})
+    monkeypatch.setattr(checker, "BLOCKED_WEEKS", {4})
+    assignment = Assignment(
+        course=make_course(teaching_weeks=[4]),
+        room=Room("R1", 100, "physical"),
+        timeslot=TimeSlot("Monday", "09:00", 4),
+    )
+
+    violations = check_hard_constraints(assignment, [])
+
+    assert "Class scheduled during public holiday week" in violations
+
+
+def test_term_break_week_causes_hard_violation() -> None:
+    """Term break weeks should be blocked by hard constraints."""
+    assignment = Assignment(
+        course=make_course(teaching_weeks=[7]),
+        room=Room("R1", 100, "physical"),
+        timeslot=TimeSlot("Monday", "09:00", 7),
+    )
+
+    violations = check_hard_constraints(assignment, [])
+
+    assert "Class scheduled during term break week" in violations
+
+
+def test_scheduler_does_not_generate_timeslots_for_blocked_weeks(monkeypatch) -> None:
+    """Candidate timeslots should exclude blocked academic weeks."""
+    import generator.scheduler as scheduler
+
+    monkeypatch.setattr(scheduler, "BLOCKED_WEEKS", {2})
+
+    timeslots = scheduler.generate_timeslots([1, 2, 3])
+
+    assert {slot.week for slot in timeslots} == {1, 3}
+
+
+def test_normal_teaching_week_remains_valid() -> None:
+    """A normal teaching week should not trigger calendar hard violations."""
+    assignment = Assignment(
+        course=make_course(teaching_weeks=[1]),
+        room=Room("R1", 100, "physical"),
+        timeslot=TimeSlot("Monday", "09:00", 1),
+    )
+
+    violations = check_hard_constraints(assignment, [])
+
+    assert violations == []

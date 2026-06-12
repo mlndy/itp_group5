@@ -41,7 +41,13 @@ BLOCKED_START_TIMES: dict[str, set[str]] = {
 }
 
 TERM_WEEKS: list[int] = [1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13]
+
+# Prototype calendar assumption: the input files provide teaching week numbers,
+# not exact dates. Public holidays and term breaks are therefore represented by
+# teaching week for this milestone.
+TERM_BREAK_WEEKS: set[int] = {7}
 PUBLIC_HOLIDAY_WEEKS: set[int] = set()
+BLOCKED_WEEKS: set[int] = TERM_BREAK_WEEKS | PUBLIC_HOLIDAY_WEEKS
 
 VIRTUAL_ROOM_ID = "ONLINE_ROOM"
 VIRTUAL_ROOM_CAPACITY = 9999

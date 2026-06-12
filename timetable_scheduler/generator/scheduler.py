@@ -5,14 +5,22 @@ from __future__ import annotations
 from collections import defaultdict
 from itertools import product
 
-from config import VALID_DAYS, VALID_START_TIMES
+from config import BLOCKED_WEEKS, VALID_DAYS, VALID_START_TIMES
 from data.models import Assignment, Course, Room, TimeSlot
 from engine.constraint_checker import check_hard_constraints, is_online_course
 
 
+def schedulable_weeks(weeks: list[int]) -> list[int]:
+    """Return teaching weeks that are not blocked by the academic calendar."""
+    return [week for week in weeks if week not in BLOCKED_WEEKS]
+
+
 def generate_timeslots(weeks: list[int]) -> list[TimeSlot]:
-    """Generate all candidate timeslots for given teaching weeks."""
-    return [TimeSlot(day=day, start_time=start, week=week) for week, day, start in product(weeks, VALID_DAYS, VALID_START_TIMES)]
+    """Generate all candidate timeslots for unblocked teaching weeks."""
+    return [
+        TimeSlot(day=day, start_time=start, week=week)
+        for week, day, start in product(schedulable_weeks(weeks), VALID_DAYS, VALID_START_TIMES)
+    ]
 
 
 def _activity_key(course: Course) -> str:
@@ -125,8 +133,11 @@ def prepare_courses_for_scheduling(courses: list[Course]) -> list[Course]:
 
 
 def make_weekly_assignments(course: Course, room: Room, day: str, start_time: str) -> list[Assignment]:
-    """Create one assignment per teaching week using the same weekly pattern."""
-    return [Assignment(course=course, room=room, timeslot=TimeSlot(day=day, start_time=start_time, week=week)) for week in course.teaching_weeks]
+    """Create one assignment per unblocked teaching week using one weekly pattern."""
+    return [
+        Assignment(course=course, room=room, timeslot=TimeSlot(day=day, start_time=start_time, week=week))
+        for week in schedulable_weeks(course.teaching_weeks)
+    ]
 
 
 def can_place_assignments(candidates: list[Assignment], existing: list[Assignment]) -> bool:
@@ -142,6 +153,15 @@ def can_place_assignments(candidates: list[Assignment], existing: list[Assignmen
 
 def schedule_course(course: Course, rooms: list[Room], existing: list[Assignment]) -> list[Assignment]:
     """Schedule one course using a consistent weekly room/day/start pattern."""
+    if not schedulable_weeks(course.teaching_weeks):
+        return [
+            Assignment(
+                course=course,
+                room=None,
+                timeslot=None,
+                hard_violations=["No schedulable teaching weeks after academic calendar blocks"],
+            )
+        ]
     for room in get_candidate_rooms(course, rooms):
         for day in VALID_DAYS:
             for start_time in VALID_START_TIMES:
@@ -152,10 +172,20 @@ def schedule_course(course: Course, rooms: list[Room], existing: list[Assignment
 
 
 def schedule_course_by_week(course: Course, rooms: list[Room], existing: list[Assignment]) -> list[Assignment]:
-    """Fallback scheduler that places each teaching week independently."""
+    """Fallback scheduler that places each unblocked teaching week independently."""
+    weeks = schedulable_weeks(course.teaching_weeks)
+    if not weeks:
+        return [
+            Assignment(
+                course=course,
+                room=None,
+                timeslot=None,
+                hard_violations=["No schedulable teaching weeks after academic calendar blocks"],
+            )
+        ]
     placed: list[Assignment] = []
     staged = existing.copy()
-    for week in course.teaching_weeks:
+    for week in weeks:
         found: Assignment | None = None
         for room in get_candidate_rooms(course, rooms):
             for day in VALID_DAYS:
