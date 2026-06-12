@@ -9,6 +9,7 @@ from config import (
     DEFAULT_COURSE_FILE,
     DEFAULT_ENGINEERING_FOLDER,
     DEFAULT_LOADER_REPORT_FILE,
+    DEFAULT_UNSCHEDULED_DIAGNOSTICS_FILE,
     DEFAULT_ROOM_FILE,
     OUTPUT_DIR,
 )
@@ -22,6 +23,11 @@ from data.loader import (
 )
 from data.models import Course
 from engine.constraint_checker import annotate_schedule_violations, count_hard_violations, count_soft_violations
+from engine.unscheduled_diagnostics import (
+    UnscheduledDiagnosticsReport,
+    diagnose_unscheduled_assignments,
+    export_unscheduled_diagnostics,
+)
 from generator.scheduler import generate_schedule
 from optimiser.local_search import optimise_schedule
 from output.exporter import export_schedule, export_violations
@@ -57,6 +63,17 @@ def _report_schedule_metrics(label: str, assignments: list) -> None:
     print(f"{label} hard violations on scheduled assignments: {scheduled_hard}")
     print(f"{label} unscheduled feasibility failures: {len(unscheduled)}")
     print(f"{label} unscheduled hard violations: {unscheduled_hard}")
+
+
+def _print_unscheduled_reason_summary(report: UnscheduledDiagnosticsReport) -> None:
+    """Print the most common reasons assignments remain unscheduled."""
+    reason_counts = report.reason_counts().most_common(5)
+    if not reason_counts:
+        print("Top unscheduled failure reasons: none")
+        return
+    print("Top unscheduled failure reasons:")
+    for reason, count in reason_counts:
+        print(f"  {reason}: {count}")
 
 
 def export_outputs(assignments: list, scope: str) -> None:
@@ -125,6 +142,11 @@ def main() -> None:
     _report_schedule_metrics("Final", final_schedule)
     print(f"Final hard violations (all assignments): {final_hard}")
     print(f"Final soft violations: {final_soft}")
+
+    unscheduled_report = diagnose_unscheduled_assignments(final_schedule, rooms)
+    _print_unscheduled_reason_summary(unscheduled_report)
+    export_unscheduled_diagnostics(unscheduled_report, DEFAULT_UNSCHEDULED_DIAGNOSTICS_FILE)
+    print(f"Saved: {DEFAULT_UNSCHEDULED_DIAGNOSTICS_FILE}")
 
     print("\nExporting files...")
     export_outputs(final_schedule, args.scope)
