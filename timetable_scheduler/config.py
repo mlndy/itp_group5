@@ -7,12 +7,14 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 INPUT_DIR = BASE_DIR / "input"
 OUTPUT_DIR = BASE_DIR / "output_files"
+GENERATED_DIR = BASE_DIR / "generated"
 
 DEFAULT_COURSE_FILE = INPUT_DIR / "2510_DSC.xlsx"
 DEFAULT_ENGINEERING_FOLDER = INPUT_DIR / "Requirements_ENG"
 DEFAULT_ROOM_FILE = INPUT_DIR / "Venue Information(Campus Court).csv"
 DEFAULT_COMMON_MODULE_FILE = INPUT_DIR / "Common Modules(Sheet1).csv"
 DEFAULT_TEMPLATE2_FILE = INPUT_DIR / "Upload template_System (Template 2).xlsx"
+DEFAULT_LOADER_REPORT_FILE = GENERATED_DIR / "loader_report.xlsx"
 
 VALID_DAYS: list[str] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
 DAY_ABBREVIATIONS: dict[str, str] = {
