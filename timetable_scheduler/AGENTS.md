@@ -165,3 +165,36 @@ Scheduled Engineering assignments have 0 hard violations
 Generated files are not committed
 Risks are stated honestly
 ```
+
+## Current Milestone
+
+Current focus:
+
+```text
+Milestone 4: Strict Template 2 exporter
+```
+
+Milestone 4 must make the timetable export closer to the provided Template 2 workbook.
+
+Key rule:
+
+```text
+Room1 must contain the assigned room ID from assignment.room.room_id.
+```
+
+Milestone 4 must not modify scheduler, optimiser, loader, diagnostics, or constraint logic unless strictly required for export compatibility.
+
+Start with these files only:
+
+```text
+timetable_scheduler/output/exporter.py
+timetable_scheduler/config.py
+timetable_scheduler/main.py
+timetable_scheduler/data/models.py
+timetable_scheduler/tests/
+timetable_scheduler/input/Upload template_System (Template 2).xlsx
+```
+
+If additional files are needed, explain why before inspecting them.
+
+Generated Excel output files must not be committed.
