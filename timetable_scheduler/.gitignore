@@ -21,7 +21,8 @@ Thumbs.db
 # Logs
 *.log
 
-# Generated outputs
+# Generated runtime outputs
+generated/
 output_files/
 
 # Temporary Excel files
