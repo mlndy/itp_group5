@@ -7,12 +7,15 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 INPUT_DIR = BASE_DIR / "input"
 OUTPUT_DIR = BASE_DIR / "output_files"
+GENERATED_DIR = BASE_DIR / "generated"
 
 DEFAULT_COURSE_FILE = INPUT_DIR / "2510_DSC.xlsx"
 DEFAULT_ENGINEERING_FOLDER = INPUT_DIR / "Requirements_ENG"
 DEFAULT_ROOM_FILE = INPUT_DIR / "Venue Information(Campus Court).csv"
 DEFAULT_COMMON_MODULE_FILE = INPUT_DIR / "Common Modules(Sheet1).csv"
 DEFAULT_TEMPLATE2_FILE = INPUT_DIR / "Upload template_System (Template 2).xlsx"
+DEFAULT_LOADER_REPORT_FILE = GENERATED_DIR / "loader_report.xlsx"
+DEFAULT_UNSCHEDULED_DIAGNOSTICS_FILE = GENERATED_DIR / "unscheduled_diagnostics.xlsx"
 
 VALID_DAYS: list[str] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
 DAY_ABBREVIATIONS: dict[str, str] = {
@@ -39,7 +42,13 @@ BLOCKED_START_TIMES: dict[str, set[str]] = {
 }
 
 TERM_WEEKS: list[int] = [1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13]
+
+# Prototype calendar assumption: the input files provide teaching week numbers,
+# not exact dates. Public holidays and term breaks are therefore represented by
+# teaching week for this milestone.
+TERM_BREAK_WEEKS: set[int] = {7}
 PUBLIC_HOLIDAY_WEEKS: set[int] = set()
+BLOCKED_WEEKS: set[int] = TERM_BREAK_WEEKS | PUBLIC_HOLIDAY_WEEKS
 
 VIRTUAL_ROOM_ID = "ONLINE_ROOM"
 VIRTUAL_ROOM_CAPACITY = 9999
