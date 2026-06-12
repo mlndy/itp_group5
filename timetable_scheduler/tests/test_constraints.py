@@ -243,3 +243,100 @@ def test_normal_teaching_week_remains_valid() -> None:
     violations = check_hard_constraints(assignment, [])
 
     assert violations == []
+
+
+def test_indexed_scheduler_still_prevents_room_clashes(monkeypatch) -> None:
+    """The indexed scheduler should avoid assigning two classes to the same room and slot."""
+    from generator import scheduler
+
+    monkeypatch.setattr(scheduler, "VALID_DAYS", ["Monday"])
+    monkeypatch.setattr(scheduler, "VALID_START_TIMES", ["09:00"])
+
+    courses = [
+        make_course(module_code="DSC2001", prog_yr="DSC/YR 1", staff_ids=["S001"]),
+        make_course(module_code="DSC2002", prog_yr="DSC/YR 2", staff_ids=["S002"]),
+    ]
+    rooms = [Room("R1", 100, "physical")]
+
+    schedule = scheduler.generate_schedule(courses, rooms, allow_weekly_fallback=False)
+
+    scheduled = [item for item in schedule if item.room is not None and item.timeslot is not None]
+    assert len(scheduled) == 1
+    assert scheduled[0].room.room_id == "R1"
+
+
+def test_indexed_scheduler_still_prevents_tutor_clashes(monkeypatch) -> None:
+    """The indexed scheduler should avoid tutor double-booking."""
+    from generator import scheduler
+
+    monkeypatch.setattr(scheduler, "VALID_DAYS", ["Monday"])
+    monkeypatch.setattr(scheduler, "VALID_START_TIMES", ["09:00"])
+
+    courses = [
+        make_course(module_code="DSC3001", prog_yr="DSC/YR 1", staff_ids=["S001"]),
+        make_course(module_code="DSC3002", prog_yr="DSC/YR 2", staff_ids=["S001"]),
+    ]
+    rooms = [Room("R1", 100, "physical"), Room("R2", 100, "physical")]
+
+    schedule = scheduler.generate_schedule(courses, rooms, allow_weekly_fallback=False)
+
+    scheduled = [item for item in schedule if item.room is not None and item.timeslot is not None]
+    assert len(scheduled) == 1
+
+
+def test_indexed_scheduler_still_prevents_group_clashes(monkeypatch) -> None:
+    """The indexed scheduler should avoid student group double-booking."""
+    from generator import scheduler
+
+    monkeypatch.setattr(scheduler, "VALID_DAYS", ["Monday"])
+    monkeypatch.setattr(scheduler, "VALID_START_TIMES", ["09:00"])
+
+    courses = [
+        make_course(module_code="DSC4001", prog_yr="DSC/YR 1", staff_ids=["S001"]),
+        make_course(module_code="DSC4002", prog_yr="DSC/YR 1", staff_ids=["S002"]),
+    ]
+    rooms = [Room("R1", 100, "physical"), Room("R2", 100, "physical")]
+
+    schedule = scheduler.generate_schedule(courses, rooms, allow_weekly_fallback=False)
+
+    scheduled = [item for item in schedule if item.room is not None and item.timeslot is not None]
+    assert len(scheduled) == 1
+
+
+def test_room_ordering_prefers_smaller_sufficient_rooms() -> None:
+    """Room ordering should try the tightest sufficient room first."""
+    from generator.scheduler import get_candidate_rooms
+
+    course = make_course(class_size=50)
+    rooms = [Room("LARGE", 120, "physical"), Room("SMALL", 60, "physical")]
+
+    ordered = get_candidate_rooms(course, rooms)
+
+    assert [room.room_id for room in ordered] == ["SMALL", "LARGE"]
+
+
+def test_engineering_candidate_generation_excludes_blocked_weeks(monkeypatch) -> None:
+    """Engineering candidate generation should skip blocked weeks before search."""
+    from generator import scheduler
+
+    monkeypatch.setattr(scheduler, "BLOCKED_WEEKS", {7})
+
+    timeslots = scheduler.generate_timeslots([6, 7, 8])
+
+    assert {slot.week for slot in timeslots} == {6, 8}
+
+
+def test_dsc_input_still_has_zero_hard_violations() -> None:
+    """The DSC schedule should remain hard-feasible after scheduler changes."""
+    from config import DEFAULT_COMMON_MODULE_FILE, DEFAULT_COURSE_FILE, DEFAULT_ROOM_FILE
+    from data.loader import load_common_modules, load_courses_from_requirements, load_rooms_from_csv
+    from engine.constraint_checker import count_hard_violations
+    from generator.scheduler import generate_schedule
+
+    common_modules = load_common_modules(DEFAULT_COMMON_MODULE_FILE)
+    courses, _ = load_courses_from_requirements(DEFAULT_COURSE_FILE, common_modules=common_modules)
+    rooms = load_rooms_from_csv(DEFAULT_ROOM_FILE)
+
+    schedule = generate_schedule(courses, rooms)
+
+    assert count_hard_violations(schedule) == 0

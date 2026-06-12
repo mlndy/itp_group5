@@ -86,7 +86,16 @@ def main() -> None:
             )
 
     print("\nGenerating initial schedule...")
-    initial_schedule = generate_schedule(courses, rooms)
+
+    def _progress(position: int, total: int, course: Course) -> None:
+        if args.scope == "eng":
+            print(f"  progress: {position}/{total} -> {course.module_code} {course.activity}")
+
+    initial_schedule = generate_schedule(
+        courses,
+        rooms,
+        progress_callback=_progress if args.scope == "eng" else None,
+    )
     annotate_schedule_violations(initial_schedule)
     initial_hard = count_hard_violations(initial_schedule)
     initial_soft = count_soft_violations(initial_schedule)
