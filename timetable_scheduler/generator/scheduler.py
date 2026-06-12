@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from itertools import product
@@ -282,10 +283,16 @@ def schedule_course(course: Course, rooms: list[Room], existing: list[Assignment
     return [Assignment(course=course, room=None, timeslot=None, hard_violations=["Could not find feasible weekly room/day/start pattern"])]
 
 
-def schedule_course_by_week(course: Course, rooms: list[Room], existing: list[Assignment], index: ScheduleIndex) -> list[Assignment]:
-    """Fallback scheduler that places each unblocked teaching week independently."""
-    weeks = schedulable_weeks(course.teaching_weeks)
-    if not weeks:
+def schedule_course_for_weeks(
+    course: Course,
+    weeks: list[int],
+    rooms: list[Room],
+    existing: list[Assignment],
+    index: ScheduleIndex,
+) -> list[Assignment]:
+    """Place selected teaching weeks independently without moving existing classes."""
+    weeks_to_schedule = schedulable_weeks(weeks)
+    if not weeks_to_schedule:
         return [
             Assignment(
                 course=course,
@@ -294,10 +301,11 @@ def schedule_course_by_week(course: Course, rooms: list[Room], existing: list[As
                 hard_violations=["No schedulable teaching weeks after academic calendar blocks"],
             )
         ]
+
     placed: list[Assignment] = []
     staged = existing.copy()
     staged_index = index.copy()
-    for week in weeks:
+    for week in weeks_to_schedule:
         found: Assignment | None = None
         for room in get_candidate_rooms(course, rooms):
             for day in VALID_DAYS:
@@ -322,6 +330,71 @@ def schedule_course_by_week(course: Course, rooms: list[Room], existing: list[As
     return placed
 
 
+def schedule_course_by_week(course: Course, rooms: list[Room], existing: list[Assignment], index: ScheduleIndex) -> list[Assignment]:
+    """Fallback scheduler that places each unblocked teaching week independently."""
+    return schedule_course_for_weeks(course, course.teaching_weeks, rooms, existing, index)
+
+
+def _is_unscheduled(assignment: Assignment) -> bool:
+    """Return True when an assignment still lacks a usable room or timeslot."""
+    return assignment.room is None or assignment.timeslot is None
+
+
+def _target_retry_weeks(assignment: Assignment) -> list[int]:
+    """Return the specific teaching weeks represented by an unscheduled placeholder."""
+    for violation in assignment.hard_violations:
+        match = re.search(r"week (\d+)", violation, flags=re.IGNORECASE)
+        if match:
+            return [int(match.group(1))]
+    return schedulable_weeks(assignment.course.teaching_weeks)
+
+
+def _retry_unscheduled_assignment(
+    assignment: Assignment,
+    rooms: list[Room],
+    existing: list[Assignment],
+    index: ScheduleIndex,
+    allow_weekly_fallback: bool,
+) -> list[Assignment]:
+    """Retry one unscheduled assignment without moving already scheduled ones."""
+    if allow_weekly_fallback:
+        retry = schedule_course_for_weeks(assignment.course, _target_retry_weeks(assignment), rooms, existing, index)
+    else:
+        retry = schedule_course(assignment.course, rooms, existing, index)
+    if any(not _is_unscheduled(item) for item in retry):
+        return retry
+    return [assignment]
+
+
+def retry_unscheduled_assignments(
+    assignments: list[Assignment],
+    rooms: list[Room],
+    index: ScheduleIndex,
+    allow_weekly_fallback: bool = True,
+    max_retry_assignments: int | None = None,
+) -> list[Assignment]:
+    """Retry only unscheduled assignments after the greedy pass has finished."""
+    scheduled = [assignment for assignment in assignments if not _is_unscheduled(assignment)]
+    retry_queue = [assignment for assignment in assignments if _is_unscheduled(assignment)]
+    retry_queue = sorted(retry_queue, key=lambda item: _course_difficulty(item.course, rooms), reverse=True)
+    if max_retry_assignments is None:
+        retry_now = retry_queue
+        retry_later: list[Assignment] = []
+    else:
+        retry_now = retry_queue[:max_retry_assignments]
+        retry_later = retry_queue[max_retry_assignments:]
+
+    results: list[Assignment] = list(scheduled)
+    for placeholder in retry_now:
+        placed = _retry_unscheduled_assignment(placeholder, rooms, results, index, allow_weekly_fallback)
+        results.extend(placed)
+        for item in placed:
+            if not _is_unscheduled(item):
+                index.add(item)
+    results.extend(retry_later)
+    return results
+
+
 ProgressCallback = Callable[[int, int, Course], None]
 
 
@@ -331,6 +404,7 @@ def generate_schedule(
     allow_weekly_fallback: bool = True,
     progress_callback: ProgressCallback | None = None,
     progress_interval: int = 25,
+    max_retry_assignments: int | None = None,
 ) -> list[Assignment]:
     """Generate a complete greedy timetable with common modules merged first."""
     assignments: list[Assignment] = []
@@ -351,4 +425,10 @@ def generate_schedule(
             if assignment.room is not None and assignment.timeslot is not None and not assignment.hard_violations:
                 index.add(assignment)
 
-    return assignments
+    return retry_unscheduled_assignments(
+        assignments,
+        rooms,
+        index,
+        allow_weekly_fallback=allow_weekly_fallback,
+        max_retry_assignments=max_retry_assignments,
+    )

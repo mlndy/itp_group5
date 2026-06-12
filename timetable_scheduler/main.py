@@ -46,6 +46,19 @@ def load_courses(scope: str, common_modules: set[str]) -> tuple[list[Course], Lo
     return courses, report
 
 
+def _report_schedule_metrics(label: str, assignments: list) -> None:
+    """Print schedule counts split between scheduled and unscheduled items."""
+    scheduled = [item for item in assignments if item.room is not None and item.timeslot is not None]
+    unscheduled = [item for item in assignments if item.room is None or item.timeslot is None]
+    scheduled_hard = sum(len(item.hard_violations) for item in scheduled)
+    unscheduled_hard = sum(len(item.hard_violations) for item in unscheduled)
+    print(f"{label} scheduled assignments: {len(scheduled)}")
+    print(f"{label} unscheduled assignments: {len(unscheduled)}")
+    print(f"{label} hard violations on scheduled assignments: {scheduled_hard}")
+    print(f"{label} unscheduled feasibility failures: {len(unscheduled)}")
+    print(f"{label} unscheduled hard violations: {unscheduled_hard}")
+
+
 def export_outputs(assignments: list, scope: str) -> None:
     """Export timetable and violation reports for the selected scope."""
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -99,10 +112,9 @@ def main() -> None:
     annotate_schedule_violations(initial_schedule)
     initial_hard = count_hard_violations(initial_schedule)
     initial_soft = count_soft_violations(initial_schedule)
-    scheduled = sum(1 for item in initial_schedule if item.room is not None and item.timeslot is not None)
-    print(f"Scheduled assignments: {scheduled} / {len(initial_schedule)}")
-    print(f"Hard violations before optimisation: {initial_hard}")
-    print(f"Soft violations before optimisation: {initial_soft}")
+    _report_schedule_metrics("Initial", initial_schedule)
+    print(f"Initial hard violations (all assignments): {initial_hard}")
+    print(f"Initial soft violations: {initial_soft}")
 
     final_schedule = initial_schedule
     if not args.skip_optimisation:
@@ -110,8 +122,9 @@ def main() -> None:
         final_schedule = optimise_schedule(initial_schedule, rooms, max_iterations=args.max_iterations)
     final_hard = count_hard_violations(final_schedule)
     final_soft = count_soft_violations(final_schedule)
-    print(f"Hard violations after optimisation: {final_hard}")
-    print(f"Soft violations after optimisation: {final_soft}")
+    _report_schedule_metrics("Final", final_schedule)
+    print(f"Final hard violations (all assignments): {final_hard}")
+    print(f"Final soft violations: {final_soft}")
 
     print("\nExporting files...")
     export_outputs(final_schedule, args.scope)
