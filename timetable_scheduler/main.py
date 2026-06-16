@@ -33,13 +33,26 @@ from optimiser.local_search import optimise_schedule
 from output.exporter import export_schedule, export_violations
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse command-line options for DSC or Engineering-cluster runs."""
     parser = argparse.ArgumentParser(description="SIT timetabling prototype")
     parser.add_argument("--scope", choices=["dsc", "eng"], default="dsc", help="Dataset scope to run")
     parser.add_argument("--max-iterations", type=int, default=8, help="Local-search optimisation iterations")
     parser.add_argument("--skip-optimisation", action="store_true", help="Generate only the greedy timetable")
-    return parser.parse_args()
+    parser.add_argument("--max-retry-assignments", type=int, default=None, help="Maximum unscheduled assignments to retry")
+    parser.add_argument("--progress-interval", type=int, default=25, help="Engineering progress update interval")
+    parser.add_argument(
+        "--skip-unscheduled-diagnostics",
+        action="store_true",
+        help="Skip unscheduled diagnostics generation and export",
+    )
+    parser.add_argument(
+        "--max-candidate-patterns",
+        type=int,
+        default=None,
+        help="Maximum room/day/start candidate patterns to check per course",
+    )
+    return parser.parse_args(argv)
 
 
 def load_courses(scope: str, common_modules: set[str]) -> tuple[list[Course], LoaderReport]:
@@ -125,6 +138,9 @@ def main() -> None:
         courses,
         rooms,
         progress_callback=_progress if args.scope == "eng" else None,
+        progress_interval=args.progress_interval,
+        max_retry_assignments=args.max_retry_assignments,
+        max_candidate_patterns=args.max_candidate_patterns,
     )
     annotate_schedule_violations(initial_schedule)
     initial_hard = count_hard_violations(initial_schedule)
@@ -143,10 +159,13 @@ def main() -> None:
     print(f"Final hard violations (all assignments): {final_hard}")
     print(f"Final soft violations: {final_soft}")
 
-    unscheduled_report = diagnose_unscheduled_assignments(final_schedule, rooms)
-    _print_unscheduled_reason_summary(unscheduled_report)
-    export_unscheduled_diagnostics(unscheduled_report, DEFAULT_UNSCHEDULED_DIAGNOSTICS_FILE)
-    print(f"Saved: {DEFAULT_UNSCHEDULED_DIAGNOSTICS_FILE}")
+    if args.skip_unscheduled_diagnostics:
+        print("Skipped unscheduled diagnostics.")
+    else:
+        unscheduled_report = diagnose_unscheduled_assignments(final_schedule, rooms)
+        _print_unscheduled_reason_summary(unscheduled_report)
+        export_unscheduled_diagnostics(unscheduled_report, DEFAULT_UNSCHEDULED_DIAGNOSTICS_FILE)
+        print(f"Saved: {DEFAULT_UNSCHEDULED_DIAGNOSTICS_FILE}")
 
     print("\nExporting files...")
     export_outputs(final_schedule, args.scope)

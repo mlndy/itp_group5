@@ -12,6 +12,8 @@ from config import BLOCKED_WEEKS, LUNCH_BLOCKS, MIN_ROOM_UTILISATION, VALID_DAYS
 from data.models import Assignment, Course, Room, TimeSlot
 from engine.constraint_checker import check_hard_constraints, course_groups, is_online_course, occupied_start_times
 
+MAX_CANDIDATE_PATTERN_LIMIT_REASON = "Stopped after max candidate pattern limit for Engineering demo run"
+
 
 @dataclass(slots=True)
 class ScheduleIndex:
@@ -263,7 +265,23 @@ def _validate_candidate_pattern(candidates: list[Assignment], existing: list[Ass
     return True
 
 
-def schedule_course(course: Course, rooms: list[Room], existing: list[Assignment], index: ScheduleIndex) -> list[Assignment]:
+def _reached_candidate_limit(checked: int, max_candidate_patterns: int | None) -> bool:
+    """Return True when the optional candidate-pattern cap has been reached."""
+    return max_candidate_patterns is not None and checked >= max_candidate_patterns
+
+
+def _candidate_limit_assignment(course: Course) -> Assignment:
+    """Return an unscheduled placeholder for a demo candidate-pattern cap."""
+    return Assignment(course=course, room=None, timeslot=None, hard_violations=[MAX_CANDIDATE_PATTERN_LIMIT_REASON])
+
+
+def schedule_course(
+    course: Course,
+    rooms: list[Room],
+    existing: list[Assignment],
+    index: ScheduleIndex,
+    max_candidate_patterns: int | None = None,
+) -> list[Assignment]:
     """Schedule one course using a consistent weekly room/day/start pattern."""
     if not schedulable_weeks(course.teaching_weeks):
         return [
@@ -274,9 +292,13 @@ def schedule_course(course: Course, rooms: list[Room], existing: list[Assignment
                 hard_violations=["No schedulable teaching weeks after academic calendar blocks"],
             )
         ]
+    checked_patterns = 0
     for room in get_candidate_rooms(course, rooms):
         for day in VALID_DAYS:
             for start_time in VALID_START_TIMES:
+                if _reached_candidate_limit(checked_patterns, max_candidate_patterns):
+                    return [_candidate_limit_assignment(course)]
+                checked_patterns += 1
                 candidates = make_weekly_assignments(course, room, day, start_time)
                 if can_place_assignments(candidates, index) and _validate_candidate_pattern(candidates, existing):
                     return candidates
@@ -289,6 +311,7 @@ def schedule_course_for_weeks(
     rooms: list[Room],
     existing: list[Assignment],
     index: ScheduleIndex,
+    max_candidate_patterns: int | None = None,
 ) -> list[Assignment]:
     """Place selected teaching weeks independently without moving existing classes."""
     weeks_to_schedule = schedulable_weeks(weeks)
@@ -305,11 +328,16 @@ def schedule_course_for_weeks(
     placed: list[Assignment] = []
     staged = existing.copy()
     staged_index = index.copy()
+    checked_patterns = 0
     for week in weeks_to_schedule:
         found: Assignment | None = None
         for room in get_candidate_rooms(course, rooms):
             for day in VALID_DAYS:
                 for start_time in VALID_START_TIMES:
+                    if _reached_candidate_limit(checked_patterns, max_candidate_patterns):
+                        placed.append(_candidate_limit_assignment(course))
+                        return placed
+                    checked_patterns += 1
                     candidate = Assignment(course=course, room=room, timeslot=TimeSlot(day, start_time, week))
                     if _candidate_precheck(candidate, staged_index):
                         continue
@@ -355,12 +383,22 @@ def _retry_unscheduled_assignment(
     existing: list[Assignment],
     index: ScheduleIndex,
     allow_weekly_fallback: bool,
+    max_candidate_patterns: int | None = None,
 ) -> list[Assignment]:
     """Retry one unscheduled assignment without moving already scheduled ones."""
+    if MAX_CANDIDATE_PATTERN_LIMIT_REASON in assignment.hard_violations:
+        return [assignment]
     if allow_weekly_fallback:
-        retry = schedule_course_for_weeks(assignment.course, _target_retry_weeks(assignment), rooms, existing, index)
+        retry = schedule_course_for_weeks(
+            assignment.course,
+            _target_retry_weeks(assignment),
+            rooms,
+            existing,
+            index,
+            max_candidate_patterns=max_candidate_patterns,
+        )
     else:
-        retry = schedule_course(assignment.course, rooms, existing, index)
+        retry = schedule_course(assignment.course, rooms, existing, index, max_candidate_patterns=max_candidate_patterns)
     if any(not _is_unscheduled(item) for item in retry):
         return retry
     return [assignment]
@@ -372,6 +410,7 @@ def retry_unscheduled_assignments(
     index: ScheduleIndex,
     allow_weekly_fallback: bool = True,
     max_retry_assignments: int | None = None,
+    max_candidate_patterns: int | None = None,
 ) -> list[Assignment]:
     """Retry only unscheduled assignments after the greedy pass has finished."""
     scheduled = [assignment for assignment in assignments if not _is_unscheduled(assignment)]
@@ -386,7 +425,14 @@ def retry_unscheduled_assignments(
 
     results: list[Assignment] = list(scheduled)
     for placeholder in retry_now:
-        placed = _retry_unscheduled_assignment(placeholder, rooms, results, index, allow_weekly_fallback)
+        placed = _retry_unscheduled_assignment(
+            placeholder,
+            rooms,
+            results,
+            index,
+            allow_weekly_fallback,
+            max_candidate_patterns=max_candidate_patterns,
+        )
         results.extend(placed)
         for item in placed:
             if not _is_unscheduled(item):
@@ -405,6 +451,7 @@ def generate_schedule(
     progress_callback: ProgressCallback | None = None,
     progress_interval: int = 25,
     max_retry_assignments: int | None = None,
+    max_candidate_patterns: int | None = None,
 ) -> list[Assignment]:
     """Generate a complete greedy timetable with common modules merged first."""
     assignments: list[Assignment] = []
@@ -417,9 +464,17 @@ def generate_schedule(
         if progress_callback and (position == 1 or position == total or progress_interval <= 1 or position % progress_interval == 0):
             progress_callback(position, total, course)
 
-        placed = schedule_course(course, rooms, assignments, index)
-        if allow_weekly_fallback and placed and placed[0].hard_violations:
-            placed = schedule_course_by_week(course, rooms, assignments, index)
+        placed = schedule_course(course, rooms, assignments, index, max_candidate_patterns=max_candidate_patterns)
+        stopped_by_limit = placed and MAX_CANDIDATE_PATTERN_LIMIT_REASON in placed[0].hard_violations
+        if allow_weekly_fallback and placed and placed[0].hard_violations and not stopped_by_limit:
+            placed = schedule_course_for_weeks(
+                course,
+                course.teaching_weeks,
+                rooms,
+                assignments,
+                index,
+                max_candidate_patterns=max_candidate_patterns,
+            )
         assignments.extend(placed)
         for assignment in placed:
             if assignment.room is not None and assignment.timeslot is not None and not assignment.hard_violations:
@@ -431,4 +486,5 @@ def generate_schedule(
         index,
         allow_weekly_fallback=allow_weekly_fallback,
         max_retry_assignments=max_retry_assignments,
+        max_candidate_patterns=max_candidate_patterns,
     )

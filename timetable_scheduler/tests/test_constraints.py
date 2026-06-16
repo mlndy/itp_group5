@@ -522,3 +522,18 @@ def test_retry_pass_keeps_unscheduled_assignments_reported_separately(monkeypatc
     assert unscheduled[0].room is None
     assert unscheduled[0].timeslot is None
     assert unscheduled[0].hard_violations
+
+
+def test_max_candidate_patterns_can_leave_course_unscheduled() -> None:
+    """A demo candidate-pattern cap should stop search and leave the course unscheduled."""
+    from generator import scheduler
+
+    course = make_course(module_code="DSC5501")
+    rooms = [Room("R1", 100, "physical")]
+
+    schedule = scheduler.generate_schedule([course], rooms, max_candidate_patterns=0)
+
+    assert len(schedule) == 1
+    assert schedule[0].room is None
+    assert schedule[0].timeslot is None
+    assert scheduler.MAX_CANDIDATE_PATTERN_LIMIT_REASON in schedule[0].hard_violations
