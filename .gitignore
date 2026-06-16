@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+timetable_scheduler/generated/
+timetable_scheduler/output_files/
