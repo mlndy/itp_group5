@@ -1,168 +1,148 @@
-# AGENTS.md — DSC2204 ITP Timetabling Project
+Read AGENTS.md first.
 
-## Project overview
+Task: Step 0 update AGENTS.md, then implement Engineering cluster scheduling readiness.
 
-This repository contains a Python prototype for the DSC2204 Integrative Team Project.
+Important priority update:
+Put scenario comparison and extra innovation on hold.
 
-Project title: **Timetabling System for SIT Engineering Cluster**
+The final product must focus on creating a usable timetabling schedule for the Engineering cluster, including DSC.
 
-The system reads Excel-based input data, models courses/rooms/timeslots, generates a feasible timetable, checks hard and soft constraints, applies optional optimisation, and exports results back to Excel.
+Step 0 — Update AGENTS.md first
 
-The project should be treated as an operations and supply chain resource-allocation prototype, not just a programming exercise.
+Before changing code, update AGENTS.md to reflect this current priority:
 
-## Current project stage
+* Current phase: Engineering Cluster Schedule Completion
+* Main deliverable: generate a usable Engineering cluster timetable, including DSC
+* DSC-only mode remains useful for testing, but Engineering scope is the final target
+* Hard violations on scheduled assignments must remain 0
+* Unscheduled assignments must not be hidden
+* If full scheduling is not possible, the system must clearly report what remains unscheduled and why
+* Scenario comparison / what-if analysis is on hold
+* Do not add extra innovation features until Engineering scheduling readiness is stronger
+* Preflight report and run summary report now exist and should be preserved
+* Normal validation command is:
+  py -m pytest -q
+* Engineering final test command should use:
+  py main.py --scope eng --skip-optimisation --max-candidate-patterns 300 --max-retry-assignments 50 --skip-unscheduled-diagnostics --progress-interval 25
 
-The core prototype is complete.
+After updating AGENTS.md, continue with the implementation below.
 
-Completed stages:
+Current validated state:
 
-1. Data modelling and Excel loading
-2. Constraint checker
-3. Greedy schedule generator
-4. Local search optimiser
-5. Excel exporter and full pipeline
-6. Engineering controlled demo safety controls
+* Tests pass: 54 passed.
+* DSC mode works.
+* Engineering controlled demo works.
+* Previous Engineering controlled demo result:
 
-Current validated result:
+  * Scheduled assignments: 2093
+  * Unscheduled assignments: 307
+  * Hard violations on scheduled assignments: 0
+* Preflight validation exists.
+* Run summary export exists.
+* Scheduling behaviour must remain hard-constraint safe.
 
-* Tests: `47 passed`
-* DSC demo: runs successfully with `0` hard violations on scheduled assignments
-* Engineering controlled demo: runs successfully
-* Engineering controlled demo output:
+Goal:
+Make Engineering scope the primary final deliverable.
 
-  * Scheduled assignments: `2093`
-  * Unscheduled assignments: `307`
-  * Hard violations on scheduled assignments: `0`
+Requirements:
 
-The next stage is demo, documentation, and report readiness.
+1. Confirm that --scope eng includes DSC data/modules.
+2. Improve Engineering scheduling coverage where safely possible.
+3. Keep hard violations on scheduled assignments at 0.
+4. Do not hide unscheduled assignments.
+5. If some assignments cannot be scheduled, produce clear reasons in the run summary/preflight/unscheduled reports.
+6. Do not add scenario comparison yet.
 
-## Coding rules
+Rules:
 
-Follow these rules for all future code changes:
+* Do not weaken hard constraints.
+* Do not redefine dataclasses.
+* Do not change existing Excel timetable output format unless required for report clarity.
+* Do not force invalid assignments into the timetable.
+* Keep functions small with type hints and short docstrings.
+* Add tests for new behaviour.
 
-* Use Python with type hints.
-* Keep functions small and single-purpose.
-* Add short docstrings for new functions.
-* Use existing dataclasses from `data/models.py`.
-* Do not redefine `Course`, `Room`, `TimeSlot`, or `Assignment`.
-* Use constants from `config.py`; do not hardcode timetable rules.
-* Do not change Excel output formats unless explicitly requested.
-* Do not rename existing public functions unless tests and call sites are updated.
-* Avoid broad rewrites. Make small, reviewable changes.
+Investigate first:
 
-## Hard constraint rule
+1. Run Engineering with:
+   py main.py --scope eng --skip-optimisation --max-candidate-patterns 150 --max-retry-assignments 20 --skip-unscheduled-diagnostics --progress-interval 25
 
-Hard constraints must never be weakened.
+2. Inspect generated/run_summary.xlsx.
 
-The scheduler and optimiser must never accept scheduled assignments with hard violations.
+3. Identify why assignments remain unscheduled.
 
-If a class cannot be scheduled safely, leave it unscheduled and report the reason. Do not force invalid assignments into the timetable.
+4. Check whether unscheduled assignments are mainly due to:
 
-This framing is important for the final presentation:
+   * candidate-pattern demo limit
+   * room capacity
+   * delivery mode / virtual room mismatch
+   * blocked timeslots
+   * common module grouping
+   * tutor clashes
+   * student group clashes
 
-> The prototype prioritises feasibility. It schedules only assignments that satisfy all hard constraints and leaves the remaining classes unscheduled instead of hiding conflicts.
+Implementation focus:
+Prioritise safe improvements that increase Engineering scheduled coverage without changing the meaning of constraints.
 
-## Important commands
+Possible safe improvements:
 
-Run tests from inside the `timetable_scheduler` folder:
+1. Better course ordering:
 
-```powershell
-cd C:\Users\Admin\Documents\GitHub\itp_group5\timetable_scheduler
-py -m pytest -q
-```
+   * Schedule most constrained courses first.
+   * Prioritise common modules, larger class sizes, fewer suitable rooms, longer durations, and fewer teaching weeks.
 
-Expected result:
+2. Better room ordering:
 
-```text
-47 passed
-```
+   * Prefer rooms that fit capacity closely.
+   * Avoid using very large rooms for small classes if smaller suitable rooms exist.
+   * Keep virtual rooms for online classes only.
 
-Run DSC demo:
+3. Candidate filtering:
 
-```powershell
-py main.py --scope dsc --max-iterations 2
-```
+   * Pre-filter rooms by delivery mode and capacity before checking timeslots.
+   * Avoid checking impossible candidates repeatedly.
 
-Expected key result:
+4. Candidate limit reporting:
 
-```text
-Final hard violations on scheduled assignments: 0
-```
+   * If max_candidate_patterns stops a course, make the reason clear in run_summary.xlsx.
 
-Run Engineering controlled demo:
+5. Engineering evidence:
+   Ensure run_summary.xlsx clearly shows:
 
-```powershell
-py main.py --scope eng --skip-optimisation --max-candidate-patterns 150 --max-retry-assignments 20 --skip-unscheduled-diagnostics --progress-interval 25
-```
-
-Expected key result:
-
-```text
-Hard violations on scheduled Engineering assignments: 0
-```
-
-Scheduled and unscheduled counts may vary slightly after future changes, but scheduled hard violations must remain `0`.
-
-## Generated files
-
-Running the prototype may create:
-
-```text
-timetable_scheduler/generated/
-timetable_scheduler/output_files/
-```
-
-These folders are generated outputs and must not be committed unless explicitly requested.
-
-Also do not commit:
-
-```text
-.venv/
-__pycache__/
-.pytest_cache/
-*.pyc
-```
-
-Input Excel files required by the prototype should not be ignored or deleted.
-
-## Workflow rules
-
-Before merging any branch:
-
-1. Run `py -m pytest -q`
-2. Run the DSC demo command
-3. Run the Engineering controlled demo command
-4. Confirm scheduled hard violations are `0`
-5. Check `git status --short`
-6. Ensure generated output folders are not staged
-7. Review `git diff`
-
-Do not merge if tests fail or scheduled hard violations are introduced.
-
-## Report and presentation framing
-
-Use this framing in documentation and presentation:
-
-* The problem is a real-world academic timetabling problem.
-* The system models rooms, tutors, student groups, time slots, and course requirements.
-* Hard constraints are treated as non-negotiable.
-* Soft constraints are treated as quality improvements.
-* The prototype is transparent: unresolved classes remain unscheduled and visible.
-* Engineering mode is controlled with demo safety limits to avoid excessive search time.
-* Unscheduled classes are not hidden; they represent cases requiring more search time, better input data, more rooms, or manual review.
-
-Important phrasing:
-
-> In Engineering controlled demo mode, the system scheduled 2,093 assignments with 0 hard violations on scheduled assignments. 307 assignments were intentionally left unscheduled because the system refuses to force invalid allocations into the timetable.
-
-## Do not do unless explicitly requested
+   * total scheduled
+   * total unscheduled
+   * hard violations on scheduled assignments
+   * unscheduled reason breakdown
+   * programme breakdown, including DSC if available from current data
 
 Do not:
 
-* Replace the greedy scheduler with a completely new algorithm.
-* Add OR-Tools or other heavy solver dependencies.
-* Change the dataclasses.
-* Change Template 2 output structure.
-* Commit generated Excel outputs.
-* Hide unscheduled assignments.
-* Count unscheduled assignments as successful scheduled classes.
+* Add OR-Tools.
+* Replace the whole scheduler.
+* Add web app/UI.
+* Add scenario comparison.
+* Remove existing demo safety controls.
+* Count unscheduled assignments as scheduled.
+* Suppress unscheduled reasons.
+
+Add/update tests:
+
+* Engineering scope includes DSC indicator, or programme summary includes DSC if this is available from current data.
+* Course ordering prioritises more constrained courses.
+* Room ordering prefers closest suitable capacity.
+* Candidate-limit unscheduled reason appears in run summary.
+* Existing tests still pass.
+
+Run:
+py -m pytest -q
+
+Then test:
+py main.py --scope eng --skip-optimisation --max-candidate-patterns 300 --max-retry-assignments 50 --skip-unscheduled-diagnostics --progress-interval 25
+
+Expected:
+
+* Tests pass.
+* Engineering run completes.
+* Hard violations on scheduled assignments remain 0.
+* Scheduled assignment count should be equal to or higher than the previous 2093 if possible.
+* run_summary.xlsx explains any remaining unscheduled assignments.
