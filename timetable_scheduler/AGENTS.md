@@ -1,197 +1,168 @@
-# AGENTS.md
+# AGENTS.md — DSC2204 ITP Timetabling Project
 
-## Project
+## Project overview
 
-DSC2204 ITP — Timetabling System for SIT Engineering Cluster.
+This repository contains a Python prototype for the DSC2204 Integrative Team Project.
 
-This is an academic timetabling prototype. Treat it as an operations/resource-allocation decision-support system, not just a coding task.
+Project title: **Timetabling System for SIT Engineering Cluster**
 
-## Core Architecture
+The system reads Excel-based input data, models courses/rooms/timeslots, generates a feasible timetable, checks hard and soft constraints, applies optional optimisation, and exports results back to Excel.
 
-Keep this pipeline:
+The project should be treated as an operations and supply chain resource-allocation prototype, not just a programming exercise.
 
-```text
-Loader → Dataclasses → Constraint Engine → Greedy Scheduler → Local Search Optimiser → Excel Exporter → Diagnostics
+## Current project stage
+
+The core prototype is complete.
+
+Completed stages:
+
+1. Data modelling and Excel loading
+2. Constraint checker
+3. Greedy schedule generator
+4. Local search optimiser
+5. Excel exporter and full pipeline
+6. Engineering controlled demo safety controls
+
+Current validated result:
+
+* Tests: `47 passed`
+* DSC demo: runs successfully with `0` hard violations on scheduled assignments
+* Engineering controlled demo: runs successfully
+* Engineering controlled demo output:
+
+  * Scheduled assignments: `2093`
+  * Unscheduled assignments: `307`
+  * Hard violations on scheduled assignments: `0`
+
+The next stage is demo, documentation, and report readiness.
+
+## Coding rules
+
+Follow these rules for all future code changes:
+
+* Use Python with type hints.
+* Keep functions small and single-purpose.
+* Add short docstrings for new functions.
+* Use existing dataclasses from `data/models.py`.
+* Do not redefine `Course`, `Room`, `TimeSlot`, or `Assignment`.
+* Use constants from `config.py`; do not hardcode timetable rules.
+* Do not change Excel output formats unless explicitly requested.
+* Do not rename existing public functions unless tests and call sites are updated.
+* Avoid broad rewrites. Make small, reviewable changes.
+
+## Hard constraint rule
+
+Hard constraints must never be weakened.
+
+The scheduler and optimiser must never accept scheduled assignments with hard violations.
+
+If a class cannot be scheduled safely, leave it unscheduled and report the reason. Do not force invalid assignments into the timetable.
+
+This framing is important for the final presentation:
+
+> The prototype prioritises feasibility. It schedules only assignments that satisfy all hard constraints and leaves the remaining classes unscheduled instead of hiding conflicts.
+
+## Important commands
+
+Run tests from inside the `timetable_scheduler` folder:
+
+```powershell
+cd C:\Users\Admin\Documents\GitHub\itp_group5\timetable_scheduler
+py -m pytest -q
 ```
 
-Do not rewrite the architecture unless explicitly instructed.
-
-## Current Milestone
-
-The current focus is given in the user’s milestone prompt.
-
-Only work on the milestone requested. Do not mix unrelated changes.
-
-## Repository Inspection Policy
-
-Always read this file first.
-
-Then start with only the paths listed in the milestone prompt.
-
-Do not scan the whole repository by default.
-
-You may inspect additional files if needed for correctness, architecture consistency, tests, imports, or debugging. If you do, mention why in your summary.
-
-Correctness is more important than token saving.
-
-## Hard Rule
-
-The scheduler and optimiser must never knowingly accept a scheduled assignment with hard violations.
-
-If a class cannot be scheduled without breaking hard constraints, keep it unscheduled and report the reason clearly.
-
-## Hard Constraints
-
-Always preserve these:
+Expected result:
 
 ```text
-No room clash
-No tutor clash
-No student group clash
-Room capacity >= enrolment
-ONLINE uses virtual room only
-F2F does not use virtual room
-ODD courses run only on odd weeks
-EVEN courses run only on even weeks
-No public holiday / term break weeks
-No classes before 09:00 or after 18:00
-No Wednesday from 13:00
-No Friday 12:00-14:00
-No Friday after 17:00
-No Saturday
-Each group needs at least 1 free lunch hour between 11:00 and 14:00
+47 passed
 ```
 
-Do not weaken hard constraints.
+Run DSC demo:
 
-## Soft Constraints
+```powershell
+py main.py --scope dsc --max-iterations 2
+```
 
-Optimise these only when hard constraints remain valid:
+Expected key result:
 
 ```text
-Avoid Online/F2F adjacent switches
-Avoid tutor idle gaps > 2 hours
-Avoid long group consecutive teaching hours
-Cluster tutor classes
-Prefer room utilisation >= 60%
-Avoid first/last slots where possible
-Prefer classes ending by 17:00
+Final hard violations on scheduled assignments: 0
 ```
 
-## Common Modules
+Run Engineering controlled demo:
 
-Common modules shared by multiple cohorts must be scheduled at the same time.
+```powershell
+py main.py --scope eng --skip-optimisation --max-candidate-patterns 150 --max-retry-assignments 20 --skip-unscheduled-diagnostics --progress-interval 25
+```
 
-Use combined enrolment.
-
-Do not split common-module cohorts unless the data explicitly states a special request.
-
-## Engineering Mode
-
-Engineering mode may have unscheduled assignments.
-
-This is acceptable only if:
+Expected key result:
 
 ```text
-Scheduled assignments have 0 hard violations
-Unscheduled assignments are reported separately
-Reasons are diagnosed clearly
+Hard violations on scheduled Engineering assignments: 0
 ```
 
-Do not hide unscheduled assignments.
+Scheduled and unscheduled counts may vary slightly after future changes, but scheduled hard violations must remain `0`.
 
-Do not assign fake rooms or fake timeslots.
+## Generated files
 
-## Generated Files
-
-Do not commit generated runtime files.
-
-These should remain ignored:
+Running the prototype may create:
 
 ```text
 timetable_scheduler/generated/
 timetable_scheduler/output_files/
 ```
 
-## Testing
+These folders are generated outputs and must not be committed unless explicitly requested.
 
-Before finishing a milestone, run:
-
-```bash
-python main.py
-python -m pytest
-```
-
-For Engineering-related milestones, also run:
-
-```bash
-python main.py --scope eng --skip-optimisation
-```
-
-On Windows, the user may run:
-
-```bash
-py main.py
-py -m pytest
-py main.py --scope eng --skip-optimisation
-```
-
-The `openpyxl` data validation warning is acceptable.
-
-## Branch Workflow
-
-For each milestone:
+Also do not commit:
 
 ```text
-Create a branch
-Modify only relevant files
-Run tests
-Summarise files changed
-Report test results
-Report remaining risks
-Do not merge automatically
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
 ```
 
-## Completion Standard
+Input Excel files required by the prototype should not be ignored or deleted.
 
-A milestone is complete only when:
+## Workflow rules
 
-```text
-Relevant tests pass
-DSC mode still runs
-Scheduled DSC assignments have 0 hard violations
-Engineering-related milestones run Engineering mode
-Scheduled Engineering assignments have 0 hard violations
-Generated files are not committed
-Risks are stated honestly
-```
+Before merging any branch:
 
-## Current Milestone
+1. Run `py -m pytest -q`
+2. Run the DSC demo command
+3. Run the Engineering controlled demo command
+4. Confirm scheduled hard violations are `0`
+5. Check `git status --short`
+6. Ensure generated output folders are not staged
+7. Review `git diff`
 
-Current focus:
+Do not merge if tests fail or scheduled hard violations are introduced.
 
-```text
-Milestone 5: Optimiser tuning and soft-score improvement
+## Report and presentation framing
 
-Key rule:
+Use this framing in documentation and presentation:
 
-```text
-Room1 must contain the assigned room ID from assignment.room.room_id.
-```
+* The problem is a real-world academic timetabling problem.
+* The system models rooms, tutors, student groups, time slots, and course requirements.
+* Hard constraints are treated as non-negotiable.
+* Soft constraints are treated as quality improvements.
+* The prototype is transparent: unresolved classes remain unscheduled and visible.
+* Engineering mode is controlled with demo safety limits to avoid excessive search time.
+* Unscheduled classes are not hidden; they represent cases requiring more search time, better input data, more rooms, or manual review.
 
-Milestone 4 must not modify scheduler, optimiser, loader, diagnostics, or constraint logic unless strictly required for export compatibility.
+Important phrasing:
 
-Start with these files only:
+> In Engineering controlled demo mode, the system scheduled 2,093 assignments with 0 hard violations on scheduled assignments. 307 assignments were intentionally left unscheduled because the system refuses to force invalid allocations into the timetable.
 
-```text
-timetable_scheduler/output/exporter.py
-timetable_scheduler/config.py
-timetable_scheduler/main.py
-timetable_scheduler/data/models.py
-timetable_scheduler/tests/
-timetable_scheduler/input/Upload template_System (Template 2).xlsx
-```
+## Do not do unless explicitly requested
 
-If additional files are needed, explain why before inspecting them.
+Do not:
 
-Generated Excel output files must not be committed.
+* Replace the greedy scheduler with a completely new algorithm.
+* Add OR-Tools or other heavy solver dependencies.
+* Change the dataclasses.
+* Change Template 2 output structure.
+* Commit generated Excel outputs.
+* Hide unscheduled assignments.
+* Count unscheduled assignments as successful scheduled classes.
