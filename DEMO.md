@@ -63,13 +63,24 @@ Expected Engineering result:
 
 Unscheduled assignments are intentionally reported, not hidden. They represent classes that could not be placed safely within the controlled demo search limits, input data, room availability, or current scheduling strategy.
 
+## Engineering Final Command
+
+For the final Engineering cluster schedule, use the higher-coverage controlled command:
+
+```powershell
+cd C:\Users\Admin\Documents\GitHub\itp_group5\timetable_scheduler
+py main.py --scope eng --skip-optimisation --max-candidate-patterns 300 --max-retry-assignments 50 --skip-unscheduled-diagnostics --progress-interval 25
+```
+
+This keeps the hard-constraint safety rule while allowing a wider candidate search and retry pass than the shorter demo command.
+
 ## Stakeholder Reports
 
 Running the pipeline creates additional decision-support workbooks in `timetable_scheduler/generated/`.
 
 `preflight_report.xlsx` lists input data issues found before scheduling, such as invalid class sizes, missing teaching weeks, delivery-mode concerns, or room capacity problems. These checks do not block scheduling; they help explain input risks before reviewing the timetable.
 
-`run_summary.xlsx` summarises the completed run with headline schedule counts, hard and soft violations, unscheduled reasons, and room utilisation. This gives stakeholders a compact view of feasibility, unresolved scheduling demand, and resource use without changing the Template 2 timetable export.
+`run_summary.xlsx` summarises the completed run with headline schedule counts, hard and soft violations, unscheduled reasons, room utilisation, and programme breakdown. The programme breakdown includes a DSC indicator so stakeholders can confirm DSC is part of the Engineering cluster run. This gives stakeholders a compact view of feasibility, unresolved scheduling demand, and resource use without changing the Template 2 timetable export.
 
 ## Troubleshooting
 

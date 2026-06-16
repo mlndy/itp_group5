@@ -7,6 +7,7 @@ from pathlib import Path
 from openpyxl import load_workbook
 
 from data.models import Assignment, Course, Room, TimeSlot
+from generator.scheduler import MAX_CANDIDATE_PATTERN_LIMIT_REASON
 from output.report_exporter import export_preflight_report, export_run_summary
 
 
@@ -75,5 +76,45 @@ def test_export_run_summary_creates_expected_sheets(tmp_path: Path) -> None:
         "Soft Violations",
         "Unscheduled Reasons",
         "Room Utilisation",
+        "Programme Breakdown",
     ]
     assert workbook["Summary"]["A1"].value == "Metric"
+
+
+def test_candidate_limit_reason_appears_in_run_summary(tmp_path: Path) -> None:
+    """Original unscheduled reasons should remain visible in the run summary."""
+    output = tmp_path / "run_summary.xlsx"
+    assignments = [
+        Assignment(
+            course=make_course(),
+            room=None,
+            timeslot=None,
+            hard_violations=[MAX_CANDIDATE_PATTERN_LIMIT_REASON],
+        )
+    ]
+
+    export_run_summary(assignments, output)
+
+    workbook = load_workbook(output)
+    reasons = workbook["Unscheduled Reasons"]
+    assert reasons["A2"].value == MAX_CANDIDATE_PATTERN_LIMIT_REASON
+    assert reasons["B2"].value == 1
+
+
+def test_programme_breakdown_marks_dsc_assignments(tmp_path: Path) -> None:
+    """Engineering evidence should show whether DSC rows are included."""
+    output = tmp_path / "run_summary.xlsx"
+    assignments = [
+        Assignment(
+            course=make_course(module_code="DSC1001", prog_yr="DSC/YR 1", source_file="2510_DSC.xlsx"),
+            room=Room("R1", 100, "physical"),
+            timeslot=TimeSlot("Monday", "09:00", 1),
+        )
+    ]
+
+    export_run_summary(assignments, output)
+
+    workbook = load_workbook(output)
+    breakdown = workbook["Programme Breakdown"]
+    assert breakdown["A2"].value == "DSC/YR 1"
+    assert breakdown["C2"].value == "Yes"

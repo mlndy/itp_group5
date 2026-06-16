@@ -13,6 +13,15 @@ from engine.constraint_checker import annotate_schedule_violations
 
 PREFLIGHT_COLUMNS = ["severity", "entity_type", "entity_id", "issue", "recommendation"]
 VIOLATION_COLUMNS = ["Module", "Activity", "Programme/Year", "Week", "Day", "Start", "Room", "Violation"]
+PROGRAMME_COLUMNS = [
+    "Programme/Year",
+    "Source File",
+    "DSC Indicator",
+    "Assignments",
+    "Scheduled Assignments",
+    "Unscheduled Assignments",
+    "Hard Violations on Scheduled Assignments",
+]
 
 
 def export_preflight_report(issues: list[dict[str, str]], output_path: Path) -> None:
@@ -31,9 +40,18 @@ def export_preflight_report(issues: list[dict[str, str]], output_path: Path) -> 
 
 
 def _snapshot(assignments: list[Assignment]) -> list[Assignment]:
-    """Return an annotated copy of assignments for reporting."""
+    """Return an annotated copy while preserving original unscheduled reasons."""
+    original_unscheduled_reasons = {
+        id(assignment): list(assignment.hard_violations)
+        for assignment in assignments
+        if assignment.room is None or assignment.timeslot is None
+    }
     copied = deepcopy(assignments)
     annotate_schedule_violations(copied)
+    for original, copied_assignment in zip(assignments, copied, strict=False):
+        reasons = original_unscheduled_reasons.get(id(original))
+        if reasons:
+            copied_assignment.hard_violations = reasons
     return copied
 
 
@@ -125,6 +143,43 @@ def _room_utilisation_df(assignments: list[Assignment]) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=["Room", "Scheduled Assignments", "Total Enrolment", "Total Capacity", "Average Utilisation"])
 
 
+def _is_dsc_assignment(assignment: Assignment) -> bool:
+    """Return True when an assignment appears to belong to DSC input or programme data."""
+    course = assignment.course
+    text = " ".join([course.module_code, course.prog_yr, course.source_file]).upper()
+    return "DSC" in text
+
+
+def _programme_breakdown_df(assignments: list[Assignment]) -> pd.DataFrame:
+    """Return scheduled and unscheduled counts by programme/source."""
+    grouped: dict[tuple[str, str], dict[str, object]] = defaultdict(
+        lambda: {
+            "Assignments": 0,
+            "Scheduled Assignments": 0,
+            "Unscheduled Assignments": 0,
+            "Hard Violations on Scheduled Assignments": 0,
+            "DSC Indicator": "No",
+        }
+    )
+    for assignment in assignments:
+        key = (assignment.course.prog_yr, assignment.course.source_file)
+        row = grouped[key]
+        row["Assignments"] = int(row["Assignments"]) + 1
+        if _is_dsc_assignment(assignment):
+            row["DSC Indicator"] = "Yes"
+        if assignment.room is not None and assignment.timeslot is not None:
+            row["Scheduled Assignments"] = int(row["Scheduled Assignments"]) + 1
+            row["Hard Violations on Scheduled Assignments"] = int(row["Hard Violations on Scheduled Assignments"]) + len(assignment.hard_violations)
+        else:
+            row["Unscheduled Assignments"] = int(row["Unscheduled Assignments"]) + 1
+
+    rows = [
+        {"Programme/Year": programme, "Source File": source_file, **values}
+        for (programme, source_file), values in sorted(grouped.items())
+    ]
+    return pd.DataFrame(rows, columns=PROGRAMME_COLUMNS)
+
+
 def export_run_summary(assignments: list[Assignment], output_path: Path) -> None:
     """Export a stakeholder-friendly run summary workbook."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -135,3 +190,4 @@ def export_run_summary(assignments: list[Assignment], output_path: Path) -> None
         _violations_df(snapshot, "soft").to_excel(writer, sheet_name="Soft Violations", index=False)
         _unscheduled_reasons_df(snapshot).to_excel(writer, sheet_name="Unscheduled Reasons", index=False)
         _room_utilisation_df(snapshot).to_excel(writer, sheet_name="Room Utilisation", index=False)
+        _programme_breakdown_df(snapshot).to_excel(writer, sheet_name="Programme Breakdown", index=False)

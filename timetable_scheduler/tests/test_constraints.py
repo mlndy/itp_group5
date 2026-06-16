@@ -315,6 +315,19 @@ def test_room_ordering_prefers_smaller_sufficient_rooms() -> None:
     assert [room.room_id for room in ordered] == ["SMALL", "LARGE"]
 
 
+def test_course_ordering_prioritises_more_constrained_courses() -> None:
+    """Course difficulty should put larger courses with fewer suitable rooms first."""
+    from generator.scheduler import _course_difficulty
+
+    rooms = [Room("SMALL", 40, "physical"), Room("LARGE", 100, "physical")]
+    constrained = make_course(module_code="DSC6010", class_size=60)
+    flexible = make_course(module_code="DSC6020", class_size=30)
+
+    ordered = sorted([flexible, constrained], key=lambda course: _course_difficulty(course, rooms))
+
+    assert ordered[0].module_code == "DSC6010"
+
+
 def test_engineering_candidate_generation_excludes_blocked_weeks(monkeypatch) -> None:
     """Engineering candidate generation should skip blocked weeks before search."""
     from generator import scheduler

@@ -94,6 +94,24 @@ def _print_unscheduled_reason_summary(report: UnscheduledDiagnosticsReport) -> N
         print(f"  {reason}: {count}")
 
 
+def _snapshot_unscheduled_reasons(assignments: list) -> dict[int, list[str]]:
+    """Capture existing unscheduled reasons before metric annotation."""
+    return {
+        id(assignment): list(assignment.hard_violations)
+        for assignment in assignments
+        if (assignment.room is None or assignment.timeslot is None) and assignment.hard_violations
+    }
+
+
+def _restore_unscheduled_reasons(assignments: list, reasons: dict[int, list[str]]) -> None:
+    """Restore scheduler-provided unscheduled reasons after metric annotation."""
+    for assignment in assignments:
+        if assignment.room is None or assignment.timeslot is None:
+            original = reasons.get(id(assignment))
+            if original:
+                assignment.hard_violations = original
+
+
 def export_outputs(assignments: list, scope: str) -> None:
     """Export timetable and violation reports for the selected scope."""
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -155,9 +173,11 @@ def main() -> None:
         max_retry_assignments=args.max_retry_assignments,
         max_candidate_patterns=args.max_candidate_patterns,
     )
+    initial_unscheduled_reasons = _snapshot_unscheduled_reasons(initial_schedule)
     annotate_schedule_violations(initial_schedule)
     initial_hard = count_hard_violations(initial_schedule)
     initial_soft = count_soft_violations(initial_schedule)
+    _restore_unscheduled_reasons(initial_schedule, initial_unscheduled_reasons)
     _report_schedule_metrics("Initial", initial_schedule)
     print(f"Initial hard violations (all assignments): {initial_hard}")
     print(f"Initial soft violations: {initial_soft}")
@@ -166,8 +186,10 @@ def main() -> None:
     if not args.skip_optimisation:
         print("\nOptimising schedule...")
         final_schedule = optimise_schedule(initial_schedule, rooms, max_iterations=args.max_iterations)
+    final_unscheduled_reasons = _snapshot_unscheduled_reasons(final_schedule)
     final_hard = count_hard_violations(final_schedule)
     final_soft = count_soft_violations(final_schedule)
+    _restore_unscheduled_reasons(final_schedule, final_unscheduled_reasons)
     _report_schedule_metrics("Final", final_schedule)
     print(f"Final hard violations (all assignments): {final_hard}")
     print(f"Final soft violations: {final_soft}")
