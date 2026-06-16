@@ -63,6 +63,14 @@ Expected Engineering result:
 
 Unscheduled assignments are intentionally reported, not hidden. They represent classes that could not be placed safely within the controlled demo search limits, input data, room availability, or current scheduling strategy.
 
+## Stakeholder Reports
+
+Running the pipeline creates additional decision-support workbooks in `timetable_scheduler/generated/`.
+
+`preflight_report.xlsx` lists input data issues found before scheduling, such as invalid class sizes, missing teaching weeks, delivery-mode concerns, or room capacity problems. These checks do not block scheduling; they help explain input risks before reviewing the timetable.
+
+`run_summary.xlsx` summarises the completed run with headline schedule counts, hard and soft violations, unscheduled reasons, and room utilisation. This gives stakeholders a compact view of feasibility, unresolved scheduling demand, and resource use without changing the Template 2 timetable export.
+
 ## Troubleshooting
 
 - Activate the virtual environment before running commands:

@@ -9,8 +9,10 @@ from config import (
     DEFAULT_COURSE_FILE,
     DEFAULT_ENGINEERING_FOLDER,
     DEFAULT_LOADER_REPORT_FILE,
+    DEFAULT_PREFLIGHT_REPORT_FILE,
     DEFAULT_UNSCHEDULED_DIAGNOSTICS_FILE,
     DEFAULT_ROOM_FILE,
+    DEFAULT_RUN_SUMMARY_FILE,
     OUTPUT_DIR,
 )
 from data.loader import (
@@ -23,6 +25,7 @@ from data.loader import (
 )
 from data.models import Course
 from engine.constraint_checker import annotate_schedule_violations, count_hard_violations, count_soft_violations
+from engine.preflight_validator import run_preflight_checks
 from engine.unscheduled_diagnostics import (
     UnscheduledDiagnosticsReport,
     diagnose_unscheduled_assignments,
@@ -31,6 +34,7 @@ from engine.unscheduled_diagnostics import (
 from generator.scheduler import generate_schedule
 from optimiser.local_search import optimise_schedule
 from output.exporter import export_schedule, export_violations
+from output.report_exporter import export_preflight_report, export_run_summary
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -52,6 +56,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Maximum room/day/start candidate patterns to check per course",
     )
+    parser.add_argument("--skip-preflight", action="store_true", help="Skip input preflight validation report")
     return parser.parse_args(argv)
 
 
@@ -128,6 +133,14 @@ def main() -> None:
                 f"{workbook.status} - {workbook.reason}{missing}"
             )
 
+    if args.skip_preflight:
+        print("Skipped preflight validation.")
+    else:
+        preflight_issues = run_preflight_checks(courses, rooms)
+        export_preflight_report(preflight_issues, DEFAULT_PREFLIGHT_REPORT_FILE)
+        print(f"Preflight issues: {len(preflight_issues)}")
+        print(f"Saved: {DEFAULT_PREFLIGHT_REPORT_FILE}")
+
     print("\nGenerating initial schedule...")
 
     def _progress(position: int, total: int, course: Course) -> None:
@@ -158,6 +171,9 @@ def main() -> None:
     _report_schedule_metrics("Final", final_schedule)
     print(f"Final hard violations (all assignments): {final_hard}")
     print(f"Final soft violations: {final_soft}")
+
+    export_run_summary(final_schedule, DEFAULT_RUN_SUMMARY_FILE)
+    print(f"Saved: {DEFAULT_RUN_SUMMARY_FILE}")
 
     if args.skip_unscheduled_diagnostics:
         print("Skipped unscheduled diagnostics.")

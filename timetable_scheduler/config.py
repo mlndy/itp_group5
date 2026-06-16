@@ -16,6 +16,8 @@ DEFAULT_COMMON_MODULE_FILE = INPUT_DIR / "Common Modules(Sheet1).csv"
 DEFAULT_TEMPLATE2_FILE = INPUT_DIR / "Upload template_System (Template 2).xlsx"
 DEFAULT_LOADER_REPORT_FILE = GENERATED_DIR / "loader_report.xlsx"
 DEFAULT_UNSCHEDULED_DIAGNOSTICS_FILE = GENERATED_DIR / "unscheduled_diagnostics.xlsx"
+DEFAULT_PREFLIGHT_REPORT_FILE = GENERATED_DIR / "preflight_report.xlsx"
+DEFAULT_RUN_SUMMARY_FILE = GENERATED_DIR / "run_summary.xlsx"
 
 VALID_DAYS: list[str] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
 DAY_ABBREVIATIONS: dict[str, str] = {

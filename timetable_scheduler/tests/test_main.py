@@ -36,10 +36,13 @@ def _stub_pipeline(monkeypatch, generated: list[Assignment]) -> None:
     monkeypatch.setattr(app, "load_courses", lambda scope, common_modules: ([course], LoaderReport()))
     monkeypatch.setattr(app, "load_rooms_from_csv", lambda path: rooms)
     monkeypatch.setattr(app, "export_loader_report", lambda report, output_path: None)
+    monkeypatch.setattr(app, "run_preflight_checks", lambda courses, rooms: [])
+    monkeypatch.setattr(app, "export_preflight_report", lambda issues, output_path: None)
     monkeypatch.setattr(app, "annotate_schedule_violations", lambda assignments: assignments)
     monkeypatch.setattr(app, "count_hard_violations", lambda assignments: 0)
     monkeypatch.setattr(app, "count_soft_violations", lambda assignments: 0)
     monkeypatch.setattr(app, "optimise_schedule", lambda assignments, rooms_arg, max_iterations: assignments)
+    monkeypatch.setattr(app, "export_run_summary", lambda assignments, output_path: None)
     monkeypatch.setattr(app, "export_outputs", lambda assignments, scope: None)
 
 
@@ -56,6 +59,7 @@ def test_parse_args_accepts_demo_safety_controls() -> None:
             "--skip-unscheduled-diagnostics",
             "--max-candidate-patterns",
             "150",
+            "--skip-preflight",
         ]
     )
 
@@ -64,6 +68,7 @@ def test_parse_args_accepts_demo_safety_controls() -> None:
     assert args.progress_interval == 10
     assert args.skip_unscheduled_diagnostics is True
     assert args.max_candidate_patterns == 150
+    assert args.skip_preflight is True
 
 
 def test_main_passes_demo_safety_controls_to_generate_schedule(monkeypatch) -> None:
@@ -125,3 +130,18 @@ def test_skip_unscheduled_diagnostics_does_not_break_pipeline(monkeypatch) -> No
     app.main()
 
     assert exported == {"assignments": generated, "scope": "dsc"}
+
+
+def test_main_accepts_skip_preflight(monkeypatch) -> None:
+    """Skipping preflight should avoid preflight checks and still run."""
+    generated = [Assignment(course=make_course(), room=None, timeslot=None)]
+    _stub_pipeline(monkeypatch, generated)
+    monkeypatch.setattr(app, "generate_schedule", lambda courses, rooms, **kwargs: generated)
+    monkeypatch.setattr(
+        app,
+        "run_preflight_checks",
+        lambda courses, rooms: (_ for _ in ()).throw(AssertionError("preflight should be skipped")),
+    )
+    monkeypatch.setattr(sys, "argv", ["main.py", "--skip-optimisation", "--skip-preflight", "--skip-unscheduled-diagnostics"])
+
+    app.main()
