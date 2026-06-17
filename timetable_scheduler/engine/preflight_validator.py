@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from data.models import Course, Room
 from engine.constraint_checker import is_online_course
+from engine.resource_audit import audit_resources, resource_audit_issues
 
 VALID_ROOM_TYPES = {"physical", "virtual"}
 
@@ -98,4 +99,5 @@ def validate_rooms(rooms: list[Room]) -> list[dict[str, str]]:
 
 def run_preflight_checks(courses: list[Course], rooms: list[Room]) -> list[dict[str, str]]:
     """Run all preflight checks and return issue rows."""
-    return validate_courses(courses, rooms) + validate_rooms(rooms)
+    audit = audit_resources(courses, rooms)
+    return validate_courses(courses, rooms) + validate_rooms(rooms) + resource_audit_issues(audit, courses, rooms)

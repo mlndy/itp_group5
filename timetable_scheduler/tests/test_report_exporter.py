@@ -78,6 +78,8 @@ def test_export_run_summary_creates_expected_sheets(tmp_path: Path) -> None:
         "Unscheduled Analysis",
         "Unscheduled Breakdown",
         "Room Utilisation",
+        "Resource Audit",
+        "Virtual Room Detail",
         "Programme Breakdown",
         "Validation Checks",
         "Run Metadata",
@@ -294,3 +296,27 @@ def test_run_summary_records_metadata(tmp_path: Path) -> None:
     metadata = {row[0]: row[1] for row in _sheet_rows(workbook, "Run Metadata")[1:]}
     assert metadata["scope"] == "eng"
     assert metadata["max_candidate_patterns"] == 300
+
+
+def test_resource_audit_sheet_exists(tmp_path: Path) -> None:
+    """Run summary should include virtual-room supply and online demand evidence."""
+    output = tmp_path / "run_summary.xlsx"
+    course = make_course(delivery_mode="Online - Synchronous", teaching_weeks=[1, 2])
+    assignments = [
+        Assignment(course, Room("ONLINE", 9999, "virtual"), TimeSlot("Monday", "09:00", 1)),
+    ]
+
+    export_run_summary(
+        assignments,
+        output,
+        demand_courses=[course],
+        input_course_records=1,
+        rooms=[Room("ONLINE", 9999, "virtual"), Room("R1", 100, "physical")],
+    )
+
+    workbook = load_workbook(output)
+    audit = {row[0]: row[1] for row in _sheet_rows(workbook, "Resource Audit")[1:]}
+    assert audit["Loaded virtual room count"] == 1
+    assert audit["Required online teaching occurrences"] == 2
+    assert audit["Scheduled online teaching occurrences"] == 1
+    assert "Virtual Room Detail" in workbook.sheetnames

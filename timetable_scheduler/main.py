@@ -241,6 +241,8 @@ def main() -> None:
         metadata=_run_metadata(args),
         demand_courses=courses,
         input_course_records=len(courses),
+        rooms=rooms,
+        room_source_path=DEFAULT_ROOM_FILE,
     )
     print(f"Saved: {DEFAULT_RUN_SUMMARY_FILE}")
     if args.audit_demand_metrics:

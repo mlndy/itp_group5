@@ -139,6 +139,24 @@ For Engineering scope:
 - Preserve all existing hard-safety and DSC-inclusion checks.
 - Scenario comparison remains on hold.
 
+## Virtual Room Semantics and Resource Capacity Validation
+
+- Current tests: `78 passed`.
+- Current stable Engineering demand baseline:
+  - Input course records: `507`
+  - Consolidated requirements: `465`
+  - Required teaching occurrences: `2777`
+  - Scheduled teaching occurrences: `2119`
+  - Unscheduled teaching occurrences: `658`
+  - Coverage rate: `76.31%`
+  - Hard violations on scheduled assignments: `0`
+- The dominant bottleneck is incomplete multi-week placement, especially for online synchronous two-hour lectures.
+- Before adding or changing virtual-room capacity, verify how virtual rooms are represented in the source data and loader.
+- Required teaching occurrences must remain `2777` for all comparable runs.
+- Do not weaken room-conflict constraints unless the project requirements clearly show that virtual rooms are non-exclusive.
+- Do not automatically create virtual rooms without evidence.
+- Scenario comparison remains on hold.
+
 ## Important Commands
 
 Run tests from inside the `timetable_scheduler` folder:

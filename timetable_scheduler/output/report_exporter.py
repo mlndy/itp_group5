@@ -10,9 +10,10 @@ from pathlib import Path
 
 import pandas as pd
 
-from data.models import Assignment, Course
+from data.models import Assignment, Course, Room
 from engine.constraint_checker import annotate_schedule_violations
 from engine.demand_metrics import DemandMetrics, build_demand_metrics, requirement_demand_lookup, requirement_key
+from engine.resource_audit import ResourceAudit, audit_resources
 
 PREFLIGHT_COLUMNS = ["severity", "entity_type", "entity_id", "issue", "recommendation"]
 VIOLATION_COLUMNS = ["Module", "Activity", "Programme/Year", "Week", "Day", "Start", "Room", "Violation"]
@@ -46,6 +47,11 @@ PROGRAMME_COLUMNS = [
 ]
 VALIDATION_COLUMNS = ["Check", "Value", "Status", "Notes"]
 METADATA_COLUMNS = ["Setting", "Value"]
+
+
+def _metric_rows(values: dict[str, object]) -> pd.DataFrame:
+    """Return metric/value rows in insertion order."""
+    return pd.DataFrame([{"Metric": key, "Value": value} for key, value in values.items()])
 
 
 def export_preflight_report(issues: list[dict[str, str]], output_path: Path) -> None:
@@ -295,6 +301,72 @@ def _room_utilisation_df(assignments: list[Assignment]) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=["Room", "Scheduled Assignments", "Total Enrolment", "Total Capacity", "Average Utilisation"])
 
 
+def _resource_audit_df(resource_audit: ResourceAudit | None) -> pd.DataFrame:
+    """Return resource audit metrics for spreadsheet export."""
+    if resource_audit is None:
+        return _metric_rows({"Resource audit": "Not available"})
+    return _metric_rows(
+        {
+            "Total raw room rows": resource_audit.total_raw_room_rows,
+            "Total loaded rooms": resource_audit.total_loaded_rooms,
+            "Loaded physical room count": resource_audit.physical_room_count,
+            "Loaded virtual room count": resource_audit.virtual_room_count,
+            "Virtual room IDs": ", ".join(room.room_id for room in resource_audit.virtual_rooms),
+            "Duplicate room-ID count": resource_audit.duplicate_room_id_count,
+            "Skipped or invalid room rows": resource_audit.skipped_or_invalid_room_rows,
+            "Online course requirement count": resource_audit.online_course_requirements,
+            "Required online teaching occurrences": resource_audit.required_online_teaching_occurrences,
+            "Scheduled online teaching occurrences": resource_audit.scheduled_online_teaching_occurrences,
+            "Unscheduled online teaching occurrences": resource_audit.unscheduled_online_teaching_occurrences,
+            "Online coverage rate percent": resource_audit.online_coverage_rate_percent,
+            "Virtual room exclusivity note": resource_audit.exclusivity_note,
+        }
+    )
+
+
+def _virtual_room_detail_df(resource_audit: ResourceAudit | None) -> pd.DataFrame:
+    """Return loaded virtual-room details and online demand peaks."""
+    rows: list[dict[str, object]] = []
+    if resource_audit is not None:
+        for room in resource_audit.virtual_rooms:
+            rows.append(
+                {
+                    "Section": "Virtual Room",
+                    "Room ID": room.room_id,
+                    "Capacity": room.capacity,
+                    "Resource Type": room.resource_type,
+                    "Recording": room.recording,
+                    "Programme/Year": None,
+                    "Week": None,
+                    "Required Online Occurrences": None,
+                }
+            )
+        for row in resource_audit.peak_online_demand_by_week[:25]:
+            rows.append(
+                {
+                    "Section": "Peak Online Demand",
+                    "Room ID": None,
+                    "Capacity": None,
+                    "Resource Type": None,
+                    "Recording": None,
+                    **row,
+                }
+            )
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "Section",
+            "Room ID",
+            "Capacity",
+            "Resource Type",
+            "Recording",
+            "Programme/Year",
+            "Week",
+            "Required Online Occurrences",
+        ],
+    )
+
+
 def _is_dsc_assignment(assignment: Assignment) -> bool:
     """Return True when an assignment appears to belong to DSC input or programme data."""
     course = assignment.course
@@ -424,6 +496,8 @@ def export_run_summary(
     metadata: dict[str, object] | None = None,
     demand_courses: list[Course] | None = None,
     input_course_records: int | None = None,
+    rooms: list[Room] | None = None,
+    room_source_path: Path | None = None,
 ) -> None:
     """Export a stakeholder-friendly run summary workbook."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -435,6 +509,11 @@ def export_run_summary(
         else None
     )
     unscheduled_analysis = _unscheduled_analysis_df(snapshot, demand_courses=demand_courses)
+    resource_audit = (
+        audit_resources(demand_courses, rooms, snapshot, room_source_path=room_source_path)
+        if demand_courses is not None and rooms is not None
+        else None
+    )
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
         _summary_df(snapshot, demand_metrics=demand_metrics).to_excel(writer, sheet_name="Summary", index=False)
         _violations_df(snapshot, "hard").to_excel(writer, sheet_name="Hard Violations", index=False)
@@ -443,6 +522,8 @@ def export_run_summary(
         unscheduled_analysis.to_excel(writer, sheet_name="Unscheduled Analysis", index=False)
         _unscheduled_breakdown_df(unscheduled_analysis).to_excel(writer, sheet_name="Unscheduled Breakdown", index=False)
         _room_utilisation_df(snapshot).to_excel(writer, sheet_name="Room Utilisation", index=False)
+        _resource_audit_df(resource_audit).to_excel(writer, sheet_name="Resource Audit", index=False)
+        _virtual_room_detail_df(resource_audit).to_excel(writer, sheet_name="Virtual Room Detail", index=False)
         _programme_breakdown_df(snapshot).to_excel(writer, sheet_name="Programme Breakdown", index=False)
         _validation_checks_df(snapshot, generated_at, demand_metrics=demand_metrics).to_excel(writer, sheet_name="Validation Checks", index=False)
         _metadata_df(metadata, generated_at).to_excel(writer, sheet_name="Run Metadata", index=False)
