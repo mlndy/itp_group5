@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import config
 from data.models import Assignment, Course, Room, TimeSlot
 from engine.preflight_validator import run_preflight_checks
 from engine.resource_audit import audit_resources, normalise_room_type
@@ -37,6 +38,8 @@ def test_virtual_room_count_audit() -> None:
     assert audit.physical_room_count == 1
     assert audit.virtual_room_count == 1
     assert [room.room_id for room in audit.virtual_rooms] == ["ONLINE"]
+    assert audit.virtual_room_policy == "Shared delivery-mode placeholder"
+    assert "does not remove tutor" in audit.exclusivity_note
 
 
 def test_duplicate_virtual_room_detection() -> None:
@@ -79,8 +82,18 @@ def test_preflight_warns_when_online_courses_have_no_virtual_room() -> None:
     assert any(issue["issue"] == "No virtual rooms loaded while online courses exist" for issue in issues)
 
 
-def test_preflight_warns_on_single_virtual_room_with_high_online_demand() -> None:
-    """One virtual room with high online demand should be surfaced as an advisory."""
+def test_preflight_does_not_warn_single_shared_virtual_room_as_shortage() -> None:
+    """A shared virtual placeholder should not be treated as one scarce venue."""
+    courses = [make_course(module_code=f"ENG{i:04d}", teaching_weeks=[1, 2, 3]) for i in range(20)]
+
+    issues = run_preflight_checks(courses, [Room("ONLINE", 9999, "virtual")])
+
+    assert not any(issue["issue"] == "Only one virtual room loaded with high online demand" for issue in issues)
+
+
+def test_preflight_warns_single_exclusive_virtual_room_with_high_online_demand(monkeypatch) -> None:
+    """One exclusive virtual room with high demand should remain advisory."""
+    monkeypatch.setattr(config, "VIRTUAL_ROOM_IS_EXCLUSIVE", True)
     courses = [make_course(module_code=f"ENG{i:04d}", teaching_weeks=[1, 2, 3]) for i in range(20)]
 
     issues = run_preflight_checks(courses, [Room("ONLINE", 9999, "virtual")])

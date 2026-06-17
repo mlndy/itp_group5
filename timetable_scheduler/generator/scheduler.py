@@ -10,7 +10,7 @@ from typing import Callable
 
 from config import BLOCKED_WEEKS, LUNCH_BLOCKS, MIN_ROOM_UTILISATION, VALID_DAYS, VALID_START_TIMES
 from data.models import Assignment, Course, Room, TimeSlot
-from engine.constraint_checker import check_hard_constraints, course_groups, is_online_course, occupied_start_times
+from engine.constraint_checker import check_hard_constraints, course_groups, is_online_course, occupied_start_times, room_is_exclusive
 
 MAX_CANDIDATE_PATTERN_LIMIT_REASON = "Stopped after max candidate pattern limit for Engineering demo run"
 
@@ -35,7 +35,8 @@ class ScheduleIndex:
         occupied = occupied_start_times(assignment)
 
         for block in occupied:
-            self.room_slots.add((week, day, block, room_id))
+            if room_is_exclusive(assignment.room):
+                self.room_slots.add((week, day, block, room_id))
             for staff_id in assignment.course.staff_ids:
                 if staff_id:
                     self.staff_slots.add((week, day, block, staff_id))
@@ -220,10 +221,11 @@ def _candidate_precheck(candidate: Assignment, index: ScheduleIndex) -> list[str
     violations: list[str] = []
     groups = course_groups(candidate.course)
 
-    for block in occupied:
-        if (week, day, block, room_id) in index.room_slots:
-            violations.append("Room clash")
-            break
+    if room_is_exclusive(candidate.room):
+        for block in occupied:
+            if (week, day, block, room_id) in index.room_slots:
+                violations.append("Room clash")
+                break
     for staff_id in candidate.course.staff_ids:
         if not staff_id:
             continue

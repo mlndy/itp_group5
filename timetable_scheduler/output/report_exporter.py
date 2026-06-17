@@ -312,6 +312,7 @@ def _resource_audit_df(resource_audit: ResourceAudit | None) -> pd.DataFrame:
             "Loaded physical room count": resource_audit.physical_room_count,
             "Loaded virtual room count": resource_audit.virtual_room_count,
             "Virtual room IDs": ", ".join(room.room_id for room in resource_audit.virtual_rooms),
+            "Virtual room policy": resource_audit.virtual_room_policy,
             "Duplicate room-ID count": resource_audit.duplicate_room_id_count,
             "Skipped or invalid room rows": resource_audit.skipped_or_invalid_room_rows,
             "Online course requirement count": resource_audit.online_course_requirements,
@@ -319,7 +320,7 @@ def _resource_audit_df(resource_audit: ResourceAudit | None) -> pd.DataFrame:
             "Scheduled online teaching occurrences": resource_audit.scheduled_online_teaching_occurrences,
             "Unscheduled online teaching occurrences": resource_audit.unscheduled_online_teaching_occurrences,
             "Online coverage rate percent": resource_audit.online_coverage_rate_percent,
-            "Virtual room exclusivity note": resource_audit.exclusivity_note,
+            "Virtual room policy note": resource_audit.exclusivity_note,
         }
     )
 

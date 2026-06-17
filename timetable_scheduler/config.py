@@ -54,6 +54,10 @@ BLOCKED_WEEKS: set[int] = TERM_BREAK_WEEKS | PUBLIC_HOLIDAY_WEEKS
 
 VIRTUAL_ROOM_ID = "ONLINE_ROOM"
 VIRTUAL_ROOM_CAPACITY = 9999
+# False means the virtual-room object is a delivery-mode placeholder.
+# Multiple unrelated online classes may use it concurrently. Tutor and
+# student-group clashes still apply, and physical rooms remain exclusive.
+VIRTUAL_ROOM_IS_EXCLUSIVE = False
 DEFAULT_UNKNOWN_ROOM_CAPACITY = 999
 MIN_ROOM_UTILISATION = 0.60
 MAX_CONSECUTIVE_HOURS = 4

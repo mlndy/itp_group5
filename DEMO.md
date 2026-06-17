@@ -98,6 +98,16 @@ The `Validation Checks` sheet is the evidence page for presentation and reportin
 
 Use the unscheduled analysis tabs to explain why remaining assignments were not placed. Compare scheduled-count improvements only when the total assignment pool and command settings are the same.
 
+## Online Delivery Resource Policy
+
+The raw venue file contains physical rooms. The loader adds `ONLINE_ROOM` as a synthetic delivery-mode placeholder for fully online teaching.
+
+Fully online lectures do not require physical venue allocation. Multiple unrelated online classes may therefore share `ONLINE_ROOM` at the same time.
+
+This does not weaken hard constraints. Tutor clashes, student-group clashes, calendar blocks, duration checks, teaching-week rules, and all physical room clashes still apply.
+
+The selected policy is defined in `timetable_scheduler/config.py` and appears in the `Resource Audit` sheet of `generated/run_summary.xlsx`.
+
 ## Troubleshooting
 
 - Activate the virtual environment before running commands:

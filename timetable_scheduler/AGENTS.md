@@ -157,6 +157,33 @@ For Engineering scope:
 - Do not automatically create virtual rooms without evidence.
 - Scenario comparison remains on hold.
 
+## Online Delivery Resource Semantics
+
+- Current tests: `85 passed`.
+- Stable Engineering teaching demand:
+  - Required teaching occurrences: `2777`
+  - Scheduled teaching occurrences: `2119`
+  - Unscheduled teaching occurrences: `658`
+  - Coverage rate: `76.31%`
+  - Hard violations on scheduled assignments: `0`
+- Resource audit:
+  - Raw venue rows: `169`
+  - Loaded physical rooms: `169`
+  - Loaded virtual rooms: `1`
+  - Virtual room ID: `ONLINE_ROOM`
+  - Required online occurrences: `813`
+  - Scheduled online occurrences: `196`
+  - Unscheduled online occurrences: `617`
+  - Online coverage: `24.11%`
+- `ONLINE_ROOM` is created by the loader and is not one of the raw venue rows.
+- The supplied TTConstraints workbook states that fully online lectures require no physical venue allocation.
+- `ONLINE_ROOM` should be treated as a delivery-mode placeholder, not as one exclusive physical resource.
+- Online classes must still respect tutor, student-group, time, calendar, duration, and week-pattern constraints.
+- Physical room clashes must remain unchanged.
+- Required teaching occurrences must remain `2777`.
+- Do not add artificial virtual rooms.
+- Scenario comparison remains on hold.
+
 ## Important Commands
 
 Run tests from inside the `timetable_scheduler` folder:

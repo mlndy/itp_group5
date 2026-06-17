@@ -7,15 +7,14 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import config
 from data.models import Assignment, Course, Room
 from engine.constraint_checker import is_online_course
 from engine.demand_metrics import consolidated_requirements
 from generator.scheduler import schedulable_weeks
 
-VIRTUAL_ROOM_EXCLUSIVITY_NOTE = (
-    "Virtual rooms are treated as exclusive room resources. Room clashes still apply unless source requirements "
-    "explicitly state that a virtual room can host unlimited concurrent online classes."
-)
+SHARED_VIRTUAL_ROOM_NOTE = "Shared virtual-room policy does not remove tutor or student-group clash checks."
+EXCLUSIVE_VIRTUAL_ROOM_NOTE = "Virtual rooms are treated as exclusive room resources."
 
 
 @dataclass(slots=True)
@@ -44,7 +43,8 @@ class ResourceAudit:
     scheduled_online_teaching_occurrences: int = 0
     unscheduled_online_teaching_occurrences: int = 0
     peak_online_demand_by_week: list[dict[str, object]] = field(default_factory=list)
-    exclusivity_note: str = VIRTUAL_ROOM_EXCLUSIVITY_NOTE
+    virtual_room_policy: str = ""
+    exclusivity_note: str = ""
 
     @property
     def duplicate_room_id_count(self) -> int:
@@ -67,6 +67,16 @@ def normalise_room_type(value: str) -> str:
     if text in {"physical", "f2f", "face to face", "in person", "campus"}:
         return "physical"
     return text
+
+
+def virtual_room_policy_label() -> str:
+    """Return the configured virtual-room resource policy label."""
+    return "Exclusive virtual resource" if config.VIRTUAL_ROOM_IS_EXCLUSIVE else "Shared delivery-mode placeholder"
+
+
+def virtual_room_policy_note() -> str:
+    """Return a stakeholder-facing note for the virtual-room policy."""
+    return EXCLUSIVE_VIRTUAL_ROOM_NOTE if config.VIRTUAL_ROOM_IS_EXCLUSIVE else SHARED_VIRTUAL_ROOM_NOTE
 
 
 def _room_id_key(room_id: str) -> str:
@@ -174,6 +184,8 @@ def audit_resources(
         scheduled_online_teaching_occurrences=scheduled_count,
         unscheduled_online_teaching_occurrences=required_online - scheduled_count,
         peak_online_demand_by_week=_peak_online_demand(online_requirements),
+        virtual_room_policy=virtual_room_policy_label(),
+        exclusivity_note=virtual_room_policy_note(),
     )
 
 
@@ -191,7 +203,12 @@ def resource_audit_issues(audit: ResourceAudit, courses: list[Course], rooms: li
                 "recommendation": "Verify the room source data includes virtual-room resources for online delivery.",
             }
         )
-    if online_courses and audit.virtual_room_count == 1 and audit.required_online_teaching_occurrences > 50:
+    if (
+        config.VIRTUAL_ROOM_IS_EXCLUSIVE
+        and online_courses
+        and audit.virtual_room_count == 1
+        and audit.required_online_teaching_occurrences > 50
+    ):
         issues.append(
             {
                 "severity": "warning",

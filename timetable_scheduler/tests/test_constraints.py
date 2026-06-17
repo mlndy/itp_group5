@@ -54,6 +54,63 @@ def test_f2f_cannot_use_virtual_room() -> None:
     assert any("virtual" in issue.lower() for issue in check_hard_constraints(assignment, []))
 
 
+def test_shared_virtual_room_allows_unrelated_online_concurrency() -> None:
+    """Unrelated online classes may share ONLINE_ROOM at the same time."""
+    existing = [
+        Assignment(
+            course=make_course(module_code="DSC1001", delivery_mode="Online - Synchronous", staff_ids=["S001"], prog_yr="DSC/YR 1"),
+            room=Room("ONLINE_ROOM", 9999, "virtual"),
+            timeslot=TimeSlot("Monday", "09:00", 1),
+        )
+    ]
+    candidate = Assignment(
+        course=make_course(module_code="DSC1002", delivery_mode="Online - Synchronous", staff_ids=["S002"], prog_yr="DSC/YR 2"),
+        room=Room("ONLINE_ROOM", 9999, "virtual"),
+        timeslot=TimeSlot("Monday", "09:00", 1),
+    )
+
+    violations = check_hard_constraints(candidate, existing)
+
+    assert not any("room clash" in issue.lower() for issue in violations)
+    assert violations == []
+
+
+def test_shared_virtual_room_still_blocks_same_tutor() -> None:
+    """Online classes sharing a tutor must still clash at the same time."""
+    existing = [
+        Assignment(
+            course=make_course(module_code="DSC1001", delivery_mode="Online - Synchronous", staff_ids=["S001"], prog_yr="DSC/YR 1"),
+            room=Room("ONLINE_ROOM", 9999, "virtual"),
+            timeslot=TimeSlot("Monday", "09:00", 1),
+        )
+    ]
+    candidate = Assignment(
+        course=make_course(module_code="DSC1002", delivery_mode="Online - Synchronous", staff_ids=["S001"], prog_yr="DSC/YR 2"),
+        room=Room("ONLINE_ROOM", 9999, "virtual"),
+        timeslot=TimeSlot("Monday", "09:00", 1),
+    )
+
+    assert any("staff clash" in issue.lower() for issue in check_hard_constraints(candidate, existing))
+
+
+def test_shared_virtual_room_still_blocks_same_student_group() -> None:
+    """Online classes sharing a student group must still clash at the same time."""
+    existing = [
+        Assignment(
+            course=make_course(module_code="DSC1001", delivery_mode="Online - Synchronous", staff_ids=["S001"], prog_yr="DSC/YR 1"),
+            room=Room("ONLINE_ROOM", 9999, "virtual"),
+            timeslot=TimeSlot("Monday", "09:00", 1),
+        )
+    ]
+    candidate = Assignment(
+        course=make_course(module_code="DSC1002", delivery_mode="Online - Synchronous", staff_ids=["S002"], prog_yr="DSC/YR 1"),
+        room=Room("ONLINE_ROOM", 9999, "virtual"),
+        timeslot=TimeSlot("Monday", "09:00", 1),
+    )
+
+    assert any("student group clash" in issue.lower() for issue in check_hard_constraints(candidate, existing))
+
+
 def test_room_clash_violation() -> None:
     """Two classes cannot use the same room at overlapping times."""
     existing = [
@@ -616,4 +673,25 @@ def test_candidate_limit_excludes_incompatible_rooms() -> None:
     assert len(schedule) == 1
     assert schedule[0].room is not None
     assert schedule[0].room.room_id == "ONLINE"
+    assert count_hard_violations(schedule) == 0
+
+
+def test_scheduler_places_unrelated_online_courses_concurrently(monkeypatch) -> None:
+    """The scheduler should not reserve ONLINE_ROOM as an exclusive venue."""
+    from generator import scheduler
+
+    monkeypatch.setattr(scheduler, "VALID_DAYS", ["Monday"])
+    monkeypatch.setattr(scheduler, "VALID_START_TIMES", ["09:00"])
+
+    courses = [
+        make_course(module_code="DSC5701", delivery_mode="Online - Synchronous", staff_ids=["S001"], prog_yr="DSC/YR 1"),
+        make_course(module_code="DSC5702", delivery_mode="Online - Synchronous", staff_ids=["S002"], prog_yr="DSC/YR 2"),
+    ]
+    rooms = [Room("ONLINE_ROOM", 9999, "virtual")]
+
+    schedule = scheduler.generate_schedule(courses, rooms, allow_weekly_fallback=False)
+
+    scheduled = [item for item in schedule if item.room is not None and item.timeslot is not None]
+    assert len(scheduled) == 2
+    assert {item.room.room_id for item in scheduled} == {"ONLINE_ROOM"}
     assert count_hard_violations(schedule) == 0

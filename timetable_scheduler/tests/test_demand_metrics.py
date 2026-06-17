@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import config
 from data.models import Assignment, Course, Room, TimeSlot
 from engine.demand_metrics import build_demand_metrics
 from generator.scheduler import generate_schedule
@@ -122,3 +123,30 @@ def test_candidate_limits_do_not_change_required_teaching_occurrences() -> None:
     assert capped_metrics.required_teaching_occurrences == full_metrics.required_teaching_occurrences == 3
     assert capped_metrics.is_consistent
     assert full_metrics.is_consistent
+
+
+def test_virtual_room_policy_does_not_change_required_teaching_occurrences(monkeypatch) -> None:
+    """Virtual-room exclusivity is resource policy, not input teaching demand."""
+    from generator import scheduler
+
+    monkeypatch.setattr(scheduler, "VALID_DAYS", ["Monday"])
+    monkeypatch.setattr(scheduler, "VALID_START_TIMES", ["09:00"])
+    rooms = [Room("ONLINE_ROOM", 9999, "virtual")]
+    courses = [
+        make_course(module_code="ENG1001", delivery_mode="Online - Synchronous", staff_ids=["S001"], prog_yr="ENG/YR 1"),
+        make_course(module_code="ENG1002", delivery_mode="Online - Synchronous", staff_ids=["S002"], prog_yr="ENG/YR 2"),
+    ]
+
+    monkeypatch.setattr(config, "VIRTUAL_ROOM_IS_EXCLUSIVE", True)
+    exclusive_metrics = build_demand_metrics(
+        courses,
+        generate_schedule(courses, rooms, allow_weekly_fallback=False),
+    )
+    monkeypatch.setattr(config, "VIRTUAL_ROOM_IS_EXCLUSIVE", False)
+    shared_metrics = build_demand_metrics(
+        courses,
+        generate_schedule(courses, rooms, allow_weekly_fallback=False),
+    )
+
+    assert exclusive_metrics.required_teaching_occurrences == shared_metrics.required_teaching_occurrences == 6
+    assert shared_metrics.scheduled_teaching_occurrences >= exclusive_metrics.scheduled_teaching_occurrences

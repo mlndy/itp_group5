@@ -317,6 +317,8 @@ def test_resource_audit_sheet_exists(tmp_path: Path) -> None:
     workbook = load_workbook(output)
     audit = {row[0]: row[1] for row in _sheet_rows(workbook, "Resource Audit")[1:]}
     assert audit["Loaded virtual room count"] == 1
+    assert audit["Virtual room policy"] == "Shared delivery-mode placeholder"
+    assert "tutor or student-group clash checks" in audit["Virtual room policy note"]
     assert audit["Required online teaching occurrences"] == 2
     assert audit["Scheduled online teaching occurrences"] == 1
     assert "Virtual Room Detail" in workbook.sheetnames

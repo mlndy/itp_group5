@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 
+import config
 from config import (
     BLOCKED_START_TIMES,
     BLOCKED_WEEKS,
@@ -19,7 +20,7 @@ from config import (
     TERM_BREAK_WEEKS,
     VALID_DAYS,
 )
-from data.models import Assignment, Course
+from data.models import Assignment, Course, Room
 
 MAX_BACK_TO_BACK_GROUP_HOURS = 3
 
@@ -67,6 +68,15 @@ def is_online_course(course: Course) -> bool:
 def is_physical_course(course: Course) -> bool:
     """Return True if a course needs a physical teaching room."""
     return not is_online_course(course)
+
+
+def room_is_exclusive(room: Room | None) -> bool:
+    """Return True when the room should block concurrent room use."""
+    if room is None:
+        return False
+    if room.room_type == "virtual" and not config.VIRTUAL_ROOM_IS_EXCLUSIVE:
+        return False
+    return True
 
 
 def course_groups(course: Course) -> set[str]:
@@ -172,10 +182,10 @@ def check_blocked_time(assignment: Assignment) -> list[str]:
 
 def check_room_clash(assignment: Assignment, existing: list[Assignment]) -> list[str]:
     """Check whether a room is double-booked."""
-    if assignment.room is None:
+    if assignment.room is None or not room_is_exclusive(assignment.room):
         return []
     for other in existing:
-        if other.room is None:
+        if other.room is None or not room_is_exclusive(other.room):
             continue
         if other.room.room_id == assignment.room.room_id and assignments_overlap(assignment, other):
             return [f"Room clash with {other.course.module_code} {other.course.activity}"]
