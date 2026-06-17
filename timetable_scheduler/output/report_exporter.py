@@ -10,10 +10,12 @@ from pathlib import Path
 
 import pandas as pd
 
-from data.models import Assignment, Course, Room
-from engine.constraint_checker import annotate_schedule_violations
+from config import BLOCKED_START_TIMES, LATEST_END_HOUR, VALID_DAYS, VALID_START_TIMES
+from data.models import Assignment, Course, Room, TimeSlot
+from engine.constraint_checker import annotate_schedule_violations, occupied_start_times, time_to_hour
 from engine.demand_metrics import DemandMetrics, build_demand_metrics, requirement_demand_lookup, requirement_key
 from engine.resource_audit import ResourceAudit, audit_resources
+from generator.scheduler import get_candidate_rooms, schedulable_weeks
 
 PREFLIGHT_COLUMNS = ["severity", "entity_type", "entity_id", "issue", "recommendation"]
 VIOLATION_COLUMNS = ["Module", "Activity", "Programme/Year", "Week", "Day", "Start", "Room", "Violation"]
@@ -36,6 +38,28 @@ UNSCHEDULED_ANALYSIS_COLUMNS = [
     "Unscheduled Week Count",
 ]
 UNSCHEDULED_BREAKDOWN_COLUMNS = ["Breakdown", "Value", "Count"]
+RESIDUAL_F2F_COLUMNS = [
+    "Programme/Year",
+    "Year",
+    "Module Code",
+    "Activity",
+    "Class Size",
+    "Duration",
+    "Required Teaching Weeks",
+    "Schedulable Teaching Weeks",
+    "Scheduled Weeks",
+    "Unscheduled Weeks",
+    "Common Module",
+    "Compatible Physical Room Count",
+    "Smallest Suitable Room",
+    "Largest Suitable Room",
+    "Failed Reason",
+    "Candidate Limit",
+    "Feasible Start Windows Before Clash Checking",
+    "Residual Classification",
+    "Classification Evidence",
+    "Source File",
+]
 PROGRAMME_COLUMNS = [
     "Programme/Year",
     "Source File",
@@ -282,6 +306,146 @@ def _unscheduled_breakdown_df(analysis_df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=UNSCHEDULED_BREAKDOWN_COLUMNS)
 
 
+def _year_from_programme(programme: str) -> str:
+    """Extract a compact year label from programme text when present."""
+    match = re.search(r"(?:year|yr)\s*([0-9]+)", programme, flags=re.IGNORECASE)
+    return f"Year {match.group(1)}" if match else ""
+
+
+def _format_weeks(weeks: list[int] | set[int]) -> str:
+    """Return teaching weeks as compact comma-separated text."""
+    return ", ".join(str(week) for week in sorted(weeks))
+
+
+def _scheduled_weeks_by_key(assignments: list[Assignment]) -> dict[object, set[int]]:
+    """Return scheduled weeks by consolidated requirement key."""
+    scheduled: dict[object, set[int]] = defaultdict(set)
+    for assignment in assignments:
+        if assignment.room is None or assignment.timeslot is None:
+            continue
+        scheduled[requirement_key(assignment.course)].add(assignment.timeslot.week)
+    return scheduled
+
+
+def _feasible_start_window_count(course: Course, compatible_rooms: list[Room]) -> int:
+    """Count room/week/day/start windows before occupancy clash checks."""
+    count = 0
+    for room in compatible_rooms:
+        for week in schedulable_weeks(course.teaching_weeks):
+            for day in VALID_DAYS:
+                for start_time in VALID_START_TIMES:
+                    candidate = Assignment(course=course, room=room, timeslot=TimeSlot(day, start_time, week))
+                    if time_to_hour(start_time) + course.duration_hrs > LATEST_END_HOUR:
+                        continue
+                    if occupied_start_times(candidate) & BLOCKED_START_TIMES.get(day, set()):
+                        continue
+                    count += 1
+    return count
+
+
+def _classify_residual_f2f(
+    assignment: Assignment,
+    reasons: list[str],
+    compatible_rooms: list[Room],
+    schedulable_week_count: int,
+) -> tuple[str, str]:
+    """Classify one residual F2F requirement for stakeholder review."""
+    reason_text = " | ".join(reasons).lower()
+    if "max candidate pattern limit" in reason_text:
+        return "Search limitation", "Candidate-pattern safety cap stopped search before all possibilities were explored."
+    if schedulable_week_count == 0 or "no schedulable teaching weeks" in reason_text:
+        return "Calendar restriction", "All requested teaching weeks are blocked by academic-calendar rules."
+    if not compatible_rooms:
+        return "Physical room scarcity", "No loaded physical room has enough capacity for this class size."
+    if "weekly room/day/start pattern" in reason_text:
+        return "Recurring-pattern infeasibility", "No single room/day/start pattern remained feasible across all required weeks."
+    if "staff clash" in reason_text or "tutor" in reason_text or "student group" in reason_text:
+        return "Tutor or student-group conflict", "Remaining otherwise valid slots clash with tutor or cohort occupancy."
+    if "blocked" in reason_text or "time window" in reason_text:
+        return "Calendar restriction", "Institutional blocked-time or valid-hour rules remove the requested window."
+    return "Input issue", "Residual reason does not match a schedulable resource or search category."
+
+
+def _residual_f2f_analysis_df(
+    assignments: list[Assignment],
+    rooms: list[Room] | None = None,
+) -> pd.DataFrame:
+    """Return detailed residual F2F classifications for unresolved requirements."""
+    physical_rooms = rooms or []
+    scheduled_by_key = _scheduled_weeks_by_key(assignments)
+    grouped: dict[object, dict[str, object]] = {}
+    for assignment in assignments:
+        if assignment.room is not None and assignment.timeslot is not None:
+            continue
+        if "online" in assignment.course.delivery_mode.lower():
+            continue
+        key = requirement_key(assignment.course)
+        row = grouped.setdefault(
+            key,
+            {
+                "assignment": assignment,
+                "reasons": [],
+                "candidate_limit": False,
+                "failed_weeks": set(),
+            },
+        )
+        reasons = assignment.hard_violations or ["Unscheduled without recorded reason"]
+        row["reasons"].extend(reasons)  # type: ignore[union-attr]
+        if any("max candidate pattern limit" in reason.lower() for reason in reasons):
+            row["candidate_limit"] = True
+        for reason in reasons:
+            week = _failed_week(reason)
+            if week is not None:
+                row["failed_weeks"].add(week)  # type: ignore[union-attr]
+
+    rows: list[dict[str, object]] = []
+    for key, data in grouped.items():
+        assignment = data["assignment"]
+        if not isinstance(assignment, Assignment):
+            continue
+        course = assignment.course
+        reasons = list(dict.fromkeys(data["reasons"]))  # type: ignore[arg-type]
+        compatible_rooms = sorted(
+            [room for room in get_candidate_rooms(course, physical_rooms) if room.room_type == "physical"],
+            key=lambda room: (room.capacity, room.room_id),
+        )
+        scheduled_weeks = scheduled_by_key.get(key, set())
+        schedulable = set(schedulable_weeks(course.teaching_weeks))
+        failed_weeks = set(data["failed_weeks"])  # type: ignore[arg-type]
+        unscheduled_weeks = failed_weeks or (schedulable - scheduled_weeks)
+        classification, evidence = _classify_residual_f2f(
+            assignment,
+            reasons,
+            compatible_rooms,
+            len(schedulable),
+        )
+        rows.append(
+            {
+                "Programme/Year": course.prog_yr,
+                "Year": _year_from_programme(course.prog_yr),
+                "Module Code": course.module_code,
+                "Activity": course.activity,
+                "Class Size": course.class_size,
+                "Duration": course.duration_hrs,
+                "Required Teaching Weeks": _format_weeks(course.teaching_weeks),
+                "Schedulable Teaching Weeks": _format_weeks(schedulable),
+                "Scheduled Weeks": _format_weeks(scheduled_weeks),
+                "Unscheduled Weeks": _format_weeks(unscheduled_weeks),
+                "Common Module": "Yes" if course.is_common_module else "No",
+                "Compatible Physical Room Count": len(compatible_rooms),
+                "Smallest Suitable Room": compatible_rooms[0].room_id if compatible_rooms else "",
+                "Largest Suitable Room": compatible_rooms[-1].room_id if compatible_rooms else "",
+                "Failed Reason": " | ".join(reasons),
+                "Candidate Limit": "Yes" if data["candidate_limit"] else "No",
+                "Feasible Start Windows Before Clash Checking": _feasible_start_window_count(course, compatible_rooms),
+                "Residual Classification": classification,
+                "Classification Evidence": evidence,
+                "Source File": course.source_file,
+            }
+        )
+    return pd.DataFrame(rows, columns=RESIDUAL_F2F_COLUMNS)
+
+
 def _room_utilisation_df(assignments: list[Assignment]) -> pd.DataFrame:
     """Return scheduled room usage and enrolment utilisation."""
     usage: dict[str, dict[str, object]] = defaultdict(lambda: {"Scheduled Assignments": 0, "Total Enrolment": 0, "Total Capacity": 0})
@@ -522,6 +686,7 @@ def export_run_summary(
         _unscheduled_reasons_df(snapshot).to_excel(writer, sheet_name="Unscheduled Reasons", index=False)
         unscheduled_analysis.to_excel(writer, sheet_name="Unscheduled Analysis", index=False)
         _unscheduled_breakdown_df(unscheduled_analysis).to_excel(writer, sheet_name="Unscheduled Breakdown", index=False)
+        _residual_f2f_analysis_df(snapshot, rooms=rooms).to_excel(writer, sheet_name="Residual F2F Analysis", index=False)
         _room_utilisation_df(snapshot).to_excel(writer, sheet_name="Room Utilisation", index=False)
         _resource_audit_df(resource_audit).to_excel(writer, sheet_name="Resource Audit", index=False)
         _virtual_room_detail_df(resource_audit).to_excel(writer, sheet_name="Virtual Room Detail", index=False)

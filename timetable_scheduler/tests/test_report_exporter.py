@@ -77,6 +77,7 @@ def test_export_run_summary_creates_expected_sheets(tmp_path: Path) -> None:
         "Unscheduled Reasons",
         "Unscheduled Analysis",
         "Unscheduled Breakdown",
+        "Residual F2F Analysis",
         "Room Utilisation",
         "Resource Audit",
         "Virtual Room Detail",
@@ -150,6 +151,55 @@ def test_unscheduled_analysis_includes_demand_week_counts(tmp_path: Path) -> Non
     assert values["Required Week Count"] == 3
     assert values["Scheduled Week Count"] == 1
     assert values["Unscheduled Week Count"] == 2
+
+
+def test_residual_f2f_analysis_classifies_physical_room_scarcity(tmp_path: Path) -> None:
+    """Residual F2F Analysis should identify oversized classes with no suitable room."""
+    output = tmp_path / "run_summary.xlsx"
+    course = make_course(class_size=500, teaching_weeks=[1, 2], is_common_module=True)
+    assignments = [
+        Assignment(
+            course=course,
+            room=None,
+            timeslot=None,
+            hard_violations=["Could not find feasible slot for week 1"],
+        )
+    ]
+
+    export_run_summary(assignments, output, rooms=[Room("SMALL", 100, "physical")])
+
+    workbook = load_workbook(output)
+    residual = workbook["Residual F2F Analysis"]
+    headers = [cell.value for cell in residual[1]]
+    values = dict(zip(headers, [cell.value for cell in residual[2]], strict=False))
+    assert values["Residual Classification"] == "Physical room scarcity"
+    assert values["Compatible Physical Room Count"] == 0
+    assert values["Failed Reason"] == "Could not find feasible slot for week 1"
+
+
+def test_residual_f2f_analysis_classifies_candidate_limit(tmp_path: Path) -> None:
+    """Residual F2F Analysis should preserve candidate-limit evidence."""
+    output = tmp_path / "run_summary.xlsx"
+    course = make_course(class_size=30)
+    assignments = [
+        Assignment(
+            course=course,
+            room=None,
+            timeslot=None,
+            hard_violations=[MAX_CANDIDATE_PATTERN_LIMIT_REASON],
+        )
+    ]
+
+    export_run_summary(assignments, output, rooms=[Room("R1", 100, "physical")])
+
+    workbook = load_workbook(output)
+    residual = workbook["Residual F2F Analysis"]
+    headers = [cell.value for cell in residual[1]]
+    values = dict(zip(headers, [cell.value for cell in residual[2]], strict=False))
+    assert values["Residual Classification"] == "Search limitation"
+    assert values["Candidate Limit"] == "Yes"
+    assert values["Compatible Physical Room Count"] == 1
+    assert values["Feasible Start Windows Before Clash Checking"] > 0
 
 
 def test_programme_breakdown_marks_dsc_assignments(tmp_path: Path) -> None:

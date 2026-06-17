@@ -150,3 +150,18 @@ def test_virtual_room_policy_does_not_change_required_teaching_occurrences(monke
 
     assert exclusive_metrics.required_teaching_occurrences == shared_metrics.required_teaching_occurrences == 6
     assert shared_metrics.scheduled_teaching_occurrences >= exclusive_metrics.scheduled_teaching_occurrences
+
+
+def test_engineering_dataset_required_teaching_occurrences_remain_stable() -> None:
+    """Engineering input demand should remain fixed for final comparisons."""
+    from config import DEFAULT_COMMON_MODULE_FILE, DEFAULT_ENGINEERING_FOLDER
+    from data.loader import load_common_modules, load_courses_from_folder
+
+    common_modules = load_common_modules(DEFAULT_COMMON_MODULE_FILE)
+    courses, _ = load_courses_from_folder(DEFAULT_ENGINEERING_FOLDER, common_modules=common_modules)
+
+    metrics = build_demand_metrics(courses, [], input_course_records=len(courses))
+
+    assert metrics.input_course_records == 507
+    assert metrics.consolidated_course_requirements == 465
+    assert metrics.required_teaching_occurrences == 2777

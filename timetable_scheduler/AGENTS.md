@@ -184,6 +184,30 @@ For Engineering scope:
 - Do not add artificial virtual rooms.
 - Scenario comparison remains on hold.
 
+## Residual F2F Completion and Final Scheduler Acceptance
+
+- Current tests: `91 passed`.
+- Stable Engineering demand:
+  - Required teaching occurrences: `2777`
+  - Scheduled teaching occurrences: `2747`
+  - Unscheduled teaching occurrences: `30`
+  - Coverage rate: `98.92%`
+  - Hard violations on scheduled assignments: `0`
+- Online demand is fully scheduled:
+  - Required online occurrences: `813`
+  - Scheduled online occurrences: `813`
+  - Unscheduled online occurrences: `0`
+- Remaining unscheduled demand is F2F:
+  - `24` no complete multi-week placement
+  - `4` blocked or unavailable timeslot
+  - `2` candidate-pattern limit
+- The next goal is to resolve or conclusively explain the remaining `30` F2F occurrences.
+- Never force assignments that violate hard constraints.
+- Do not change online shared-placeholder semantics.
+- Required teaching occurrences must remain `2777`.
+- Update only one scheduling behaviour per evidence-supported iteration.
+- After this phase, scheduler behaviour should be frozen unless a clear correctness bug is found.
+
 ## Important Commands
 
 Run tests from inside the `timetable_scheduler` folder:
