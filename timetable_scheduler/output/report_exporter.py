@@ -10,8 +10,9 @@ from pathlib import Path
 
 import pandas as pd
 
-from data.models import Assignment
+from data.models import Assignment, Course
 from engine.constraint_checker import annotate_schedule_violations
+from engine.demand_metrics import DemandMetrics, build_demand_metrics, requirement_demand_lookup, requirement_key
 
 PREFLIGHT_COLUMNS = ["severity", "entity_type", "entity_id", "issue", "recommendation"]
 VIOLATION_COLUMNS = ["Module", "Activity", "Programme/Year", "Week", "Day", "Start", "Room", "Violation"]
@@ -29,6 +30,9 @@ UNSCHEDULED_ANALYSIS_COLUMNS = [
     "Common Module",
     "Candidate Limit",
     "Source File",
+    "Required Week Count",
+    "Scheduled Week Count",
+    "Unscheduled Week Count",
 ]
 UNSCHEDULED_BREAKDOWN_COLUMNS = ["Breakdown", "Value", "Count"]
 PROGRAMME_COLUMNS = [
@@ -75,7 +79,24 @@ def _snapshot(assignments: list[Assignment]) -> list[Assignment]:
     return copied
 
 
-def build_run_summary(assignments: list[Assignment]) -> dict[str, object]:
+def _demand_summary_rows(demand_metrics: DemandMetrics | None) -> dict[str, object]:
+    """Return demand metrics for Summary when available."""
+    if demand_metrics is None:
+        return {}
+    return {
+        "input_course_records": demand_metrics.input_course_records,
+        "consolidated_course_requirements": demand_metrics.consolidated_course_requirements,
+        "required_teaching_occurrences": demand_metrics.required_teaching_occurrences,
+        "scheduled_teaching_occurrences": demand_metrics.scheduled_teaching_occurrences,
+        "unscheduled_teaching_occurrences": demand_metrics.unscheduled_teaching_occurrences,
+        "coverage_rate_percent": demand_metrics.coverage_rate_percent,
+        "courses_fully_scheduled": demand_metrics.courses_fully_scheduled,
+        "courses_partially_scheduled": demand_metrics.courses_partially_scheduled,
+        "courses_fully_unscheduled": demand_metrics.courses_fully_unscheduled,
+    }
+
+
+def build_run_summary(assignments: list[Assignment], demand_metrics: DemandMetrics | None = None) -> dict[str, object]:
     """Build headline metrics for a completed run."""
     snapshot = _snapshot(assignments)
     total = len(snapshot)
@@ -86,7 +107,7 @@ def build_run_summary(assignments: list[Assignment]) -> dict[str, object]:
     unscheduled_hard = sum(len(item.hard_violations) for item in unscheduled_items)
     all_hard = sum(len(item.hard_violations) for item in snapshot)
     all_soft = sum(len(item.soft_violations) for item in snapshot)
-    return {
+    summary = {
         "assignments": total,
         "scheduled_assignments": len(scheduled),
         "unscheduled_assignments": unscheduled,
@@ -96,11 +117,13 @@ def build_run_summary(assignments: list[Assignment]) -> dict[str, object]:
         "soft_violations": all_soft,
         "feasibility_rate": len(scheduled) / total if total else 0,
     }
+    summary.update(_demand_summary_rows(demand_metrics))
+    return summary
 
 
-def _summary_df(assignments: list[Assignment]) -> pd.DataFrame:
+def _summary_df(assignments: list[Assignment], demand_metrics: DemandMetrics | None = None) -> pd.DataFrame:
     """Return summary metrics as rows."""
-    summary = build_run_summary(assignments)
+    summary = build_run_summary(assignments, demand_metrics=demand_metrics)
     labels = {
         "assignments": "Assignments",
         "scheduled_assignments": "Scheduled assignments",
@@ -110,6 +133,15 @@ def _summary_df(assignments: list[Assignment]) -> pd.DataFrame:
         "hard_violations_all_assignments": "Hard violations on all assignments",
         "soft_violations": "Soft violations",
         "feasibility_rate": "Feasibility rate",
+        "input_course_records": "Input course records",
+        "consolidated_course_requirements": "Consolidated course requirements",
+        "required_teaching_occurrences": "Required teaching occurrences",
+        "scheduled_teaching_occurrences": "Scheduled teaching occurrences",
+        "unscheduled_teaching_occurrences": "Unscheduled teaching occurrences",
+        "coverage_rate_percent": "Coverage rate percent",
+        "courses_fully_scheduled": "Fully scheduled course requirements",
+        "courses_partially_scheduled": "Partially scheduled course requirements",
+        "courses_fully_unscheduled": "Fully unscheduled course requirements",
     }
     return pd.DataFrame([{"Metric": labels[key], "Value": value} for key, value in summary.items()])
 
@@ -189,12 +221,14 @@ def _failed_week(reason: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
-def _unscheduled_analysis_df(assignments: list[Assignment]) -> pd.DataFrame:
+def _unscheduled_analysis_df(assignments: list[Assignment], demand_courses: list[Course] | None = None) -> pd.DataFrame:
     """Return detailed unscheduled bottleneck rows without replacing original reasons."""
+    demand_lookup = requirement_demand_lookup(demand_courses, assignments) if demand_courses is not None else {}
     rows: list[dict[str, object]] = []
     for assignment in assignments:
         if assignment.room is not None and assignment.timeslot is not None:
             continue
+        demand = demand_lookup.get(requirement_key(assignment.course))
         reasons = assignment.hard_violations or ["Unscheduled without recorded reason"]
         for reason in reasons:
             rows.append(
@@ -212,6 +246,9 @@ def _unscheduled_analysis_df(assignments: list[Assignment]) -> pd.DataFrame:
                     "Common Module": "Yes" if assignment.course.is_common_module else "No",
                     "Candidate Limit": "Yes" if "max candidate pattern limit" in reason.lower() else "No",
                     "Source File": assignment.course.source_file,
+                    "Required Week Count": demand.required_week_count if demand else None,
+                    "Scheduled Week Count": demand.scheduled_week_count if demand else None,
+                    "Unscheduled Week Count": demand.unscheduled_week_count if demand else None,
                 }
             )
     return pd.DataFrame(rows, columns=UNSCHEDULED_ANALYSIS_COLUMNS)
@@ -295,9 +332,13 @@ def _programme_breakdown_df(assignments: list[Assignment]) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=PROGRAMME_COLUMNS)
 
 
-def _validation_checks_df(assignments: list[Assignment], generated_at: str) -> pd.DataFrame:
+def _validation_checks_df(
+    assignments: list[Assignment],
+    generated_at: str,
+    demand_metrics: DemandMetrics | None = None,
+) -> pd.DataFrame:
     """Return validation checks for Engineering final evidence."""
-    summary = build_run_summary(assignments)
+    summary = build_run_summary(assignments, demand_metrics=demand_metrics)
     programme_df = _programme_breakdown_df(assignments)
     reasons_df = _unscheduled_reasons_df(assignments)
     total = int(summary["assignments"])
@@ -318,6 +359,22 @@ def _validation_checks_df(assignments: list[Assignment], generated_at: str) -> p
             "Value": total_check,
             "Status": "PASS" if total_check == total else "FAIL",
             "Notes": "Must equal total assignments.",
+        },
+        {
+            "Check": "Demand occurrence consistency",
+            "Value": (
+                ""
+                if demand_metrics is None
+                else demand_metrics.scheduled_teaching_occurrences + demand_metrics.unscheduled_teaching_occurrences
+            ),
+            "Status": "INFO" if demand_metrics is None else ("PASS" if demand_metrics.is_consistent else "FAIL"),
+            "Notes": "Required teaching occurrences must equal scheduled plus unscheduled occurrences.",
+        },
+        {
+            "Check": "Stable demand metric status",
+            "Value": "" if demand_metrics is None else demand_metrics.required_teaching_occurrences,
+            "Status": "INFO" if demand_metrics is None else "PASS",
+            "Notes": "Required teaching occurrences are calculated from consolidated input requirements, not room availability.",
         },
         {
             "Check": "Hard violations on scheduled assignments",
@@ -361,14 +418,25 @@ def _metadata_df(metadata: dict[str, object] | None, generated_at: str) -> pd.Da
     return pd.DataFrame(rows, columns=METADATA_COLUMNS)
 
 
-def export_run_summary(assignments: list[Assignment], output_path: Path, metadata: dict[str, object] | None = None) -> None:
+def export_run_summary(
+    assignments: list[Assignment],
+    output_path: Path,
+    metadata: dict[str, object] | None = None,
+    demand_courses: list[Course] | None = None,
+    input_course_records: int | None = None,
+) -> None:
     """Export a stakeholder-friendly run summary workbook."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
     snapshot = _snapshot(assignments)
     generated_at = datetime.now().isoformat(timespec="seconds")
-    unscheduled_analysis = _unscheduled_analysis_df(snapshot)
+    demand_metrics = (
+        build_demand_metrics(demand_courses, snapshot, input_course_records=input_course_records)
+        if demand_courses is not None
+        else None
+    )
+    unscheduled_analysis = _unscheduled_analysis_df(snapshot, demand_courses=demand_courses)
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
-        _summary_df(snapshot).to_excel(writer, sheet_name="Summary", index=False)
+        _summary_df(snapshot, demand_metrics=demand_metrics).to_excel(writer, sheet_name="Summary", index=False)
         _violations_df(snapshot, "hard").to_excel(writer, sheet_name="Hard Violations", index=False)
         _violations_df(snapshot, "soft").to_excel(writer, sheet_name="Soft Violations", index=False)
         _unscheduled_reasons_df(snapshot).to_excel(writer, sheet_name="Unscheduled Reasons", index=False)
@@ -376,5 +444,5 @@ def export_run_summary(assignments: list[Assignment], output_path: Path, metadat
         _unscheduled_breakdown_df(unscheduled_analysis).to_excel(writer, sheet_name="Unscheduled Breakdown", index=False)
         _room_utilisation_df(snapshot).to_excel(writer, sheet_name="Room Utilisation", index=False)
         _programme_breakdown_df(snapshot).to_excel(writer, sheet_name="Programme Breakdown", index=False)
-        _validation_checks_df(snapshot, generated_at).to_excel(writer, sheet_name="Validation Checks", index=False)
+        _validation_checks_df(snapshot, generated_at, demand_metrics=demand_metrics).to_excel(writer, sheet_name="Validation Checks", index=False)
         _metadata_df(metadata, generated_at).to_excel(writer, sheet_name="Run Metadata", index=False)

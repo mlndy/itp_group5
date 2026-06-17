@@ -41,7 +41,7 @@ def _stub_pipeline(monkeypatch, generated: list[Assignment]) -> None:
     monkeypatch.setattr(app, "annotate_schedule_violations", lambda assignments: assignments)
     monkeypatch.setattr(app, "count_soft_violations", lambda assignments: 0)
     monkeypatch.setattr(app, "optimise_schedule", lambda assignments, rooms_arg, max_iterations: assignments)
-    monkeypatch.setattr(app, "export_run_summary", lambda assignments, output_path, metadata=None: None)
+    monkeypatch.setattr(app, "export_run_summary", lambda assignments, output_path, **kwargs: None)
     monkeypatch.setattr(app, "export_outputs", lambda assignments, scope: None)
 
 
@@ -60,6 +60,7 @@ def test_parse_args_accepts_demo_safety_controls() -> None:
             "150",
             "--max-diagnostic-assignments",
             "5",
+            "--audit-demand-metrics",
             "--skip-preflight",
         ]
     )
@@ -70,6 +71,7 @@ def test_parse_args_accepts_demo_safety_controls() -> None:
     assert args.skip_unscheduled_diagnostics is True
     assert args.max_candidate_patterns == 150
     assert args.max_diagnostic_assignments == 5
+    assert args.audit_demand_metrics is True
     assert args.skip_preflight is True
 
 
@@ -169,5 +171,15 @@ def test_main_accepts_skip_preflight(monkeypatch) -> None:
         lambda courses, rooms: (_ for _ in ()).throw(AssertionError("preflight should be skipped")),
     )
     monkeypatch.setattr(sys, "argv", ["main.py", "--skip-optimisation", "--skip-preflight", "--skip-unscheduled-diagnostics"])
+
+    app.main()
+
+
+def test_main_accepts_audit_demand_metrics(monkeypatch) -> None:
+    """The optional demand audit should run without changing the pipeline."""
+    generated = [Assignment(course=make_course(), room=None, timeslot=None)]
+    _stub_pipeline(monkeypatch, generated)
+    monkeypatch.setattr(app, "generate_schedule", lambda courses, rooms, **kwargs: generated)
+    monkeypatch.setattr(sys, "argv", ["main.py", "--skip-optimisation", "--skip-preflight", "--skip-unscheduled-diagnostics", "--audit-demand-metrics"])
 
     app.main()

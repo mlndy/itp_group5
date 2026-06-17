@@ -130,6 +130,26 @@ def test_unscheduled_analysis_preserves_original_reason(tmp_path: Path) -> None:
     assert analysis["J2"].value == 3
 
 
+def test_unscheduled_analysis_includes_demand_week_counts(tmp_path: Path) -> None:
+    """Unscheduled Analysis should show requirement-level week coverage."""
+    output = tmp_path / "run_summary.xlsx"
+    course = make_course(teaching_weeks=[1, 2, 3])
+    assignments = [
+        Assignment(course=course, room=Room("R1", 100, "physical"), timeslot=TimeSlot("Monday", "09:00", 1)),
+        Assignment(course=course, room=None, timeslot=None, hard_violations=["Could not find feasible slot for week 2"]),
+    ]
+
+    export_run_summary(assignments, output, demand_courses=[course], input_course_records=1)
+
+    workbook = load_workbook(output)
+    analysis = workbook["Unscheduled Analysis"]
+    headers = [cell.value for cell in analysis[1]]
+    values = dict(zip(headers, [cell.value for cell in analysis[2]], strict=False))
+    assert values["Required Week Count"] == 3
+    assert values["Scheduled Week Count"] == 1
+    assert values["Unscheduled Week Count"] == 2
+
+
 def test_programme_breakdown_marks_dsc_assignments(tmp_path: Path) -> None:
     """Engineering evidence should show whether DSC rows are included."""
     output = tmp_path / "run_summary.xlsx"
@@ -222,6 +242,39 @@ def test_summary_distinguishes_scheduled_and_all_hard_violations(tmp_path: Path)
     assert summary["Hard violations on scheduled assignments"] == 0
     assert summary["Hard violations from unscheduled feasibility failures"] == 1
     assert summary["Hard violations on all assignments"] == 1
+
+
+def test_summary_includes_invariant_demand_metrics(tmp_path: Path) -> None:
+    """Summary should report stable teaching-occurrence demand metrics."""
+    output = tmp_path / "run_summary.xlsx"
+    course = make_course(teaching_weeks=[1, 2, 3])
+    assignments = [
+        Assignment(course=course, room=Room("R1", 100, "physical"), timeslot=TimeSlot("Monday", "09:00", 1)),
+        Assignment(course=course, room=None, timeslot=None, hard_violations=["Could not find feasible slot for week 2"]),
+    ]
+
+    export_run_summary(assignments, output, demand_courses=[course], input_course_records=1)
+
+    workbook = load_workbook(output)
+    summary = {row[0]: row[1] for row in _sheet_rows(workbook, "Summary")[1:]}
+    assert summary["Required teaching occurrences"] == 3
+    assert summary["Scheduled teaching occurrences"] == 1
+    assert summary["Unscheduled teaching occurrences"] == 2
+    assert summary["Partially scheduled course requirements"] == 1
+
+
+def test_validation_checks_pass_demand_occurrence_consistency(tmp_path: Path) -> None:
+    """Validation Checks should pass when occurrence demand balances."""
+    output = tmp_path / "run_summary.xlsx"
+    course = make_course(teaching_weeks=[1, 2, 3])
+    assignments = [Assignment(course=course, room=None, timeslot=None, hard_violations=["Could not find feasible pattern"])]
+
+    export_run_summary(assignments, output, demand_courses=[course], input_course_records=1)
+
+    workbook = load_workbook(output)
+    rows = _sheet_rows(workbook, "Validation Checks")
+    demand = next(row for row in rows if row[0] == "Demand occurrence consistency")
+    assert demand[2] == "PASS"
 
 
 def test_run_summary_records_metadata(tmp_path: Path) -> None:

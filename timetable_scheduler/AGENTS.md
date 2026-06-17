@@ -124,6 +124,21 @@ For Engineering scope:
 - Preserve original unscheduled reasons and all reporting sheets.
 - Scenario comparison remains on hold.
 
+## Demand Metric Integrity and Coverage Audit
+
+- Current tests: `68 passed`.
+- Current Engineering result:
+  - Reported scheduled assignments: `2119`
+  - Reported unscheduled assignments: `474`
+  - Reported total: `2593`
+  - Hard violations on scheduled assignments: `0`
+- A virtual-room resource experiment changed the reported total to `2753`.
+- Input teaching demand must not change when room availability changes.
+- Before further scheduler optimisation, define invariant demand metrics.
+- Do not compare scheduling improvements using raw `Assignment` object counts if scheduled and unscheduled objects represent different units.
+- Preserve all existing hard-safety and DSC-inclusion checks.
+- Scenario comparison remains on hold.
+
 ## Important Commands
 
 Run tests from inside the `timetable_scheduler` folder:

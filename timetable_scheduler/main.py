@@ -25,6 +25,7 @@ from data.loader import (
 )
 from data.models import Course
 from engine.constraint_checker import annotate_schedule_violations, count_soft_violations
+from engine.demand_metrics import build_demand_metrics
 from engine.preflight_validator import run_preflight_checks
 from engine.unscheduled_diagnostics import (
     UnscheduledDiagnosticsReport,
@@ -63,6 +64,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Maximum unscheduled assignments to run detailed diagnostics for",
     )
     parser.add_argument("--skip-preflight", action="store_true", help="Skip input preflight validation report")
+    parser.add_argument("--audit-demand-metrics", action="store_true", help="Print invariant demand coverage metrics")
     return parser.parse_args(argv)
 
 
@@ -133,7 +135,22 @@ def _run_metadata(args: argparse.Namespace) -> dict[str, object]:
         "skip_unscheduled_diagnostics": args.skip_unscheduled_diagnostics,
         "max_diagnostic_assignments": args.max_diagnostic_assignments,
         "progress_interval": args.progress_interval,
+        "audit_demand_metrics": args.audit_demand_metrics,
     }
+
+
+def _print_demand_audit(courses: list[Course], assignments: list) -> None:
+    """Print invariant demand metrics for Engineering evidence."""
+    metrics = build_demand_metrics(courses, assignments, input_course_records=len(courses))
+    status = "PASS" if metrics.is_consistent else "FAIL"
+    print("\nDemand metric audit:")
+    print(f"  input course records: {metrics.input_course_records}")
+    print(f"  consolidated course requirements: {metrics.consolidated_course_requirements}")
+    print(f"  required teaching occurrences: {metrics.required_teaching_occurrences}")
+    print(f"  scheduled teaching occurrences: {metrics.scheduled_teaching_occurrences}")
+    print(f"  unscheduled teaching occurrences: {metrics.unscheduled_teaching_occurrences}")
+    print(f"  coverage rate: {metrics.coverage_rate_percent:.2f}%")
+    print(f"  consistency status: {status}")
 
 
 def export_outputs(assignments: list, scope: str) -> None:
@@ -218,8 +235,16 @@ def main() -> None:
     print(f"Final hard violations (all assignments): {final_hard}")
     print(f"Final soft violations: {final_soft}")
 
-    export_run_summary(final_schedule, DEFAULT_RUN_SUMMARY_FILE, metadata=_run_metadata(args))
+    export_run_summary(
+        final_schedule,
+        DEFAULT_RUN_SUMMARY_FILE,
+        metadata=_run_metadata(args),
+        demand_courses=courses,
+        input_course_records=len(courses),
+    )
     print(f"Saved: {DEFAULT_RUN_SUMMARY_FILE}")
+    if args.audit_demand_metrics:
+        _print_demand_audit(courses, final_schedule)
 
     if args.skip_unscheduled_diagnostics:
         print("Skipped unscheduled diagnostics.")
