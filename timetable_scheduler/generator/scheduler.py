@@ -368,6 +368,11 @@ def _is_unscheduled(assignment: Assignment) -> bool:
     return assignment.room is None or assignment.timeslot is None
 
 
+def _is_candidate_limit_assignment(assignment: Assignment) -> bool:
+    """Return True when retrying would hit the same candidate-pattern cap."""
+    return MAX_CANDIDATE_PATTERN_LIMIT_REASON in assignment.hard_violations
+
+
 def _target_retry_weeks(assignment: Assignment) -> list[int]:
     """Return the specific teaching weeks represented by an unscheduled placeholder."""
     for violation in assignment.hard_violations:
@@ -386,7 +391,7 @@ def _retry_unscheduled_assignment(
     max_candidate_patterns: int | None = None,
 ) -> list[Assignment]:
     """Retry one unscheduled assignment without moving already scheduled ones."""
-    if MAX_CANDIDATE_PATTERN_LIMIT_REASON in assignment.hard_violations:
+    if _is_candidate_limit_assignment(assignment):
         return [assignment]
     if allow_weekly_fallback:
         retry = schedule_course_for_weeks(
@@ -414,14 +419,23 @@ def retry_unscheduled_assignments(
 ) -> list[Assignment]:
     """Retry only unscheduled assignments after the greedy pass has finished."""
     scheduled = [assignment for assignment in assignments if not _is_unscheduled(assignment)]
-    retry_queue = [assignment for assignment in assignments if _is_unscheduled(assignment)]
+    permanent_failures = [
+        assignment
+        for assignment in assignments
+        if _is_unscheduled(assignment) and _is_candidate_limit_assignment(assignment)
+    ]
+    retry_queue = [
+        assignment
+        for assignment in assignments
+        if _is_unscheduled(assignment) and not _is_candidate_limit_assignment(assignment)
+    ]
     retry_queue = sorted(retry_queue, key=lambda item: _course_difficulty(item.course, rooms), reverse=True)
     if max_retry_assignments is None:
         retry_now = retry_queue
-        retry_later: list[Assignment] = []
+        retry_later: list[Assignment] = permanent_failures
     else:
         retry_now = retry_queue[:max_retry_assignments]
-        retry_later = retry_queue[max_retry_assignments:]
+        retry_later = retry_queue[max_retry_assignments:] + permanent_failures
 
     results: list[Assignment] = list(scheduled)
     for placeholder in retry_now:

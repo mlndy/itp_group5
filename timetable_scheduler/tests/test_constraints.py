@@ -569,6 +569,41 @@ def test_max_candidate_patterns_can_leave_course_unscheduled() -> None:
     assert scheduler.MAX_CANDIDATE_PATTERN_LIMIT_REASON in schedule[0].hard_violations
 
 
+def test_retry_budget_skips_candidate_limit_placeholders(monkeypatch) -> None:
+    """Candidate-limit placeholders should not consume capped retry slots."""
+    from generator import scheduler
+
+    monkeypatch.setattr(scheduler, "VALID_DAYS", ["Monday"])
+    monkeypatch.setattr(scheduler, "VALID_START_TIMES", ["09:00"])
+
+    candidate_limited = Assignment(
+        course=make_course(module_code="DSC5601", class_size=1, duration_hrs=1),
+        room=None,
+        timeslot=None,
+        hard_violations=[scheduler.MAX_CANDIDATE_PATTERN_LIMIT_REASON],
+    )
+    retriable = Assignment(
+        course=make_course(module_code="DSC5602", class_size=50, duration_hrs=1),
+        room=None,
+        timeslot=None,
+        hard_violations=["Could not find feasible slot for week 1"],
+    )
+
+    result = scheduler.retry_unscheduled_assignments(
+        [candidate_limited, retriable],
+        [Room("R1", 100, "physical")],
+        scheduler.build_schedule_index([]),
+        max_retry_assignments=1,
+    )
+
+    scheduled = [item for item in result if item.room is not None and item.timeslot is not None]
+    still_unscheduled = [item for item in result if item.room is None or item.timeslot is None]
+    assert [item.course.module_code for item in scheduled] == ["DSC5602"]
+    assert len(still_unscheduled) == 1
+    assert scheduler.MAX_CANDIDATE_PATTERN_LIMIT_REASON in still_unscheduled[0].hard_violations
+    assert sum(len(check_hard_constraints(item, [])) for item in scheduled) == 0
+
+
 def test_candidate_limit_excludes_incompatible_rooms() -> None:
     """Physical rooms should not consume candidate budget for online courses."""
     from generator import scheduler

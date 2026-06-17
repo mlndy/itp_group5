@@ -108,6 +108,22 @@ For Engineering scope:
 - Any scheduling improvement must be measured against the same input dataset and command.
 - Total assignments must remain comparable between baseline and improved runs.
 
+## Evidence-Driven Coverage Improvement
+
+- Current comparable baseline:
+  - Total assignments: `2593`
+  - Scheduled assignments: `2119`
+  - Unscheduled assignments: `474`
+  - Hard violations on scheduled assignments: `0`
+  - Tests: `67 passed`
+- All future comparisons must use the same input dataset and total assignment count of `2593`.
+- Update only one scheduling behaviour per iteration.
+- Select the behaviour based on the largest category in `Unscheduled Breakdown`.
+- Do not claim an improvement if the total assignment pool changes.
+- Do not reduce unscheduled assignments by accepting hard violations.
+- Preserve original unscheduled reasons and all reporting sheets.
+- Scenario comparison remains on hold.
+
 ## Important Commands
 
 Run tests from inside the `timetable_scheduler` folder:
