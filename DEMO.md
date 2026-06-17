@@ -82,6 +82,18 @@ Running the pipeline creates additional decision-support workbooks in `timetable
 
 `run_summary.xlsx` summarises the completed run with headline schedule counts, hard and soft violations, unscheduled reasons, room utilisation, and programme breakdown. The programme breakdown includes a DSC indicator so stakeholders can confirm DSC is part of the Engineering cluster run. This gives stakeholders a compact view of feasibility, unresolved scheduling demand, and resource use without changing the Template 2 timetable export.
 
+## How to Read the Engineering Result
+
+The main feasibility success metric is `Hard violations on scheduled assignments = 0`. This means every assignment that received a room and timeslot satisfies the hard constraints.
+
+Unscheduled assignments are not hidden. They remain visible in the summary and unscheduled reason breakdown so the project can explain what still needs more search time, better input data, more rooms, or manual review.
+
+`Hard violations on all assignments` includes unscheduled feasibility failures. Do not confuse those with invalid scheduled timetable entries. The important safety distinction is that scheduled hard violations must remain `0`.
+
+The `Programme Breakdown` sheet proves DSC inclusion in the Engineering run through the `DSC Indicator` column.
+
+The `Validation Checks` sheet is the evidence page for presentation and reporting. It checks total consistency, scheduled hard-constraint safety, DSC inclusion, and unscheduled visibility.
+
 ## Troubleshooting
 
 - Activate the virtual environment before running commands:

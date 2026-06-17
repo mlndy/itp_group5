@@ -24,7 +24,7 @@ from data.loader import (
     load_rooms_from_csv,
 )
 from data.models import Course
-from engine.constraint_checker import annotate_schedule_violations, count_hard_violations, count_soft_violations
+from engine.constraint_checker import annotate_schedule_violations, count_soft_violations
 from engine.preflight_validator import run_preflight_checks
 from engine.unscheduled_diagnostics import (
     UnscheduledDiagnosticsReport,
@@ -112,6 +112,23 @@ def _restore_unscheduled_reasons(assignments: list, reasons: dict[int, list[str]
                 assignment.hard_violations = original
 
 
+def _count_current_hard_violations(assignments: list) -> int:
+    """Count currently recorded hard violations without re-annotating."""
+    return sum(len(assignment.hard_violations) for assignment in assignments)
+
+
+def _run_metadata(args: argparse.Namespace) -> dict[str, object]:
+    """Return CLI settings for run-summary evidence."""
+    return {
+        "scope": args.scope,
+        "skip_optimisation": args.skip_optimisation,
+        "max_candidate_patterns": args.max_candidate_patterns,
+        "max_retry_assignments": args.max_retry_assignments,
+        "skip_unscheduled_diagnostics": args.skip_unscheduled_diagnostics,
+        "progress_interval": args.progress_interval,
+    }
+
+
 def export_outputs(assignments: list, scope: str) -> None:
     """Export timetable and violation reports for the selected scope."""
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -175,9 +192,9 @@ def main() -> None:
     )
     initial_unscheduled_reasons = _snapshot_unscheduled_reasons(initial_schedule)
     annotate_schedule_violations(initial_schedule)
-    initial_hard = count_hard_violations(initial_schedule)
     initial_soft = count_soft_violations(initial_schedule)
     _restore_unscheduled_reasons(initial_schedule, initial_unscheduled_reasons)
+    initial_hard = _count_current_hard_violations(initial_schedule)
     _report_schedule_metrics("Initial", initial_schedule)
     print(f"Initial hard violations (all assignments): {initial_hard}")
     print(f"Initial soft violations: {initial_soft}")
@@ -187,14 +204,14 @@ def main() -> None:
         print("\nOptimising schedule...")
         final_schedule = optimise_schedule(initial_schedule, rooms, max_iterations=args.max_iterations)
     final_unscheduled_reasons = _snapshot_unscheduled_reasons(final_schedule)
-    final_hard = count_hard_violations(final_schedule)
     final_soft = count_soft_violations(final_schedule)
     _restore_unscheduled_reasons(final_schedule, final_unscheduled_reasons)
+    final_hard = _count_current_hard_violations(final_schedule)
     _report_schedule_metrics("Final", final_schedule)
     print(f"Final hard violations (all assignments): {final_hard}")
     print(f"Final soft violations: {final_soft}")
 
-    export_run_summary(final_schedule, DEFAULT_RUN_SUMMARY_FILE)
+    export_run_summary(final_schedule, DEFAULT_RUN_SUMMARY_FILE, metadata=_run_metadata(args))
     print(f"Saved: {DEFAULT_RUN_SUMMARY_FILE}")
 
     if args.skip_unscheduled_diagnostics:

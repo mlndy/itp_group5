@@ -77,6 +77,8 @@ def test_export_run_summary_creates_expected_sheets(tmp_path: Path) -> None:
         "Unscheduled Reasons",
         "Room Utilisation",
         "Programme Breakdown",
+        "Validation Checks",
+        "Run Metadata",
     ]
     assert workbook["Summary"]["A1"].value == "Metric"
 
@@ -118,3 +120,97 @@ def test_programme_breakdown_marks_dsc_assignments(tmp_path: Path) -> None:
     breakdown = workbook["Programme Breakdown"]
     assert breakdown["A2"].value == "DSC/YR 1"
     assert breakdown["C2"].value == "Yes"
+
+
+def _sheet_rows(workbook, sheet_name: str) -> list[tuple[object, ...]]:
+    """Return worksheet rows as tuples."""
+    return list(workbook[sheet_name].iter_rows(values_only=True))
+
+
+def test_validation_checks_show_pass_for_scheduled_hard_safety(tmp_path: Path) -> None:
+    """Validation Checks should pass when scheduled assignments have no hard violations."""
+    output = tmp_path / "run_summary.xlsx"
+    assignments = [
+        Assignment(
+            course=make_course(module_code="DSC1001", prog_yr="DSC/YR 1", source_file="2510_DSC.xlsx"),
+            room=Room("R1", 100, "physical"),
+            timeslot=TimeSlot("Monday", "09:00", 1),
+        ),
+        Assignment(
+            course=make_course(module_code="ENG1002"),
+            room=None,
+            timeslot=None,
+            hard_violations=["Could not find feasible slot for week 1"],
+        ),
+    ]
+
+    export_run_summary(assignments, output)
+
+    workbook = load_workbook(output)
+    rows = _sheet_rows(workbook, "Validation Checks")
+    safety = next(row for row in rows if row[0] == "Hard-constraint safety status")
+    assert safety[2] == "PASS"
+
+
+def test_validation_checks_detect_dsc_inclusion(tmp_path: Path) -> None:
+    """Validation Checks should pass DSC inclusion when Programme Breakdown has DSC data."""
+    output = tmp_path / "run_summary.xlsx"
+    assignments = [
+        Assignment(
+            course=make_course(module_code="DSC1001", prog_yr="DSC/YR 1", source_file="2510_DSC.xlsx"),
+            room=Room("R1", 100, "physical"),
+            timeslot=TimeSlot("Monday", "09:00", 1),
+        )
+    ]
+
+    export_run_summary(assignments, output)
+
+    workbook = load_workbook(output)
+    rows = _sheet_rows(workbook, "Validation Checks")
+    dsc = next(row for row in rows if row[0] == "DSC inclusion status")
+    assert dsc[2] == "PASS"
+
+
+def test_summary_distinguishes_scheduled_and_all_hard_violations(tmp_path: Path) -> None:
+    """Summary should separate scheduled hard violations from unscheduled feasibility failures."""
+    output = tmp_path / "run_summary.xlsx"
+    assignments = [
+        Assignment(
+            course=make_course(),
+            room=Room("R1", 100, "physical"),
+            timeslot=TimeSlot("Monday", "09:00", 1),
+        ),
+        Assignment(
+            course=make_course(module_code="ENG1002"),
+            room=None,
+            timeslot=None,
+            hard_violations=["Could not find feasible slot for week 1"],
+        ),
+    ]
+
+    export_run_summary(assignments, output)
+
+    workbook = load_workbook(output)
+    summary = {row[0]: row[1] for row in _sheet_rows(workbook, "Summary")[1:]}
+    assert summary["Hard violations on scheduled assignments"] == 0
+    assert summary["Hard violations from unscheduled feasibility failures"] == 1
+    assert summary["Hard violations on all assignments"] == 1
+
+
+def test_run_summary_records_metadata(tmp_path: Path) -> None:
+    """Run Metadata should record Engineering command settings."""
+    output = tmp_path / "run_summary.xlsx"
+    assignments = [
+        Assignment(
+            course=make_course(),
+            room=Room("R1", 100, "physical"),
+            timeslot=TimeSlot("Monday", "09:00", 1),
+        )
+    ]
+
+    export_run_summary(assignments, output, metadata={"scope": "eng", "max_candidate_patterns": 300})
+
+    workbook = load_workbook(output)
+    metadata = {row[0]: row[1] for row in _sheet_rows(workbook, "Run Metadata")[1:]}
+    assert metadata["scope"] == "eng"
+    assert metadata["max_candidate_patterns"] == 300

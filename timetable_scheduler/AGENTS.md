@@ -80,6 +80,18 @@ For Engineering scope:
 - If full scheduling is not possible, reports must clearly explain what remains unscheduled and why.
 - Improve coverage only through safe ordering, filtering, reporting, and retry controls that preserve hard constraints.
 
+## Engineering Final Validation
+
+- The final deliverable is Engineering scope, not DSC-only.
+- `--scope eng` must include DSC.
+- Scheduled assignments must have `0` hard violations.
+- Unscheduled assignments must remain visible.
+- Results must be numerically consistent: total assignments = scheduled assignments + unscheduled assignments.
+- If result totals change between runs, the report must explain why.
+- Do not claim improvement using scheduled count alone unless the total assignment pool is the same.
+- Preserve `preflight_report.xlsx` and `run_summary.xlsx`.
+- Scenario comparison is still on hold.
+
 ## Important Commands
 
 Run tests from inside the `timetable_scheduler` folder:

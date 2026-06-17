@@ -39,10 +39,9 @@ def _stub_pipeline(monkeypatch, generated: list[Assignment]) -> None:
     monkeypatch.setattr(app, "run_preflight_checks", lambda courses, rooms: [])
     monkeypatch.setattr(app, "export_preflight_report", lambda issues, output_path: None)
     monkeypatch.setattr(app, "annotate_schedule_violations", lambda assignments: assignments)
-    monkeypatch.setattr(app, "count_hard_violations", lambda assignments: 0)
     monkeypatch.setattr(app, "count_soft_violations", lambda assignments: 0)
     monkeypatch.setattr(app, "optimise_schedule", lambda assignments, rooms_arg, max_iterations: assignments)
-    monkeypatch.setattr(app, "export_run_summary", lambda assignments, output_path: None)
+    monkeypatch.setattr(app, "export_run_summary", lambda assignments, output_path, metadata=None: None)
     monkeypatch.setattr(app, "export_outputs", lambda assignments, scope: None)
 
 

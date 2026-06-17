@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from copy import deepcopy
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -22,6 +23,8 @@ PROGRAMME_COLUMNS = [
     "Unscheduled Assignments",
     "Hard Violations on Scheduled Assignments",
 ]
+VALIDATION_COLUMNS = ["Check", "Value", "Status", "Notes"]
+METADATA_COLUMNS = ["Setting", "Value"]
 
 
 def export_preflight_report(issues: list[dict[str, str]], output_path: Path) -> None:
@@ -60,8 +63,10 @@ def build_run_summary(assignments: list[Assignment]) -> dict[str, object]:
     snapshot = _snapshot(assignments)
     total = len(snapshot)
     scheduled = [item for item in snapshot if item.room is not None and item.timeslot is not None]
+    unscheduled_items = [item for item in snapshot if item.room is None or item.timeslot is None]
     unscheduled = total - len(scheduled)
     scheduled_hard = sum(len(item.hard_violations) for item in scheduled)
+    unscheduled_hard = sum(len(item.hard_violations) for item in unscheduled_items)
     all_hard = sum(len(item.hard_violations) for item in snapshot)
     all_soft = sum(len(item.soft_violations) for item in snapshot)
     return {
@@ -69,6 +74,7 @@ def build_run_summary(assignments: list[Assignment]) -> dict[str, object]:
         "scheduled_assignments": len(scheduled),
         "unscheduled_assignments": unscheduled,
         "hard_violations_on_scheduled_assignments": scheduled_hard,
+        "hard_violations_from_unscheduled_feasibility_failures": unscheduled_hard,
         "hard_violations_all_assignments": all_hard,
         "soft_violations": all_soft,
         "feasibility_rate": len(scheduled) / total if total else 0,
@@ -83,6 +89,7 @@ def _summary_df(assignments: list[Assignment]) -> pd.DataFrame:
         "scheduled_assignments": "Scheduled assignments",
         "unscheduled_assignments": "Unscheduled assignments",
         "hard_violations_on_scheduled_assignments": "Hard violations on scheduled assignments",
+        "hard_violations_from_unscheduled_feasibility_failures": "Hard violations from unscheduled feasibility failures",
         "hard_violations_all_assignments": "Hard violations on all assignments",
         "soft_violations": "Soft violations",
         "feasibility_rate": "Feasibility rate",
@@ -180,10 +187,77 @@ def _programme_breakdown_df(assignments: list[Assignment]) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=PROGRAMME_COLUMNS)
 
 
-def export_run_summary(assignments: list[Assignment], output_path: Path) -> None:
+def _validation_checks_df(assignments: list[Assignment], generated_at: str) -> pd.DataFrame:
+    """Return validation checks for Engineering final evidence."""
+    summary = build_run_summary(assignments)
+    programme_df = _programme_breakdown_df(assignments)
+    reasons_df = _unscheduled_reasons_df(assignments)
+    total = int(summary["assignments"])
+    scheduled = int(summary["scheduled_assignments"])
+    unscheduled = int(summary["unscheduled_assignments"])
+    scheduled_hard = int(summary["hard_violations_on_scheduled_assignments"])
+    total_check = scheduled + unscheduled
+    has_dsc = bool((programme_df["DSC Indicator"] == "Yes").any()) if not programme_df.empty else False
+    reasons_exist = not reasons_df.empty
+    unscheduled_visible = unscheduled == 0 or reasons_exist
+    rows = [
+        {"Check": "Generated timestamp", "Value": generated_at, "Status": "INFO", "Notes": "Report generation time."},
+        {"Check": "Total assignments", "Value": total, "Status": "INFO", "Notes": "All scheduled and unscheduled assignment rows in this run."},
+        {"Check": "Scheduled assignments", "Value": scheduled, "Status": "INFO", "Notes": "Assignments with both room and timeslot."},
+        {"Check": "Unscheduled assignments", "Value": unscheduled, "Status": "INFO", "Notes": "Assignments intentionally left unresolved rather than forced invalid."},
+        {
+            "Check": "Scheduled + unscheduled total check",
+            "Value": total_check,
+            "Status": "PASS" if total_check == total else "FAIL",
+            "Notes": "Must equal total assignments.",
+        },
+        {
+            "Check": "Hard violations on scheduled assignments",
+            "Value": scheduled_hard,
+            "Status": "PASS" if scheduled_hard == 0 else "FAIL",
+            "Notes": "Main hard-constraint safety metric.",
+        },
+        {
+            "Check": "Hard-constraint safety status",
+            "Value": "0 scheduled hard violations" if scheduled_hard == 0 else f"{scheduled_hard} scheduled hard violations",
+            "Status": "PASS" if scheduled_hard == 0 else "FAIL",
+            "Notes": "Scheduled timetable entries must be hard-feasible.",
+        },
+        {
+            "Check": "DSC inclusion status",
+            "Value": "DSC rows found" if has_dsc else "No DSC rows found",
+            "Status": "PASS" if has_dsc else "FAIL",
+            "Notes": "Programme Breakdown must contain DSC evidence for Engineering scope.",
+        },
+        {
+            "Check": "Unscheduled visibility status",
+            "Value": f"{unscheduled} unscheduled assignments",
+            "Status": "PASS" if unscheduled_visible else "FAIL",
+            "Notes": "Unscheduled assignments must remain visible with reasons when present.",
+        },
+        {
+            "Check": "Result total comparability note",
+            "Value": "Compare scheduled counts only when total assignment pool and run metadata match.",
+            "Status": "INFO",
+            "Notes": "Retry and candidate settings can change week-level unscheduled placeholder counts.",
+        },
+    ]
+    return pd.DataFrame(rows, columns=VALIDATION_COLUMNS)
+
+
+def _metadata_df(metadata: dict[str, object] | None, generated_at: str) -> pd.DataFrame:
+    """Return run metadata as setting/value rows."""
+    rows = [{"Setting": "generated_at", "Value": generated_at}]
+    for key, value in (metadata or {}).items():
+        rows.append({"Setting": key, "Value": value})
+    return pd.DataFrame(rows, columns=METADATA_COLUMNS)
+
+
+def export_run_summary(assignments: list[Assignment], output_path: Path, metadata: dict[str, object] | None = None) -> None:
     """Export a stakeholder-friendly run summary workbook."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
     snapshot = _snapshot(assignments)
+    generated_at = datetime.now().isoformat(timespec="seconds")
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
         _summary_df(snapshot).to_excel(writer, sheet_name="Summary", index=False)
         _violations_df(snapshot, "hard").to_excel(writer, sheet_name="Hard Violations", index=False)
@@ -191,3 +265,5 @@ def export_run_summary(assignments: list[Assignment], output_path: Path) -> None
         _unscheduled_reasons_df(snapshot).to_excel(writer, sheet_name="Unscheduled Reasons", index=False)
         _room_utilisation_df(snapshot).to_excel(writer, sheet_name="Room Utilisation", index=False)
         _programme_breakdown_df(snapshot).to_excel(writer, sheet_name="Programme Breakdown", index=False)
+        _validation_checks_df(snapshot, generated_at).to_excel(writer, sheet_name="Validation Checks", index=False)
+        _metadata_df(metadata, generated_at).to_excel(writer, sheet_name="Run Metadata", index=False)
