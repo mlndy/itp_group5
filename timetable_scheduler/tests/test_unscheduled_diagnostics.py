@@ -17,6 +17,7 @@ from engine.unscheduled_diagnostics import (
     diagnose_unscheduled_assignment,
     export_unscheduled_diagnostics,
 )
+from generator.scheduler import MAX_CANDIDATE_PATTERN_LIMIT_REASON
 
 
 def make_course(**overrides: object) -> Course:
@@ -107,6 +108,32 @@ def test_diagnostics_do_not_modify_schedule(monkeypatch) -> None:
     assert report.scheduled_assignments == 1
     assert report.unscheduled_assignments == 1
     assert report.hard_violations_on_scheduled_assignments == 0
+
+
+def test_diagnostics_can_be_limited_to_eligible_assignments() -> None:
+    """Candidate-limit rows should be preserved without expensive diagnosis."""
+    assignments = [
+        Assignment(
+            course=make_course(module_code="ENG2001"),
+            room=None,
+            timeslot=None,
+            hard_violations=[MAX_CANDIDATE_PATTERN_LIMIT_REASON],
+        ),
+        Assignment(course=make_course(module_code="ENG2002", class_size=120), room=None, timeslot=None),
+        Assignment(
+            course=make_course(module_code="ENG2003", class_size=130),
+            room=None,
+            timeslot=None,
+            hard_violations=["Could not find feasible weekly room/day/start pattern"],
+        ),
+    ]
+
+    report = diagnose_unscheduled_assignments(assignments, [Room("R1", 100, "physical")], max_diagnostic_assignments=1)
+
+    assert report.diagnosed_assignments == 1
+    assert report.undiagnosed_assignments == 2
+    assert MAX_CANDIDATE_PATTERN_LIMIT_REASON in report.reason_counts()
+    assert "Could not find feasible weekly room/day/start pattern" in report.reason_counts()
 
 
 def test_unscheduled_diagnostics_export(tmp_path: Path) -> None:

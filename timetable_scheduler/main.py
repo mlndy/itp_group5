@@ -56,6 +56,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Maximum room/day/start candidate patterns to check per course",
     )
+    parser.add_argument(
+        "--max-diagnostic-assignments",
+        type=int,
+        default=None,
+        help="Maximum unscheduled assignments to run detailed diagnostics for",
+    )
     parser.add_argument("--skip-preflight", action="store_true", help="Skip input preflight validation report")
     return parser.parse_args(argv)
 
@@ -125,6 +131,7 @@ def _run_metadata(args: argparse.Namespace) -> dict[str, object]:
         "max_candidate_patterns": args.max_candidate_patterns,
         "max_retry_assignments": args.max_retry_assignments,
         "skip_unscheduled_diagnostics": args.skip_unscheduled_diagnostics,
+        "max_diagnostic_assignments": args.max_diagnostic_assignments,
         "progress_interval": args.progress_interval,
     }
 
@@ -217,7 +224,11 @@ def main() -> None:
     if args.skip_unscheduled_diagnostics:
         print("Skipped unscheduled diagnostics.")
     else:
-        unscheduled_report = diagnose_unscheduled_assignments(final_schedule, rooms)
+        unscheduled_report = diagnose_unscheduled_assignments(
+            final_schedule,
+            rooms,
+            max_diagnostic_assignments=args.max_diagnostic_assignments,
+        )
         _print_unscheduled_reason_summary(unscheduled_report)
         export_unscheduled_diagnostics(unscheduled_report, DEFAULT_UNSCHEDULED_DIAGNOSTICS_FILE)
         print(f"Saved: {DEFAULT_UNSCHEDULED_DIAGNOSTICS_FILE}")

@@ -58,6 +58,8 @@ def test_parse_args_accepts_demo_safety_controls() -> None:
             "--skip-unscheduled-diagnostics",
             "--max-candidate-patterns",
             "150",
+            "--max-diagnostic-assignments",
+            "5",
             "--skip-preflight",
         ]
     )
@@ -67,6 +69,7 @@ def test_parse_args_accepts_demo_safety_controls() -> None:
     assert args.progress_interval == 10
     assert args.skip_unscheduled_diagnostics is True
     assert args.max_candidate_patterns == 150
+    assert args.max_diagnostic_assignments == 5
     assert args.skip_preflight is True
 
 
@@ -129,6 +132,30 @@ def test_skip_unscheduled_diagnostics_does_not_break_pipeline(monkeypatch) -> No
     app.main()
 
     assert exported == {"assignments": generated, "scope": "dsc"}
+
+
+def test_main_passes_max_diagnostic_assignments(monkeypatch) -> None:
+    """main() should pass the optional diagnostic cap into diagnostics."""
+    generated = [Assignment(course=make_course(), room=None, timeslot=None)]
+    captured: dict[str, object] = {}
+    _stub_pipeline(monkeypatch, generated)
+    monkeypatch.setattr(app, "generate_schedule", lambda courses, rooms, **kwargs: generated)
+
+    def fake_diagnose(assignments, rooms, **kwargs):
+        captured.update(kwargs)
+        return app.UnscheduledDiagnosticsReport()
+
+    monkeypatch.setattr(app, "diagnose_unscheduled_assignments", fake_diagnose)
+    monkeypatch.setattr(app, "export_unscheduled_diagnostics", lambda report, output_path: None)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["main.py", "--skip-optimisation", "--skip-preflight", "--max-diagnostic-assignments", "3"],
+    )
+
+    app.main()
+
+    assert captured["max_diagnostic_assignments"] == 3
 
 
 def test_main_accepts_skip_preflight(monkeypatch) -> None:

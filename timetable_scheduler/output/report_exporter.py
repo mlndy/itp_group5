@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections import Counter, defaultdict
 from copy import deepcopy
 from datetime import datetime
@@ -14,6 +15,22 @@ from engine.constraint_checker import annotate_schedule_violations
 
 PREFLIGHT_COLUMNS = ["severity", "entity_type", "entity_id", "issue", "recommendation"]
 VIOLATION_COLUMNS = ["Module", "Activity", "Programme/Year", "Week", "Day", "Start", "Room", "Violation"]
+UNSCHEDULED_ANALYSIS_COLUMNS = [
+    "Original Reason",
+    "Reason Category",
+    "Programme/Year",
+    "Module Code",
+    "Activity",
+    "Class Size",
+    "Class Size Band",
+    "Delivery Mode",
+    "Duration",
+    "Teaching Week",
+    "Common Module",
+    "Candidate Limit",
+    "Source File",
+]
+UNSCHEDULED_BREAKDOWN_COLUMNS = ["Breakdown", "Value", "Count"]
 PROGRAMME_COLUMNS = [
     "Programme/Year",
     "Source File",
@@ -129,6 +146,97 @@ def _unscheduled_reasons_df(assignments: list[Assignment]) -> pd.DataFrame:
         else:
             reasons["Unscheduled without recorded reason"] += 1
     return pd.DataFrame([{"Reason": reason, "Count": count} for reason, count in reasons.most_common()], columns=["Reason", "Count"])
+
+
+def categorise_unscheduled_reason(assignment: Assignment, reason: str) -> str:
+    """Map one unscheduled reason to a stakeholder-facing category."""
+    text = reason.lower()
+    if "max candidate pattern limit" in text:
+        return "Candidate pattern limit"
+    if "capacity" in text or "room large enough" in text:
+        return "Room capacity"
+    if "compatible room" in text or "delivery mode" in text or "virtual room" in text:
+        return "No compatible room"
+    if "staff clash" in text or "tutor" in text:
+        return "Tutor clash"
+    if "student group clash" in text or "group conflict" in text:
+        return "Student-group clash"
+    if "blocked" in text or "time window" in text or "no schedulable" in text or "valid teaching week" in text:
+        return "Blocked or unavailable timeslot"
+    if "feasible slot for week" in text or "weekly room/day/start pattern" in text:
+        return "No complete multi-week placement"
+    if assignment.course.is_common_module:
+        return "Common-module constraint"
+    return "Other / unknown"
+
+
+def _class_size_band(class_size: int) -> str:
+    """Return a compact class-size band for unscheduled breakdowns."""
+    if class_size <= 30:
+        return "1-30"
+    if class_size <= 60:
+        return "31-60"
+    if class_size <= 100:
+        return "61-100"
+    if class_size <= 150:
+        return "101-150"
+    return "151+"
+
+
+def _failed_week(reason: str) -> int | None:
+    """Extract a failed teaching week from a reason when present."""
+    match = re.search(r"week\s+(\d+)", reason, flags=re.IGNORECASE)
+    return int(match.group(1)) if match else None
+
+
+def _unscheduled_analysis_df(assignments: list[Assignment]) -> pd.DataFrame:
+    """Return detailed unscheduled bottleneck rows without replacing original reasons."""
+    rows: list[dict[str, object]] = []
+    for assignment in assignments:
+        if assignment.room is not None and assignment.timeslot is not None:
+            continue
+        reasons = assignment.hard_violations or ["Unscheduled without recorded reason"]
+        for reason in reasons:
+            rows.append(
+                {
+                    "Original Reason": reason,
+                    "Reason Category": categorise_unscheduled_reason(assignment, reason),
+                    "Programme/Year": assignment.course.prog_yr,
+                    "Module Code": assignment.course.module_code,
+                    "Activity": assignment.course.activity,
+                    "Class Size": assignment.course.class_size,
+                    "Class Size Band": _class_size_band(assignment.course.class_size),
+                    "Delivery Mode": assignment.course.delivery_mode,
+                    "Duration": assignment.course.duration_hrs,
+                    "Teaching Week": _failed_week(reason),
+                    "Common Module": "Yes" if assignment.course.is_common_module else "No",
+                    "Candidate Limit": "Yes" if "max candidate pattern limit" in reason.lower() else "No",
+                    "Source File": assignment.course.source_file,
+                }
+            )
+    return pd.DataFrame(rows, columns=UNSCHEDULED_ANALYSIS_COLUMNS)
+
+
+def _unscheduled_breakdown_df(analysis_df: pd.DataFrame) -> pd.DataFrame:
+    """Return grouped counts for unscheduled bottleneck dimensions."""
+    if analysis_df.empty:
+        return pd.DataFrame(columns=UNSCHEDULED_BREAKDOWN_COLUMNS)
+
+    breakdowns = {
+        "Reason Category": "Reason Category",
+        "Programme/Year": "Programme/Year",
+        "Activity": "Activity",
+        "Delivery Mode": "Delivery Mode",
+        "Class Size Band": "Class Size Band",
+        "Duration": "Duration",
+        "Common Module": "Common Module",
+    }
+    rows: list[dict[str, object]] = []
+    for label, column in breakdowns.items():
+        counts = analysis_df[column].fillna("Unknown").astype(str).value_counts()
+        for value, count in counts.items():
+            rows.append({"Breakdown": label, "Value": value, "Count": int(count)})
+    return pd.DataFrame(rows, columns=UNSCHEDULED_BREAKDOWN_COLUMNS)
 
 
 def _room_utilisation_df(assignments: list[Assignment]) -> pd.DataFrame:
@@ -258,11 +366,14 @@ def export_run_summary(assignments: list[Assignment], output_path: Path, metadat
     output_path.parent.mkdir(parents=True, exist_ok=True)
     snapshot = _snapshot(assignments)
     generated_at = datetime.now().isoformat(timespec="seconds")
+    unscheduled_analysis = _unscheduled_analysis_df(snapshot)
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
         _summary_df(snapshot).to_excel(writer, sheet_name="Summary", index=False)
         _violations_df(snapshot, "hard").to_excel(writer, sheet_name="Hard Violations", index=False)
         _violations_df(snapshot, "soft").to_excel(writer, sheet_name="Soft Violations", index=False)
         _unscheduled_reasons_df(snapshot).to_excel(writer, sheet_name="Unscheduled Reasons", index=False)
+        unscheduled_analysis.to_excel(writer, sheet_name="Unscheduled Analysis", index=False)
+        _unscheduled_breakdown_df(unscheduled_analysis).to_excel(writer, sheet_name="Unscheduled Breakdown", index=False)
         _room_utilisation_df(snapshot).to_excel(writer, sheet_name="Room Utilisation", index=False)
         _programme_breakdown_df(snapshot).to_excel(writer, sheet_name="Programme Breakdown", index=False)
         _validation_checks_df(snapshot, generated_at).to_excel(writer, sheet_name="Validation Checks", index=False)

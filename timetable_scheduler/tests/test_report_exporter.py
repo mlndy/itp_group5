@@ -8,7 +8,7 @@ from openpyxl import load_workbook
 
 from data.models import Assignment, Course, Room, TimeSlot
 from generator.scheduler import MAX_CANDIDATE_PATTERN_LIMIT_REASON
-from output.report_exporter import export_preflight_report, export_run_summary
+from output.report_exporter import categorise_unscheduled_reason, export_preflight_report, export_run_summary
 
 
 def make_course(**overrides: object) -> Course:
@@ -75,6 +75,8 @@ def test_export_run_summary_creates_expected_sheets(tmp_path: Path) -> None:
         "Hard Violations",
         "Soft Violations",
         "Unscheduled Reasons",
+        "Unscheduled Analysis",
+        "Unscheduled Breakdown",
         "Room Utilisation",
         "Programme Breakdown",
         "Validation Checks",
@@ -101,6 +103,31 @@ def test_candidate_limit_reason_appears_in_run_summary(tmp_path: Path) -> None:
     reasons = workbook["Unscheduled Reasons"]
     assert reasons["A2"].value == MAX_CANDIDATE_PATTERN_LIMIT_REASON
     assert reasons["B2"].value == 1
+
+
+def test_unscheduled_reason_categorisation() -> None:
+    """Candidate-limit reasons should be grouped for bottleneck analysis."""
+    assignment = Assignment(course=make_course(), room=None, timeslot=None)
+
+    category = categorise_unscheduled_reason(assignment, MAX_CANDIDATE_PATTERN_LIMIT_REASON)
+
+    assert category == "Candidate pattern limit"
+
+
+def test_unscheduled_analysis_preserves_original_reason(tmp_path: Path) -> None:
+    """Unscheduled Analysis should keep the original scheduler reason visible."""
+    output = tmp_path / "run_summary.xlsx"
+    reason = "Could not find feasible slot for week 3"
+    assignments = [Assignment(course=make_course(), room=None, timeslot=None, hard_violations=[reason])]
+
+    export_run_summary(assignments, output)
+
+    workbook = load_workbook(output)
+    analysis = workbook["Unscheduled Analysis"]
+    assert analysis["A2"].value == reason
+    assert analysis["B2"].value == "No complete multi-week placement"
+    assert analysis["I2"].value == 2
+    assert analysis["J2"].value == 3
 
 
 def test_programme_breakdown_marks_dsc_assignments(tmp_path: Path) -> None:

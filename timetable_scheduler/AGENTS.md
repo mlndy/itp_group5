@@ -92,6 +92,22 @@ For Engineering scope:
 - Preserve `preflight_report.xlsx` and `run_summary.xlsx`.
 - Scenario comparison is still on hold.
 
+## Engineering Coverage and Bottleneck Resolution
+
+- Current validated Engineering result:
+  - Total assignments: `2593`
+  - Scheduled assignments: `2119`
+  - Unscheduled assignments: `474`
+  - Hard violations on scheduled assignments: `0`
+- Current tests: `61 passed`
+- The next goal is to reduce unscheduled assignments safely.
+- Never reduce the unscheduled count by accepting hard violations.
+- Preserve `preflight_report.xlsx`, `run_summary.xlsx`, `Validation Checks`, `Run Metadata`, `Programme Breakdown`, and DSC evidence.
+- Before changing scheduling behaviour, produce a reason and bottleneck breakdown.
+- Scenario comparison remains on hold.
+- Any scheduling improvement must be measured against the same input dataset and command.
+- Total assignments must remain comparable between baseline and improved runs.
+
 ## Important Commands
 
 Run tests from inside the `timetable_scheduler` folder:

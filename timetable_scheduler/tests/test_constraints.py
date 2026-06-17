@@ -328,6 +328,23 @@ def test_course_ordering_prioritises_more_constrained_courses() -> None:
     assert ordered[0].module_code == "DSC6010"
 
 
+def test_constrained_course_ordering_is_deterministic() -> None:
+    """Repeated constrained-first sorting should produce the same order."""
+    from generator.scheduler import _course_difficulty
+
+    rooms = [Room("SMALL", 40, "physical"), Room("LARGE", 100, "physical")]
+    courses = [
+        make_course(module_code="DSC6030", class_size=30, duration_hrs=1),
+        make_course(module_code="DSC6010", class_size=60, duration_hrs=2),
+        make_course(module_code="DSC6020", class_size=45, duration_hrs=3),
+    ]
+
+    first = [course.module_code for course in sorted(courses, key=lambda course: _course_difficulty(course, rooms))]
+    second = [course.module_code for course in sorted(courses, key=lambda course: _course_difficulty(course, rooms))]
+
+    assert first == second
+
+
 def test_engineering_candidate_generation_excludes_blocked_weeks(monkeypatch) -> None:
     """Engineering candidate generation should skip blocked weeks before search."""
     from generator import scheduler
@@ -550,3 +567,18 @@ def test_max_candidate_patterns_can_leave_course_unscheduled() -> None:
     assert schedule[0].room is None
     assert schedule[0].timeslot is None
     assert scheduler.MAX_CANDIDATE_PATTERN_LIMIT_REASON in schedule[0].hard_violations
+
+
+def test_candidate_limit_excludes_incompatible_rooms() -> None:
+    """Physical rooms should not consume candidate budget for online courses."""
+    from generator import scheduler
+
+    course = make_course(module_code="DSC5601", delivery_mode="Online - Synchronous")
+    rooms = [Room("PHYSICAL", 100, "physical"), Room("ONLINE", 100, "virtual")]
+
+    schedule = scheduler.generate_schedule([course], rooms, max_candidate_patterns=1)
+
+    assert len(schedule) == 1
+    assert schedule[0].room is not None
+    assert schedule[0].room.room_id == "ONLINE"
+    assert count_hard_violations(schedule) == 0
