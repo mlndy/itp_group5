@@ -83,6 +83,7 @@ def test_export_run_summary_creates_expected_sheets(tmp_path: Path) -> None:
         "Virtual Room Detail",
         "Programme Breakdown",
         "Validation Checks",
+        "Optimisation Summary",
         "Run Metadata",
     ]
     assert workbook["Summary"]["A1"].value == "Metric"
@@ -346,6 +347,57 @@ def test_run_summary_records_metadata(tmp_path: Path) -> None:
     metadata = {row[0]: row[1] for row in _sheet_rows(workbook, "Run Metadata")[1:]}
     assert metadata["scope"] == "eng"
     assert metadata["max_candidate_patterns"] == 300
+
+
+def test_optimisation_summary_sheet_exists(tmp_path: Path) -> None:
+    """Run summary should record optimiser acceptance metrics."""
+    output = tmp_path / "run_summary.xlsx"
+    assignments = [
+        Assignment(
+            course=make_course(),
+            room=Room("R1", 100, "physical"),
+            timeslot=TimeSlot("Monday", "09:00", 1),
+        )
+    ]
+
+    export_run_summary(
+        assignments,
+        output,
+        optimisation_summary={
+            "optimisation_enabled": "Yes",
+            "status": "Accepted improved schedule",
+            "soft_violations_before": 4,
+            "soft_violations_after": 2,
+            "coverage_unchanged_status": "PASS",
+            "hard_safety_status": "PASS",
+            "soft_score_not_worsened_status": "PASS",
+        },
+    )
+
+    workbook = load_workbook(output)
+    summary = {row[0]: row[1] for row in _sheet_rows(workbook, "Optimisation Summary")[1:]}
+    assert summary["Optimisation enabled"] == "Yes"
+    assert summary["Soft violations before optimisation"] == 4
+    assert summary["Soft violations after optimisation"] == 2
+
+
+def test_skipped_optimisation_is_reported(tmp_path: Path) -> None:
+    """Run summary should show skipped status when no optimisation metrics are supplied."""
+    output = tmp_path / "run_summary.xlsx"
+    assignments = [
+        Assignment(
+            course=make_course(),
+            room=Room("R1", 100, "physical"),
+            timeslot=TimeSlot("Monday", "09:00", 1),
+        )
+    ]
+
+    export_run_summary(assignments, output)
+
+    workbook = load_workbook(output)
+    summary = {row[0]: row[1] for row in _sheet_rows(workbook, "Optimisation Summary")[1:]}
+    assert summary["Optimisation enabled"] == "No"
+    assert summary["Status"] == "Skipped"
 
 
 def test_resource_audit_sheet_exists(tmp_path: Path) -> None:

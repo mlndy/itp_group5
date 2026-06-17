@@ -74,6 +74,19 @@ py main.py --scope eng --skip-optimisation --max-candidate-patterns 300 --max-re
 
 This keeps the hard-constraint safety rule while allowing a wider candidate search and retry pass than the shorter demo command.
 
+## Controlled Optimiser Command
+
+After the non-optimised Engineering baseline is validated, run a small controlled optimiser pass:
+
+```powershell
+cd C:\Users\Admin\Documents\GitHub\itp_group5\timetable_scheduler
+py main.py --scope eng --max-iterations 5 --max-candidate-patterns 300 --max-retry-assignments 50 --skip-unscheduled-diagnostics --progress-interval 25 --audit-demand-metrics
+```
+
+The optimiser may improve soft-constraint quality only if it preserves the same teaching demand and scheduled coverage. It must keep scheduled hard violations at `0`, preserve online coverage at `813 / 813`, and keep residual F2F exceptions visible.
+
+If no improvement is found within the controlled iteration limit, the acceptable result is: optimisation preserved feasibility but did not find an improvement within the controlled iteration limit.
+
 ## Stakeholder Reports
 
 Running the pipeline creates additional decision-support workbooks in `timetable_scheduler/generated/`.
@@ -95,6 +108,8 @@ Unscheduled assignments are not hidden. They remain visible in the summary and u
 The `Programme Breakdown` sheet proves DSC inclusion in the Engineering run through the `DSC Indicator` column.
 
 The `Validation Checks` sheet is the evidence page for presentation and reporting. It checks total consistency, scheduled hard-constraint safety, DSC inclusion, and unscheduled visibility.
+
+The `Optimisation Summary` sheet records whether optimisation was enabled, runtime, iteration count, before/after teaching occurrence coverage, before/after hard and soft violations, soft-violation improvement, and acceptance statuses.
 
 Use the unscheduled analysis tabs to explain why remaining assignments were not placed. Compare scheduled-count improvements only when the total assignment pool and command settings are the same.
 

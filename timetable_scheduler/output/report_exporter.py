@@ -71,6 +71,7 @@ PROGRAMME_COLUMNS = [
 ]
 VALIDATION_COLUMNS = ["Check", "Value", "Status", "Notes"]
 METADATA_COLUMNS = ["Setting", "Value"]
+OPTIMISATION_COLUMNS = ["Metric", "Value"]
 
 
 def _metric_rows(values: dict[str, object]) -> pd.DataFrame:
@@ -573,6 +574,8 @@ def _validation_checks_df(
     assignments: list[Assignment],
     generated_at: str,
     demand_metrics: DemandMetrics | None = None,
+    optimisation_summary: dict[str, object] | None = None,
+    resource_audit: ResourceAudit | None = None,
 ) -> pd.DataFrame:
     """Return validation checks for Engineering final evidence."""
     summary = build_run_summary(assignments, demand_metrics=demand_metrics)
@@ -586,6 +589,17 @@ def _validation_checks_df(
     has_dsc = bool((programme_df["DSC Indicator"] == "Yes").any()) if not programme_df.empty else False
     reasons_exist = not reasons_df.empty
     unscheduled_visible = unscheduled == 0 or reasons_exist
+    optimisation = optimisation_summary or {}
+    demand_unchanged = optimisation.get("required_teaching_occurrences_before") == optimisation.get("required_teaching_occurrences_after")
+    coverage_unchanged = optimisation.get("coverage_unchanged_status")
+    hard_after = optimisation.get("hard_violations_after")
+    soft_not_worsened = optimisation.get("soft_score_not_worsened_status")
+    online_preserved = optimisation.get("online_coverage_preserved_status")
+    online_coverage_value = (
+        ""
+        if resource_audit is None
+        else f"{resource_audit.scheduled_online_teaching_occurrences} / {resource_audit.required_online_teaching_occurrences}"
+    )
     rows = [
         {"Check": "Generated timestamp", "Value": generated_at, "Status": "INFO", "Notes": "Report generation time."},
         {"Check": "Total assignments", "Value": total, "Status": "INFO", "Notes": "All scheduled and unscheduled assignment rows in this run."},
@@ -638,6 +652,48 @@ def _validation_checks_df(
             "Notes": "Unscheduled assignments must remain visible with reasons when present.",
         },
         {
+            "Check": "Teaching demand unchanged after optimisation",
+            "Value": (
+                ""
+                if not optimisation
+                else f"{optimisation.get('required_teaching_occurrences_before')} -> {optimisation.get('required_teaching_occurrences_after')}"
+            ),
+            "Status": "INFO" if not optimisation else ("PASS" if demand_unchanged else "FAIL"),
+            "Notes": "Required teaching occurrence demand must not change during optimisation.",
+        },
+        {
+            "Check": "Scheduled coverage unchanged after optimisation",
+            "Value": (
+                ""
+                if not optimisation
+                else f"{optimisation.get('scheduled_teaching_occurrences_before')} -> {optimisation.get('scheduled_teaching_occurrences_after')}"
+            ),
+            "Status": "INFO" if not optimisation else str(coverage_unchanged or "INFO"),
+            "Notes": "Optimisation may improve quality only; it must not change scheduled coverage.",
+        },
+        {
+            "Check": "Hard violations after optimisation",
+            "Value": "" if hard_after is None else hard_after,
+            "Status": "INFO" if hard_after is None else ("PASS" if int(hard_after) == 0 else "FAIL"),
+            "Notes": "Optimised scheduled timetable entries must remain hard-feasible.",
+        },
+        {
+            "Check": "Soft score not worsened",
+            "Value": (
+                ""
+                if not optimisation
+                else f"{optimisation.get('soft_violations_before')} -> {optimisation.get('soft_violations_after')}"
+            ),
+            "Status": "INFO" if not optimisation else str(soft_not_worsened or "INFO"),
+            "Notes": "A worse soft score must not replace the baseline schedule.",
+        },
+        {
+            "Check": "Online coverage preserved",
+            "Value": online_coverage_value,
+            "Status": "INFO" if not optimisation else str(online_preserved or "INFO"),
+            "Notes": "Shared online-room policy and online scheduled occurrence coverage must remain stable.",
+        },
+        {
             "Check": "Result total comparability note",
             "Value": "Compare scheduled counts only when total assignment pool and run metadata match.",
             "Status": "INFO",
@@ -645,6 +701,40 @@ def _validation_checks_df(
         },
     ]
     return pd.DataFrame(rows, columns=VALIDATION_COLUMNS)
+
+
+def _optimisation_summary_df(optimisation_summary: dict[str, object] | None) -> pd.DataFrame:
+    """Return optimisation acceptance metrics as spreadsheet rows."""
+    summary = optimisation_summary or {"optimisation_enabled": "No", "status": "Skipped"}
+    labels = {
+        "optimisation_enabled": "Optimisation enabled",
+        "status": "Status",
+        "requested_max_iterations": "Requested maximum iterations",
+        "iterations_completed": "Iterations completed",
+        "runtime_seconds": "Runtime seconds",
+        "scheduled_teaching_occurrences_before": "Scheduled teaching occurrences before optimisation",
+        "scheduled_teaching_occurrences_after": "Scheduled teaching occurrences after optimisation",
+        "required_teaching_occurrences_before": "Required teaching occurrences before optimisation",
+        "required_teaching_occurrences_after": "Required teaching occurrences after optimisation",
+        "online_scheduled_occurrences_before": "Online scheduled occurrences before optimisation",
+        "online_scheduled_occurrences_after": "Online scheduled occurrences after optimisation",
+        "online_required_occurrences_before": "Online required occurrences before optimisation",
+        "online_required_occurrences_after": "Online required occurrences after optimisation",
+        "hard_violations_before": "Hard violations before optimisation",
+        "hard_violations_after": "Hard violations after optimisation",
+        "soft_violations_before": "Soft violations before optimisation",
+        "soft_violations_after": "Soft violations after optimisation",
+        "absolute_soft_violation_improvement": "Absolute soft-violation improvement",
+        "percentage_soft_violation_improvement": "Percentage soft-violation improvement",
+        "coverage_unchanged_status": "Coverage unchanged status",
+        "hard_safety_status": "Hard-safety status",
+        "soft_score_not_worsened_status": "Soft score not worsened status",
+        "online_coverage_preserved_status": "Online coverage preserved status",
+    }
+    return pd.DataFrame(
+        [{"Metric": labels.get(key, key), "Value": value} for key, value in summary.items()],
+        columns=OPTIMISATION_COLUMNS,
+    )
 
 
 def _metadata_df(metadata: dict[str, object] | None, generated_at: str) -> pd.DataFrame:
@@ -663,6 +753,7 @@ def export_run_summary(
     input_course_records: int | None = None,
     rooms: list[Room] | None = None,
     room_source_path: Path | None = None,
+    optimisation_summary: dict[str, object] | None = None,
 ) -> None:
     """Export a stakeholder-friendly run summary workbook."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -691,5 +782,12 @@ def export_run_summary(
         _resource_audit_df(resource_audit).to_excel(writer, sheet_name="Resource Audit", index=False)
         _virtual_room_detail_df(resource_audit).to_excel(writer, sheet_name="Virtual Room Detail", index=False)
         _programme_breakdown_df(snapshot).to_excel(writer, sheet_name="Programme Breakdown", index=False)
-        _validation_checks_df(snapshot, generated_at, demand_metrics=demand_metrics).to_excel(writer, sheet_name="Validation Checks", index=False)
+        _validation_checks_df(
+            snapshot,
+            generated_at,
+            demand_metrics=demand_metrics,
+            optimisation_summary=optimisation_summary,
+            resource_audit=resource_audit,
+        ).to_excel(writer, sheet_name="Validation Checks", index=False)
+        _optimisation_summary_df(optimisation_summary).to_excel(writer, sheet_name="Optimisation Summary", index=False)
         _metadata_df(metadata, generated_at).to_excel(writer, sheet_name="Run Metadata", index=False)

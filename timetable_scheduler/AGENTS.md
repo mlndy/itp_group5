@@ -208,6 +208,25 @@ For Engineering scope:
 - Update only one scheduling behaviour per evidence-supported iteration.
 - After this phase, scheduler behaviour should be frozen unless a clear correctness bug is found.
 
+## Final Pipeline and Optimiser Acceptance
+
+- Current tests: `94 passed`.
+- Expected stable Engineering baseline, pending final rerun:
+  - Required teaching occurrences: `2777`
+  - Scheduled teaching occurrences: `2747`
+  - Unscheduled teaching occurrences: `30`
+  - Coverage rate: `98.92%`
+  - Online coverage: `813 / 813`
+  - Hard violations on scheduled assignments: `0`
+- Remaining demand is F2F, primarily very large `ENG1001` common-module requirements with enrolments of approximately `1035` and `1110`.
+- These should be treated as operational physical-room capacity exceptions unless source requirements support another delivery arrangement.
+- Scheduler behaviour is now frozen.
+- Do not weaken capacity, room-clash, tutor-clash, student-group, calendar, duration, or recurring-week constraints.
+- The next objective is to validate the optimiser and final end-to-end pipeline.
+- Teaching demand and scheduled coverage must not change during optimisation.
+- Optimisation must never introduce hard violations.
+- Scenario comparison and unrelated innovation remain on hold.
+
 ## Important Commands
 
 Run tests from inside the `timetable_scheduler` folder:

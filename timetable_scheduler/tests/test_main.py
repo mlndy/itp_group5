@@ -183,3 +183,19 @@ def test_main_accepts_audit_demand_metrics(monkeypatch) -> None:
     monkeypatch.setattr(sys, "argv", ["main.py", "--skip-optimisation", "--skip-preflight", "--skip-unscheduled-diagnostics", "--audit-demand-metrics"])
 
     app.main()
+
+
+def test_main_reports_skipped_optimisation(monkeypatch) -> None:
+    """main() should pass skipped optimisation evidence into the run summary."""
+    generated = [Assignment(course=make_course(), room=Room("R1", 100, "physical"), timeslot=None)]
+    captured: dict[str, object] = {}
+    _stub_pipeline(monkeypatch, generated)
+    monkeypatch.setattr(app, "generate_schedule", lambda courses, rooms, **kwargs: generated)
+    monkeypatch.setattr(app, "export_run_summary", lambda assignments, output_path, **kwargs: captured.update(kwargs))
+    monkeypatch.setattr(sys, "argv", ["main.py", "--skip-optimisation", "--skip-preflight", "--skip-unscheduled-diagnostics"])
+
+    app.main()
+
+    optimisation_summary = captured["optimisation_summary"]
+    assert optimisation_summary["optimisation_enabled"] == "No"
+    assert optimisation_summary["status"] == "Skipped"
