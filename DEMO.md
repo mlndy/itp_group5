@@ -63,27 +63,47 @@ Expected Engineering result:
 
 Unscheduled assignments are intentionally reported, not hidden. They represent classes that could not be placed safely within the controlled demo search limits, input data, room availability, or current scheduling strategy.
 
-## Engineering Final Command
+## Recommended Live Engineering Demo
 
-For the final Engineering cluster schedule, use the higher-coverage controlled command:
+For the live presentation, use the non-optimised Engineering command. It generates the final feasible timetable evidence without the long optimiser runtime:
 
 ```powershell
 cd C:\Users\Admin\Documents\GitHub\itp_group5\timetable_scheduler
-py main.py --scope eng --skip-optimisation --max-candidate-patterns 300 --max-retry-assignments 50 --skip-unscheduled-diagnostics --progress-interval 25
+py main.py --scope eng --skip-optimisation --max-candidate-patterns 300 --max-retry-assignments 50 --skip-unscheduled-diagnostics --progress-interval 25 --audit-demand-metrics
 ```
 
-This keeps the hard-constraint safety rule while allowing a wider candidate search and retry pass than the shorter demo command.
+Expected live Engineering result:
 
-## Controlled Optimiser Command
+- Required teaching occurrences: `2777`
+- Scheduled teaching occurrences: `2747`
+- Unscheduled teaching occurrences: `30`
+- Coverage rate: `98.92%`
+- Scheduled hard violations: `0`
+- Online coverage: `813 / 813`
+- DSC inclusion: `PASS`
 
-After the non-optimised Engineering baseline is validated, run a small controlled optimiser pass:
+This keeps the hard-constraint safety rule while allowing a wider candidate search and retry pass than the shorter demo command. The remaining F2F demand stays visible for operational review.
+
+## Controlled Optimiser Evidence Run
+
+The controlled optimiser run is evidence for report submission, not the recommended live-demo command:
 
 ```powershell
 cd C:\Users\Admin\Documents\GitHub\itp_group5\timetable_scheduler
 py main.py --scope eng --max-iterations 5 --max-candidate-patterns 300 --max-retry-assignments 50 --skip-unscheduled-diagnostics --progress-interval 25 --audit-demand-metrics
 ```
 
-The optimiser may improve soft-constraint quality only if it preserves the same teaching demand and scheduled coverage. It must keep scheduled hard violations at `0`, preserve online coverage at `813 / 813`, and keep residual F2F exceptions visible.
+This may take approximately 17 minutes and is not recommended for the live presentation.
+
+Verified optimiser evidence:
+
+- Baseline soft violations: `3030`
+- Optimised soft violations: `3019`
+- Improvement: `11`
+- Required teaching occurrences preserved: `2777`
+- Scheduled teaching occurrences preserved: `2747`
+- Scheduled hard violations preserved: `0`
+- Online coverage preserved: `813 / 813`
 
 If no improvement is found within the controlled iteration limit, the acceptable result is: optimisation preserved feasibility but did not find an improvement within the controlled iteration limit.
 

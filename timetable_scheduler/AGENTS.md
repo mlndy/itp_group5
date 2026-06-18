@@ -227,6 +227,32 @@ For Engineering scope:
 - Optimisation must never introduce hard violations.
 - Scenario comparison and unrelated innovation remain on hold.
 
+## Final Artefact Freeze and Submission Readiness
+
+- Current tests: `104 passed`.
+- Final Engineering demand:
+  - Required teaching occurrences: `2777`
+  - Scheduled teaching occurrences: `2747`
+  - Unscheduled teaching occurrences: `30`
+  - Coverage rate: `98.92%`
+  - Scheduled hard violations: `0`
+- Online demand:
+  - Required: `813`
+  - Scheduled: `813`
+  - Unscheduled: `0`
+- Remaining demand is F2F and primarily caused by physical-room capacity pressure for very large `ENG1001` common-module requirements.
+- Controlled optimiser result:
+  - Initial soft violations: `3030`
+  - Final soft violations: `3019`
+  - Improvement: `11`
+  - Runtime: approximately `1047` seconds
+  - Coverage and hard safety preserved
+- Use the non-optimised Engineering command for the live demo because the optimiser runtime is too long for a live presentation.
+- Keep the optimiser output as pre-generated evidence.
+- Scheduler and optimiser behaviour are frozen.
+- Generated outputs remain ignored by Git.
+- Scenario comparison and additional innovation remain out of scope.
+
 ## Important Commands
 
 Run tests from inside the `timetable_scheduler` folder:
