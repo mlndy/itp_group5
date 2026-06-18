@@ -92,6 +92,34 @@ For Engineering scope:
 - Preserve `preflight_report.xlsx` and `run_summary.xlsx`.
 - Scenario comparison is still on hold.
 
+## Report and Presentation Phase
+
+- Prototype feature development is complete.
+- Current tests: `112 passed`.
+- Release validator: `PASS`.
+- Final Engineering result:
+  - Input course records: `507`
+  - Consolidated scheduling requirements: `465`
+  - Required teaching occurrences: `2777`
+  - Scheduled teaching occurrences: `2747`
+  - Unscheduled teaching occurrences: `30`
+  - Coverage rate: `98.92%`
+  - Scheduled hard violations: `0`
+- Online result:
+  - Required occurrences: `813`
+  - Scheduled occurrences: `813`
+  - Unscheduled occurrences: `0`
+- DSC inclusion: `PASS`.
+- Remaining unscheduled demand is F2F, mainly large `ENG1001` common-module requirements affected by physical-room capacity.
+- Controlled optimiser evidence:
+  - Initial soft violations: `3030`
+  - Final soft violations: `3019`
+  - Improvement: `11`
+  - Runtime: approximately `1047` seconds
+- Use the non-optimised command for the live demo.
+- Do not change validated figures unless a new full release run proves different results.
+- All future work should focus on report writing, AI usage documentation, presentation content, screenshots, and demo rehearsal.
+
 ## Important Commands
 
 Run tests from inside the `timetable_scheduler` folder:
