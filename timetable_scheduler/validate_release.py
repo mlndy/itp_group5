@@ -10,7 +10,7 @@ from pathlib import Path
 from openpyxl import load_workbook
 from openpyxl.workbook.workbook import Workbook
 
-from config import DEFAULT_RUN_SUMMARY_FILE, OUTPUT_DIR
+from config import DEFAULT_RUN_MANIFEST_FILE, DEFAULT_RUN_SUMMARY_FILE, DEFAULT_STAKEHOLDER_VIEWS_FILE, OUTPUT_DIR
 
 DEFAULT_TIMETABLE_FILE = OUTPUT_DIR / "final_timetable_engineering_cluster.xlsx"
 EXPECTED_REQUIRED_TEACHING_OCCURRENCES = 2777
@@ -43,6 +43,14 @@ REQUIRED_TIMETABLE_COLUMNS = [
     "Duration",
     "Location Hostkey",
     "Remark",
+]
+REQUIRED_STAKEHOLDER_SHEETS = ["Programme Timetable", "Tutor Timetable", "Room Timetable", "Exception Queue"]
+REQUIRED_MANIFEST_SHEETS = [
+    "Run Manifest",
+    "Soft Constraint Weights",
+    "Soft Rule Baseline",
+    "Template Validation",
+    "Traceability",
 ]
 
 
@@ -166,14 +174,42 @@ def _check_timetable_workbook(workbook: Workbook, failures: list[str]) -> None:
             failures.append(f"Timetable sheet missing required column: {column}")
 
 
+def _check_stakeholder_views(workbook: Workbook, failures: list[str]) -> None:
+    """Check stakeholder workbook contains the required operational views."""
+    _check_required_sheets(workbook, REQUIRED_STAKEHOLDER_SHEETS, "stakeholder_views.xlsx", failures)
+    if "Exception Queue" in workbook.sheetnames:
+        headers = [cell.value for cell in workbook["Exception Queue"][1]]
+        for column in ["Original Reason", "Classification", "Recommended Operational Action", "Review Status"]:
+            if column not in headers:
+                failures.append(f"Exception Queue missing required column: {column}")
+
+
+def _check_run_manifest(workbook: Workbook, failures: list[str]) -> None:
+    """Check run manifest contains acceptance validation evidence."""
+    _check_required_sheets(workbook, REQUIRED_MANIFEST_SHEETS, "run_manifest.xlsx", failures)
+    if "Run Manifest" in workbook.sheetnames:
+        manifest = _sheet_dict(workbook, "Run Manifest")
+        if manifest.get("validation_status") != "PASS":
+            failures.append("Run Manifest validation_status is not PASS")
+    if "Template Validation" in workbook.sheetnames:
+        worksheet = workbook["Template Validation"]
+        statuses = [row[1] for row in worksheet.iter_rows(min_row=2, values_only=True) if row and row[0]]
+        if any(status != "PASS" for status in statuses):
+            failures.append("Template Validation contains non-PASS status")
+
+
 def validate_release(
     run_summary_path: Path = DEFAULT_RUN_SUMMARY_FILE,
     timetable_path: Path = DEFAULT_TIMETABLE_FILE,
+    stakeholder_views_path: Path = DEFAULT_STAKEHOLDER_VIEWS_FILE,
+    run_manifest_path: Path = DEFAULT_RUN_MANIFEST_FILE,
 ) -> ReleaseValidationResult:
     """Validate existing release artefacts and return the result."""
     failures: list[str] = []
     run_summary = _load_workbook(run_summary_path, failures)
     timetable = _load_workbook(timetable_path, failures)
+    stakeholder_views = _load_workbook(stakeholder_views_path, failures)
+    run_manifest = _load_workbook(run_manifest_path, failures)
 
     if run_summary is not None:
         _check_required_sheets(run_summary, REQUIRED_RUN_SUMMARY_SHEETS, "run_summary.xlsx", failures)
@@ -186,6 +222,10 @@ def validate_release(
 
     if timetable is not None:
         _check_timetable_workbook(timetable, failures)
+    if stakeholder_views is not None:
+        _check_stakeholder_views(stakeholder_views, failures)
+    if run_manifest is not None:
+        _check_run_manifest(run_manifest, failures)
 
     return ReleaseValidationResult(passed=not failures, failures=failures)
 
@@ -195,13 +235,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Validate generated final-release Excel artefacts")
     parser.add_argument("--run-summary", type=Path, default=DEFAULT_RUN_SUMMARY_FILE)
     parser.add_argument("--timetable", type=Path, default=DEFAULT_TIMETABLE_FILE)
+    parser.add_argument("--stakeholder-views", type=Path, default=DEFAULT_STAKEHOLDER_VIEWS_FILE)
+    parser.add_argument("--run-manifest", type=Path, default=DEFAULT_RUN_MANIFEST_FILE)
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     """Run release validation and print a short result."""
     args = parse_args(argv)
-    result = validate_release(args.run_summary, args.timetable)
+    result = validate_release(args.run_summary, args.timetable, args.stakeholder_views, args.run_manifest)
     if result.passed:
         print("FINAL RELEASE VALIDATION: PASS")
         return 0

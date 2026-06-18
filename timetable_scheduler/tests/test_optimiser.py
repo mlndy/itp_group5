@@ -131,7 +131,7 @@ def test_worse_soft_score_result_is_rejected(monkeypatch) -> None:
     baseline = [Assignment(make_course(), Room("R1", 100, "physical"), TimeSlot("Tuesday", "10:00", 1))]
     worse = [Assignment(make_course(), Room("R1", 100, "physical"), TimeSlot("Monday", "09:00", 1))]
 
-    def fake_try_move_assignment(index, assignments, rooms, rng, max_candidates=8):
+    def fake_try_move_assignment(index, assignments, rooms, rng, max_candidates=8, **kwargs):
         return worse
 
     monkeypatch.setattr(local_search, "try_move_assignment", fake_try_move_assignment)
@@ -139,3 +139,59 @@ def test_worse_soft_score_result_is_rejected(monkeypatch) -> None:
     result = local_search.optimise_schedule(baseline, [Room("R1", 100, "physical")], max_iterations=1)
 
     assert result[0].timeslot == TimeSlot("Tuesday", "10:00", 1)
+
+
+def test_optimiser_reports_early_stopped_with_patience() -> None:
+    """A patience setting should stop after configured non-improving iterations."""
+    baseline = [Assignment(make_course(), Room("R1", 100, "physical"), TimeSlot("Tuesday", "10:00", 1))]
+
+    result = local_search.optimise_schedule_with_stats(
+        baseline,
+        [Room("R1", 100, "physical")],
+        max_iterations=5,
+        patience=1,
+    )
+
+    assert result.status in {"Early stopped", "Improved"}
+    assert result.iterations_completed <= 5
+    assert _scheduled_count(result.assignments) == _scheduled_count(baseline)
+
+
+def test_optimiser_reports_time_limit_reached() -> None:
+    """A zero-second limit should stop before running the search loop."""
+    baseline = [Assignment(make_course(), Room("R1", 100, "physical"), TimeSlot("Tuesday", "10:00", 1))]
+
+    result = local_search.optimise_schedule_with_stats(
+        baseline,
+        [Room("R1", 100, "physical")],
+        max_iterations=5,
+        time_limit_seconds=0,
+    )
+
+    assert result.status == "Time limit reached"
+    assert result.iterations_completed == 0
+    assert _scheduled_count(result.assignments) == _scheduled_count(baseline)
+
+
+def test_time_limited_large_schedule_preserves_baseline_without_search() -> None:
+    """Large time-limited runs should exit cleanly instead of overrunning the demo window."""
+    baseline = [
+        Assignment(
+            make_course(module_code=f"ENG{index}", staff_ids=[f"S{index}"], group_ids=[f"ENG/YR {index}"], prog_yr=f"ENG/YR {index}"),
+            Room(f"R{index}", 100, "physical"),
+            TimeSlot("Tuesday", "10:00", 1),
+        )
+        for index in range(1001)
+    ]
+
+    result = local_search.optimise_schedule_with_stats(
+        baseline,
+        [Room("R1", 100, "physical")],
+        max_iterations=5,
+        time_limit_seconds=120,
+        patience=2,
+    )
+
+    assert result.status == "Early stopped"
+    assert result.iterations_completed == 0
+    assert _scheduled_count(result.assignments) == len(baseline)

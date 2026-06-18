@@ -42,7 +42,9 @@ def _stub_pipeline(monkeypatch, generated: list[Assignment]) -> None:
     monkeypatch.setattr(app, "count_soft_violations", lambda assignments: 0)
     monkeypatch.setattr(app, "optimise_schedule", lambda assignments, rooms_arg, max_iterations: assignments)
     monkeypatch.setattr(app, "export_run_summary", lambda assignments, output_path, **kwargs: None)
-    monkeypatch.setattr(app, "export_outputs", lambda assignments, scope: None)
+    monkeypatch.setattr(app, "export_stakeholder_views", lambda assignments, rooms_arg, output_path: None)
+    monkeypatch.setattr(app, "export_run_manifest", lambda courses, assignments, output_path, **kwargs: None)
+    monkeypatch.setattr(app, "export_outputs", lambda assignments, scope: {})
 
 
 def test_parse_args_accepts_demo_safety_controls() -> None:
@@ -60,6 +62,10 @@ def test_parse_args_accepts_demo_safety_controls() -> None:
             "150",
             "--max-diagnostic-assignments",
             "5",
+            "--optimisation-time-limit",
+            "120",
+            "--optimisation-patience",
+            "2",
             "--audit-demand-metrics",
             "--skip-preflight",
         ]
@@ -71,6 +77,8 @@ def test_parse_args_accepts_demo_safety_controls() -> None:
     assert args.skip_unscheduled_diagnostics is True
     assert args.max_candidate_patterns == 150
     assert args.max_diagnostic_assignments == 5
+    assert args.optimisation_time_limit == 120
+    assert args.optimisation_patience == 2
     assert args.audit_demand_metrics is True
     assert args.skip_preflight is True
 
@@ -199,3 +207,56 @@ def test_main_reports_skipped_optimisation(monkeypatch) -> None:
     optimisation_summary = captured["optimisation_summary"]
     assert optimisation_summary["optimisation_enabled"] == "No"
     assert optimisation_summary["status"] == "Skipped"
+
+
+def test_main_passes_optimiser_runtime_controls(monkeypatch) -> None:
+    """main() should pass time-limit and patience settings into the optimiser."""
+    generated = [Assignment(course=make_course(), room=Room("R1", 100, "physical"), timeslot=None)]
+    captured: dict[str, object] = {}
+    _stub_pipeline(monkeypatch, generated)
+    monkeypatch.setattr(app, "generate_schedule", lambda courses, rooms, **kwargs: generated)
+
+    class Result:
+        assignments = generated
+        iterations_completed = 0
+        status = "Time limit reached"
+        stop_reason = "Stopped after 1 seconds"
+
+    def fake_optimise(assignments, rooms, **kwargs):
+        captured.update(kwargs)
+        return Result()
+
+    monkeypatch.setattr(app, "optimise_schedule_with_stats", fake_optimise)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "main.py",
+            "--skip-preflight",
+            "--skip-unscheduled-diagnostics",
+            "--optimisation-time-limit",
+            "1",
+            "--optimisation-patience",
+            "2",
+        ],
+    )
+
+    app.main()
+
+    assert captured["time_limit_seconds"] == 1
+    assert captured["patience"] == 2
+
+
+def test_main_exports_acceptance_workbooks(monkeypatch) -> None:
+    """main() should write stakeholder views and the run manifest."""
+    generated = [Assignment(course=make_course(), room=Room("R1", 100, "physical"), timeslot=None)]
+    exported: dict[str, bool] = {}
+    _stub_pipeline(monkeypatch, generated)
+    monkeypatch.setattr(app, "generate_schedule", lambda courses, rooms, **kwargs: generated)
+    monkeypatch.setattr(app, "export_stakeholder_views", lambda assignments, rooms, output_path: exported.update({"stakeholder": True}))
+    monkeypatch.setattr(app, "export_run_manifest", lambda courses, assignments, output_path, **kwargs: exported.update({"manifest": True}))
+    monkeypatch.setattr(sys, "argv", ["main.py", "--skip-optimisation", "--skip-preflight", "--skip-unscheduled-diagnostics"])
+
+    app.main()
+
+    assert exported == {"stakeholder": True, "manifest": True}

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 import config
 from config import (
@@ -16,7 +16,22 @@ from config import (
     MAX_CONSECUTIVE_HOURS,
     MAX_TUTOR_IDLE_GAP_HOURS,
     MIN_ROOM_UTILISATION,
+    PREFERRED_ONLINE_DAYS,
     PUBLIC_HOLIDAY_WEEKS,
+    SHORT_CAMPUS_DAY_MAX_HOURS,
+    SHORT_CAMPUS_DAY_MIN_HOURS,
+    SOFT_CONSTRAINT_WEIGHTS,
+    SOFT_RULE_BACK_TO_BACK_HOURS,
+    SOFT_RULE_ENDS_AFTER_17,
+    SOFT_RULE_FIRST_SLOT,
+    SOFT_RULE_LOW_ROOM_UTILISATION,
+    SOFT_RULE_MAX_CONSECUTIVE_HOURS,
+    SOFT_RULE_ONLINE_F2F_SWITCH,
+    SOFT_RULE_ONLINE_PREFERRED_DAY,
+    SOFT_RULE_PROGRAMME_ONLINE_DAY_SPREAD,
+    SOFT_RULE_SHORT_CAMPUS_DAY,
+    SOFT_RULE_TUTOR_IDLE_GAP,
+    SOFT_RULE_WASTED_FREE_SLOT,
     TERM_BREAK_WEEKS,
     VALID_DAYS,
 )
@@ -262,7 +277,7 @@ def check_room_utilisation(assignment: Assignment) -> list[str]:
         return []
     utilisation = assignment.course.class_size / assignment.room.capacity
     if utilisation < MIN_ROOM_UTILISATION:
-        return [f"Low room utilisation: {utilisation:.0%}"]
+        return [f"{SOFT_RULE_LOW_ROOM_UTILISATION}: {utilisation:.0%}"]
     return []
 
 
@@ -272,9 +287,9 @@ def check_first_or_last_slot(assignment: Assignment) -> list[str]:
         return []
     issues: list[str] = []
     if assignment.timeslot.start_time == FIRST_SLOT:
-        issues.append("Uses first teaching slot")
+        issues.append(SOFT_RULE_FIRST_SLOT)
     if assignment.timeslot.start_time in LAST_SLOT_STARTS or assignment_end_hour(assignment) > 17:
-        issues.append("Class does not end by 17:00")
+        issues.append(SOFT_RULE_ENDS_AFTER_17)
     return issues
 
 
@@ -305,7 +320,7 @@ def check_online_f2f_switch(assignments: list[Assignment]) -> dict[int, list[str
                 if assignment_end_hour(left) != time_to_hour(right.timeslot.start_time):
                     continue
                 if is_online_course(left.course) != is_online_course(right.course):
-                    issues[id(right)].append(f"Adjacent online/F2F switch for same {label}")
+                    issues[id(right)].append(f"{SOFT_RULE_ONLINE_F2F_SWITCH} for same {label}")
     return issues
 
 
@@ -320,9 +335,9 @@ def check_long_idle_gaps(assignments: list[Assignment]) -> dict[int, list[str]]:
                 continue
             gap = time_to_hour(right.timeslot.start_time) - assignment_end_hour(left)
             if gap > MAX_TUTOR_IDLE_GAP_HOURS:
-                issues[id(right)].append(f"Tutor idle gap longer than {MAX_TUTOR_IDLE_GAP_HOURS} hours")
+                issues[id(right)].append(f"{SOFT_RULE_TUTOR_IDLE_GAP}: {gap} hours")
             elif gap > 0:
-                issues[id(right)].append("Tutor timetable has wasted free slot")
+                issues[id(right)].append(SOFT_RULE_WASTED_FREE_SLOT)
     return issues
 
 
@@ -361,12 +376,72 @@ def _record_consecutive_issue(
     """Record soft penalties for long student group runs."""
     if len(run) > MAX_BACK_TO_BACK_GROUP_HOURS:
         issues[id(block_to_assignment[run[-1]])].append(
-            f"Back-to-back classes exceed {MAX_BACK_TO_BACK_GROUP_HOURS} consecutive hours"
+            f"{SOFT_RULE_BACK_TO_BACK_HOURS}: {len(run)} hours"
         )
     if len(run) > MAX_CONSECUTIVE_HOURS:
         issues[id(block_to_assignment[run[-1]])].append(
-            f"More than {MAX_CONSECUTIVE_HOURS} consecutive teaching hours"
+            f"{SOFT_RULE_MAX_CONSECUTIVE_HOURS}: {len(run)} hours"
         )
+
+
+def check_short_campus_day(assignments: list[Assignment]) -> dict[int, list[str]]:
+    """Penalise one- or two-hour F2F campus days for student groups."""
+    grouped: dict[tuple[str, int, str], dict[str, object]] = defaultdict(lambda: {"hours": set(), "assignments": []})
+    for assignment in assignments:
+        if assignment.timeslot is None or not is_physical_course(assignment.course):
+            continue
+        for group in course_groups(assignment.course):
+            row = grouped[(group, assignment.timeslot.week, assignment.timeslot.day)]
+            row["hours"].update(range(time_to_hour(assignment.timeslot.start_time), assignment_end_hour(assignment)))  # type: ignore[union-attr]
+            row["assignments"].append(assignment)  # type: ignore[union-attr]
+
+    issues: dict[int, list[str]] = defaultdict(list)
+    for (group, week, day), row in grouped.items():
+        hours = set(row["hours"])  # type: ignore[arg-type]
+        if not (SHORT_CAMPUS_DAY_MIN_HOURS <= len(hours) <= SHORT_CAMPUS_DAY_MAX_HOURS):
+            continue
+        items = sorted(
+            row["assignments"],  # type: ignore[arg-type]
+            key=lambda item: (time_to_hour(item.timeslot.start_time) if item.timeslot else 0, item.course.module_code),
+        )
+        if items:
+            issues[id(items[-1])].append(
+                f"{SOFT_RULE_SHORT_CAMPUS_DAY}: student group {group} has only {len(hours)} F2F hour(s) on {day} week {week}"
+            )
+    return issues
+
+
+def _day_order(day: str) -> int:
+    """Return configured weekday order for deterministic clustering checks."""
+    return VALID_DAYS.index(day) if day in VALID_DAYS else len(VALID_DAYS)
+
+
+def check_programme_online_day_clustering(assignments: list[Assignment]) -> dict[int, list[str]]:
+    """Penalise programme/year online classes spread beyond one preferred day."""
+    grouped: dict[tuple[str, int], list[Assignment]] = defaultdict(list)
+    for assignment in assignments:
+        if assignment.timeslot is None or not is_online_course(assignment.course):
+            continue
+        programme = assignment.course.prog_yr.strip().lower()
+        if programme:
+            grouped[(programme, assignment.timeslot.week)].append(assignment)
+
+    issues: dict[int, list[str]] = defaultdict(list)
+    for (programme, week), items in grouped.items():
+        days = sorted({item.timeslot.day for item in items if item.timeslot is not None}, key=_day_order)
+        preferred_days = [day for day in days if day in PREFERRED_ONLINE_DAYS]
+        anchor_day = preferred_days[0] if preferred_days else (days[0] if days else "")
+        for assignment in items:
+            if assignment.timeslot is None:
+                continue
+            day = assignment.timeslot.day
+            if day not in PREFERRED_ONLINE_DAYS:
+                issues[id(assignment)].append(f"{SOFT_RULE_ONLINE_PREFERRED_DAY}: {day}")
+            if len(days) > 1 and day != anchor_day:
+                issues[id(assignment)].append(
+                    f"{SOFT_RULE_PROGRAMME_ONLINE_DAY_SPREAD}: {programme} has online classes on {len(days)} days in week {week}"
+                )
+    return issues
 
 
 def annotate_schedule_violations(assignments: list[Assignment]) -> list[Assignment]:
@@ -384,11 +459,40 @@ def annotate_schedule_violations(assignments: list[Assignment]) -> list[Assignme
         check_online_f2f_switch(checked),
         check_long_idle_gaps(checked),
         check_consecutive_hours(checked),
+        check_short_campus_day(checked),
+        check_programme_online_day_clustering(checked),
     ]
     for assignment in checked:
         for issue_map in global_soft_maps:
             assignment.soft_violations.extend(issue_map.get(id(assignment), []))
     return checked
+
+
+def soft_violation_rule(violation: str) -> str:
+    """Return the canonical soft-rule name for one violation string."""
+    for rule_name in SOFT_CONSTRAINT_WEIGHTS:
+        if violation.startswith(rule_name):
+            return rule_name
+    return violation.split(":", 1)[0]
+
+
+def soft_violation_breakdown(assignments: list[Assignment]) -> dict[str, int]:
+    """Return raw soft-violation counts by canonical rule name."""
+    annotate_schedule_violations(assignments)
+    counts: Counter[str] = Counter()
+    for assignment in assignments:
+        counts.update(soft_violation_rule(violation) for violation in assignment.soft_violations)
+    return dict(sorted(counts.items()))
+
+
+def weighted_soft_score(assignments: list[Assignment]) -> int:
+    """Return weighted soft score using configured soft-constraint weights."""
+    annotate_schedule_violations(assignments)
+    total = 0
+    for assignment in assignments:
+        for violation in assignment.soft_violations:
+            total += SOFT_CONSTRAINT_WEIGHTS.get(soft_violation_rule(violation), 1)
+    return total
 
 
 def count_hard_violations(assignments: list[Assignment]) -> int:

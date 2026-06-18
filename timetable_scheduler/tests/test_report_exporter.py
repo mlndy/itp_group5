@@ -8,7 +8,13 @@ from openpyxl import load_workbook
 
 from data.models import Assignment, Course, Room, TimeSlot
 from generator.scheduler import MAX_CANDIDATE_PATTERN_LIMIT_REASON
-from output.report_exporter import categorise_unscheduled_reason, export_preflight_report, export_run_summary
+from output.report_exporter import (
+    categorise_unscheduled_reason,
+    export_preflight_report,
+    export_run_manifest,
+    export_run_summary,
+    export_stakeholder_views,
+)
 
 
 def make_course(**overrides: object) -> Course:
@@ -424,3 +430,88 @@ def test_resource_audit_sheet_exists(tmp_path: Path) -> None:
     assert audit["Required online teaching occurrences"] == 2
     assert audit["Scheduled online teaching occurrences"] == 1
     assert "Virtual Room Detail" in workbook.sheetnames
+
+
+def test_stakeholder_views_export_expected_sheets(tmp_path: Path) -> None:
+    """Stakeholder views should provide timetable and exception-review tabs."""
+    output = tmp_path / "stakeholder_views.xlsx"
+    scheduled = Assignment(
+        make_course(staff_names=["Tutor A"], group_ids=["ENG/YR 1"]),
+        Room("R1", 100, "physical"),
+        TimeSlot("Monday", "09:00", 1),
+    )
+    unscheduled = Assignment(
+        make_course(module_code="ENG1002", class_size=500, source_file="input.xlsx"),
+        None,
+        None,
+        hard_violations=["Could not find feasible slot for week 1"],
+    )
+
+    export_stakeholder_views([scheduled, unscheduled], [Room("R1", 100, "physical")], output)
+
+    workbook = load_workbook(output)
+    assert workbook.sheetnames == ["Programme Timetable", "Tutor Timetable", "Room Timetable", "Exception Queue"]
+    queue_headers = [cell.value for cell in workbook["Exception Queue"][1]]
+    assert "Recommended Operational Action" in queue_headers
+    assert "Review Status" in queue_headers
+    assert workbook["Exception Queue"]["J2"].value
+
+
+def test_run_manifest_exports_template_validation_and_traceability(tmp_path: Path) -> None:
+    """Run manifest should capture reproducibility and Template/traceability checks."""
+    output = tmp_path / "run_manifest.xlsx"
+    timetable = tmp_path / "timetable.xlsx"
+    workbook = load_workbook(Path("input/Upload template_System (Template 2).xlsx"))
+    workbook.save(timetable)
+    course = make_course(source_file="requirements.xlsx")
+    assignments = [Assignment(course, Room("R1", 100, "physical"), TimeSlot("Monday", "09:00", 1))]
+
+    export_run_manifest(
+        [course],
+        assignments,
+        output,
+        metadata={"scope": "eng", "skip_optimisation": True},
+        rooms=[Room("R1", 100, "physical")],
+        output_files={"timetable": timetable},
+    )
+
+    exported = load_workbook(output)
+    assert exported.sheetnames == [
+        "Run Manifest",
+        "Soft Constraint Weights",
+        "Soft Rule Baseline",
+        "Template Validation",
+        "Traceability",
+    ]
+    manifest = {row[0]: row[1] for row in _sheet_rows(exported, "Run Manifest")[1:]}
+    assert manifest["scope"] == "eng"
+    assert manifest["validation_status"] == "PASS"
+    validation = {row[0]: row[1] for row in _sheet_rows(exported, "Template Validation")[1:]}
+    assert validation["Template 2 output structure retained"] == "PASS"
+    traceability_headers = [cell.value for cell in exported["Traceability"][1]]
+    assert "Source File" in traceability_headers
+
+
+def test_optimisation_summary_includes_weighted_and_rule_breakdown(tmp_path: Path) -> None:
+    """Optimisation Summary should support new weighted score and per-rule rows."""
+    output = tmp_path / "run_summary.xlsx"
+    assignments = [Assignment(make_course(), Room("R1", 100, "physical"), TimeSlot("Monday", "09:00", 1))]
+
+    export_run_summary(
+        assignments,
+        output,
+        optimisation_summary={
+            "optimisation_enabled": "Yes",
+            "status": "Improved",
+            "weighted_soft_score_before": 10,
+            "weighted_soft_score_after": 8,
+            "Before soft rule - Short campus day": 1,
+            "After soft rule - Short campus day": 0,
+        },
+    )
+
+    workbook = load_workbook(output)
+    summary = {row[0]: row[1] for row in _sheet_rows(workbook, "Optimisation Summary")[1:]}
+    assert summary["Weighted soft score before optimisation"] == 10
+    assert summary["Weighted soft score after optimisation"] == 8
+    assert summary["Before soft rule - Short campus day"] == 1

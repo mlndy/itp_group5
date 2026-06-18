@@ -309,6 +309,21 @@ Pre-reconciliation findings recorded for this task:
   - Online coverage: `813 / 813`
   - DSC inclusion: `PASS`
 
+## Prototype Requirements Acceptance
+
+- DSC was only the smaller pilot dataset used to test the algorithm before scaling.
+- DSC is part of the Engineering cluster.
+- The final prototype scope is the full Engineering cluster, including DSC.
+- Template 1 is the bulk scheduling input submitted before consolidation.
+- Template 2 is the proposed timetable produced by the timetabling team before submission into SIT's internal system.
+- The prototype operates between consolidated Template 1 input and proposed Template 2 output.
+- Report and presentation work is paused until prototype acceptance is complete.
+- Preserve the existing Template 2 workbook structure.
+- Never weaken hard constraints to increase coverage.
+- Unresolved requirements must remain visible and explained.
+- Do not add scenario comparison, a web application, OR-Tools, machine learning, or unrelated innovation.
+- Update `AGENTS.md` before every future prototype phase.
+
 ## Important Commands
 
 Run tests from inside the `timetable_scheduler` folder:

@@ -9,10 +9,19 @@ from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
+from openpyxl import load_workbook
 
-from config import BLOCKED_START_TIMES, LATEST_END_HOUR, VALID_DAYS, VALID_START_TIMES
+from config import BLOCKED_START_TIMES, DEFAULT_TEMPLATE2_FILE, LATEST_END_HOUR, SOFT_CONSTRAINT_WEIGHTS, VALID_DAYS, VALID_START_TIMES
 from data.models import Assignment, Course, Room, TimeSlot
-from engine.constraint_checker import annotate_schedule_violations, occupied_start_times, time_to_hour
+from engine.constraint_checker import (
+    annotate_schedule_violations,
+    assignment_end_hour,
+    is_online_course,
+    occupied_start_times,
+    soft_violation_breakdown,
+    time_to_hour,
+    weighted_soft_score,
+)
 from engine.demand_metrics import DemandMetrics, build_demand_metrics, requirement_demand_lookup, requirement_key
 from engine.resource_audit import ResourceAudit, audit_resources
 from generator.scheduler import get_candidate_rooms, schedulable_weeks
@@ -72,6 +81,65 @@ PROGRAMME_COLUMNS = [
 VALIDATION_COLUMNS = ["Check", "Value", "Status", "Notes"]
 METADATA_COLUMNS = ["Setting", "Value"]
 OPTIMISATION_COLUMNS = ["Metric", "Value"]
+STAKEHOLDER_PROGRAMME_COLUMNS = ["Programme/Year", "Week", "Day", "Start", "End", "Module", "Activity", "Room", "Delivery Mode", "Tutor"]
+STAKEHOLDER_TUTOR_COLUMNS = [
+    "Tutor",
+    "Week",
+    "Day",
+    "Start",
+    "End",
+    "Module",
+    "Activity",
+    "Programme/Year",
+    "Location",
+    "Delivery Mode",
+    "Idle Gap Since Previous",
+    "Online/F2F Transition",
+]
+STAKEHOLDER_ROOM_COLUMNS = [
+    "Room",
+    "Week",
+    "Day",
+    "Start",
+    "End",
+    "Module",
+    "Activity",
+    "Programme/Year",
+    "Class Size",
+    "Room Capacity",
+    "Utilisation Percentage",
+]
+EXCEPTION_QUEUE_COLUMNS = [
+    "Programme/Year",
+    "Module Code",
+    "Activity",
+    "Class Size",
+    "Required Weeks",
+    "Missing Weeks",
+    "Original Reason",
+    "Classification",
+    "Compatible Physical Room Count",
+    "Recommended Operational Action",
+    "Review Status",
+    "Source File",
+]
+TEMPLATE2_REQUIRED_COLUMNS = [
+    "Module",
+    "Class Type",
+    "Group",
+    "Day",
+    "Start",
+    "End",
+    "Class Size",
+    "Room1",
+    "Staff1",
+    "Staff2",
+    "Tri Week",
+    "Activity Type",
+    "Duration",
+    "Location Hostkey",
+    "Remark",
+]
 
 
 def _metric_rows(values: dict[str, object]) -> pd.DataFrame:
@@ -709,7 +777,10 @@ def _optimisation_summary_df(optimisation_summary: dict[str, object] | None) -> 
     labels = {
         "optimisation_enabled": "Optimisation enabled",
         "status": "Status",
+        "stop_reason": "Stop reason",
         "requested_max_iterations": "Requested maximum iterations",
+        "time_limit_seconds": "Time limit seconds",
+        "patience": "Patience",
         "iterations_completed": "Iterations completed",
         "runtime_seconds": "Runtime seconds",
         "scheduled_teaching_occurrences_before": "Scheduled teaching occurrences before optimisation",
@@ -724,8 +795,12 @@ def _optimisation_summary_df(optimisation_summary: dict[str, object] | None) -> 
         "hard_violations_after": "Hard violations after optimisation",
         "soft_violations_before": "Soft violations before optimisation",
         "soft_violations_after": "Soft violations after optimisation",
+        "weighted_soft_score_before": "Weighted soft score before optimisation",
+        "weighted_soft_score_after": "Weighted soft score after optimisation",
         "absolute_soft_violation_improvement": "Absolute soft-violation improvement",
         "percentage_soft_violation_improvement": "Percentage soft-violation improvement",
+        "absolute_weighted_soft_score_improvement": "Absolute weighted soft-score improvement",
+        "percentage_weighted_soft_score_improvement": "Percentage weighted soft-score improvement",
         "coverage_unchanged_status": "Coverage unchanged status",
         "hard_safety_status": "Hard-safety status",
         "soft_score_not_worsened_status": "Soft score not worsened status",
@@ -743,6 +818,341 @@ def _metadata_df(metadata: dict[str, object] | None, generated_at: str) -> pd.Da
     for key, value in (metadata or {}).items():
         rows.append({"Setting": key, "Value": value})
     return pd.DataFrame(rows, columns=METADATA_COLUMNS)
+
+
+def _is_scheduled_assignment(assignment: Assignment) -> bool:
+    """Return True when an assignment has a room and timeslot."""
+    return assignment.room is not None and assignment.timeslot is not None
+
+
+def _end_time_text(assignment: Assignment) -> str:
+    """Return the assignment end time as HH:MM text."""
+    if assignment.timeslot is None:
+        return ""
+    return f"{assignment_end_hour(assignment):02d}:00"
+
+
+def _assignment_tutors(assignment: Assignment) -> list[str]:
+    """Return display tutor values for stakeholder views."""
+    tutors = assignment.course.staff_names or assignment.course.staff_ids
+    return [tutor for tutor in tutors if tutor] or ["Unassigned"]
+
+
+def _programme_timetable_df(assignments: list[Assignment]) -> pd.DataFrame:
+    """Return a readable weekly timetable by programme/year."""
+    rows: list[dict[str, object]] = []
+    for assignment in assignments:
+        if not _is_scheduled_assignment(assignment):
+            continue
+        rows.append(
+            {
+                "Programme/Year": assignment.course.prog_yr,
+                "Week": assignment.timeslot.week,
+                "Day": assignment.timeslot.day,
+                "Start": assignment.timeslot.start_time,
+                "End": _end_time_text(assignment),
+                "Module": assignment.course.module_code,
+                "Activity": assignment.course.activity,
+                "Room": assignment.room.room_id,
+                "Delivery Mode": assignment.course.delivery_mode,
+                "Tutor": ", ".join(_assignment_tutors(assignment)),
+            }
+        )
+    return pd.DataFrame(rows, columns=STAKEHOLDER_PROGRAMME_COLUMNS).sort_values(
+        by=["Programme/Year", "Week", "Day", "Start", "Module"],
+        kind="stable",
+        ignore_index=True,
+    )
+
+
+def _tutor_timetable_df(assignments: list[Assignment]) -> pd.DataFrame:
+    """Return tutor timetable rows with idle-gap and transition notes."""
+    tutor_rows: list[dict[str, object]] = []
+    grouped: dict[tuple[str, int, str], list[Assignment]] = defaultdict(list)
+    for assignment in assignments:
+        if not _is_scheduled_assignment(assignment):
+            continue
+        for tutor in _assignment_tutors(assignment):
+            grouped[(tutor, assignment.timeslot.week, assignment.timeslot.day)].append(assignment)
+
+    for (tutor, week, day), items in sorted(grouped.items()):
+        ordered = sorted(items, key=lambda item: (time_to_hour(item.timeslot.start_time), item.course.module_code))
+        previous: Assignment | None = None
+        for assignment in ordered:
+            idle_gap = ""
+            transition = "No"
+            if previous is not None:
+                gap = time_to_hour(assignment.timeslot.start_time) - assignment_end_hour(previous)
+                idle_gap = max(gap, 0)
+                transition = "Yes" if is_online_course(previous.course) != is_online_course(assignment.course) else "No"
+            tutor_rows.append(
+                {
+                    "Tutor": tutor,
+                    "Week": week,
+                    "Day": day,
+                    "Start": assignment.timeslot.start_time,
+                    "End": _end_time_text(assignment),
+                    "Module": assignment.course.module_code,
+                    "Activity": assignment.course.activity,
+                    "Programme/Year": assignment.course.prog_yr,
+                    "Location": assignment.room.room_id,
+                    "Delivery Mode": assignment.course.delivery_mode,
+                    "Idle Gap Since Previous": idle_gap,
+                    "Online/F2F Transition": transition,
+                }
+            )
+            previous = assignment
+    return pd.DataFrame(tutor_rows, columns=STAKEHOLDER_TUTOR_COLUMNS)
+
+
+def _room_timetable_df(assignments: list[Assignment]) -> pd.DataFrame:
+    """Return physical-room occupancy rows for stakeholder review."""
+    rows: list[dict[str, object]] = []
+    for assignment in assignments:
+        if not _is_scheduled_assignment(assignment):
+            continue
+        if assignment.room.room_type == "virtual":
+            continue
+        utilisation = assignment.course.class_size / assignment.room.capacity if assignment.room.capacity else 0
+        rows.append(
+            {
+                "Room": assignment.room.room_id,
+                "Week": assignment.timeslot.week,
+                "Day": assignment.timeslot.day,
+                "Start": assignment.timeslot.start_time,
+                "End": _end_time_text(assignment),
+                "Module": assignment.course.module_code,
+                "Activity": assignment.course.activity,
+                "Programme/Year": assignment.course.prog_yr,
+                "Class Size": assignment.course.class_size,
+                "Room Capacity": assignment.room.capacity,
+                "Utilisation Percentage": round(utilisation * 100, 2),
+            }
+        )
+    return pd.DataFrame(rows, columns=STAKEHOLDER_ROOM_COLUMNS).sort_values(
+        by=["Room", "Week", "Day", "Start", "Module"],
+        kind="stable",
+        ignore_index=True,
+    )
+
+
+def _recommended_action(classification: str, compatible_room_count: int) -> str:
+    """Return a non-automatic operational action for one exception."""
+    if classification == "Physical room scarcity" or compatible_room_count == 0:
+        return "Review large-room availability or approved delivery arrangement."
+    if classification == "Recurring-pattern infeasibility":
+        return "Manual timetabling-team review of recurring pattern options."
+    if classification == "Calendar restriction":
+        return "Revise approved timeslot or verify blocked-week inputs."
+    if classification == "Tutor or student-group conflict":
+        return "Review tutor or cohort availability with programme lead."
+    if classification == "Search limitation":
+        return "Rerun with a higher candidate limit if demo time allows."
+    return "Verify input data and review manually."
+
+
+def _exception_queue_df(assignments: list[Assignment], rooms: list[Room] | None = None) -> pd.DataFrame:
+    """Return unresolved requirements as an operational exception queue."""
+    rows: list[dict[str, object]] = []
+    for assignment in assignments:
+        if _is_scheduled_assignment(assignment):
+            continue
+        compatible_rooms = [
+            room for room in get_candidate_rooms(assignment.course, rooms or []) if room.room_type == "physical"
+        ]
+        reasons = assignment.hard_violations or ["Unscheduled without recorded reason"]
+        classification, _ = _classify_residual_f2f(
+            assignment,
+            reasons,
+            compatible_rooms,
+            len(schedulable_weeks(assignment.course.teaching_weeks)),
+        )
+        missing_weeks = sorted({_failed_week(reason) for reason in reasons if _failed_week(reason) is not None})
+        rows.append(
+            {
+                "Programme/Year": assignment.course.prog_yr,
+                "Module Code": assignment.course.module_code,
+                "Activity": assignment.course.activity,
+                "Class Size": assignment.course.class_size,
+                "Required Weeks": _format_weeks(assignment.course.teaching_weeks),
+                "Missing Weeks": _format_weeks([week for week in missing_weeks if week is not None]),
+                "Original Reason": " | ".join(reasons),
+                "Classification": classification,
+                "Compatible Physical Room Count": len(compatible_rooms),
+                "Recommended Operational Action": _recommended_action(classification, len(compatible_rooms)),
+                "Review Status": "Open",
+                "Source File": assignment.course.source_file,
+            }
+        )
+    return pd.DataFrame(rows, columns=EXCEPTION_QUEUE_COLUMNS)
+
+
+def export_stakeholder_views(assignments: list[Assignment], rooms: list[Room], output_path: Path) -> None:
+    """Export separate stakeholder timetable and exception views."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    snapshot = _snapshot(assignments)
+    with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
+        _programme_timetable_df(snapshot).to_excel(writer, sheet_name="Programme Timetable", index=False)
+        _tutor_timetable_df(snapshot).to_excel(writer, sheet_name="Tutor Timetable", index=False)
+        _room_timetable_df(snapshot).to_excel(writer, sheet_name="Room Timetable", index=False)
+        _exception_queue_df(snapshot, rooms=rooms).to_excel(writer, sheet_name="Exception Queue", index=False)
+
+
+def _soft_weights_df() -> pd.DataFrame:
+    """Return configured soft-constraint weights as rows."""
+    return pd.DataFrame(
+        [{"Soft Rule": rule, "Weight": weight} for rule, weight in SOFT_CONSTRAINT_WEIGHTS.items()],
+        columns=["Soft Rule", "Weight"],
+    )
+
+
+def _template1_field_status(courses: list[Course]) -> tuple[str, str]:
+    """Validate scheduler-required fields on consolidated Template 1 records."""
+    required = ["module_code", "activity", "prog_yr", "class_size", "delivery_mode", "teaching_weeks", "duration_hrs"]
+    missing = 0
+    for course in courses:
+        for field_name in required:
+            value = getattr(course, field_name)
+            if value in ("", [], None) or (isinstance(value, int) and value <= 0 and field_name in {"class_size", "duration_hrs"}):
+                missing += 1
+    if missing:
+        return "FAIL", f"{missing} required field value(s) missing or invalid."
+    return "PASS", "All consolidated records expose scheduler-required fields."
+
+
+def _template2_status(timetable_path: Path | None, template2_path: Path) -> tuple[str, str]:
+    """Validate Template 2 workbook sheet and required columns."""
+    target = timetable_path if timetable_path and timetable_path.exists() else template2_path
+    if not target.exists():
+        return "FAIL", f"Template 2 workbook not found: {target}"
+    workbook = load_workbook(target, read_only=True, data_only=True)
+    try:
+        if "Timetable" not in workbook.sheetnames:
+            return "FAIL", "Timetable sheet is missing."
+        headers = [cell.value for cell in workbook["Timetable"][1]]
+        missing = [column for column in TEMPLATE2_REQUIRED_COLUMNS if column not in headers]
+        if missing:
+            return "FAIL", f"Missing Template 2 columns: {', '.join(missing)}"
+        return "PASS", "Template 2 Timetable sheet retains expected columns."
+    finally:
+        workbook.close()
+
+
+def _traceability_status(assignments: list[Assignment], scheduled: bool) -> tuple[str, str]:
+    """Validate source traceability for scheduled or unresolved rows."""
+    target = [item for item in assignments if _is_scheduled_assignment(item) == scheduled]
+    if not target:
+        return "PASS", "No rows in this category."
+    missing = [
+        item
+        for item in target
+        if not item.course.module_code or not item.course.activity or not item.course.prog_yr or not item.course.source_file
+    ]
+    if missing:
+        return "FAIL", f"{len(missing)} row(s) lack module/activity/programme/source traceability."
+    return "PASS", "Rows retain module, activity, programme/year, and source workbook traceability."
+
+
+def _template_validation_df(courses: list[Course], assignments: list[Assignment], timetable_path: Path | None, template2_path: Path) -> pd.DataFrame:
+    """Return Template 1, Template 2, and traceability validation rows."""
+    template1_status, template1_notes = _template1_field_status(courses)
+    template2_status, template2_notes = _template2_status(timetable_path, template2_path)
+    scheduled_status, scheduled_notes = _traceability_status(assignments, scheduled=True)
+    unresolved_status, unresolved_notes = _traceability_status(assignments, scheduled=False)
+    rows = [
+        {"Check": "Consolidated Template 1 scheduler fields present", "Status": template1_status, "Notes": template1_notes},
+        {"Check": "Template 2 output structure retained", "Status": template2_status, "Notes": template2_notes},
+        {"Check": "Scheduled row traceability", "Status": scheduled_status, "Notes": scheduled_notes},
+        {"Check": "Unresolved row traceability", "Status": unresolved_status, "Notes": unresolved_notes},
+    ]
+    return pd.DataFrame(rows, columns=["Check", "Status", "Notes"])
+
+
+def _traceability_df(assignments: list[Assignment]) -> pd.DataFrame:
+    """Return row-level schedule traceability evidence."""
+    rows: list[dict[str, object]] = []
+    for assignment in assignments:
+        rows.append(
+            {
+                "Status": "Scheduled" if _is_scheduled_assignment(assignment) else "Unscheduled",
+                "Source File": assignment.course.source_file,
+                "Programme/Year": assignment.course.prog_yr,
+                "Module Code": assignment.course.module_code,
+                "Activity": assignment.course.activity,
+                "Teaching Weeks": _format_weeks(assignment.course.teaching_weeks),
+                "Scheduled Week": assignment.timeslot.week if assignment.timeslot else "",
+                "Day": assignment.timeslot.day if assignment.timeslot else "",
+                "Start": assignment.timeslot.start_time if assignment.timeslot else "",
+                "Room": assignment.room.room_id if assignment.room else "",
+                "Original Reason": " | ".join(assignment.hard_violations),
+            }
+        )
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "Status",
+            "Source File",
+            "Programme/Year",
+            "Module Code",
+            "Activity",
+            "Teaching Weeks",
+            "Scheduled Week",
+            "Day",
+            "Start",
+            "Room",
+            "Original Reason",
+        ],
+    )
+
+
+def export_run_manifest(
+    courses: list[Course],
+    assignments: list[Assignment],
+    output_path: Path,
+    metadata: dict[str, object] | None = None,
+    rooms: list[Room] | None = None,
+    output_files: dict[str, Path] | None = None,
+    template2_path: Path = DEFAULT_TEMPLATE2_FILE,
+) -> None:
+    """Export reproducibility, validation, and traceability evidence."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    snapshot = _snapshot(assignments)
+    demand = build_demand_metrics(courses, snapshot, input_course_records=len(courses))
+    summary = build_run_summary(snapshot, demand_metrics=demand)
+    template_validation = _template_validation_df(courses, snapshot, (output_files or {}).get("timetable"), template2_path)
+    validation_status = "PASS" if demand.is_consistent and summary["hard_violations_on_scheduled_assignments"] == 0 else "FAIL"
+    generated_at = datetime.now().isoformat(timespec="seconds")
+    manifest_rows = [
+        {"Setting": "run_timestamp", "Value": generated_at},
+        {"Setting": "scope", "Value": (metadata or {}).get("scope", "")},
+        {"Setting": "input_files", "Value": "; ".join(sorted({course.source_file for course in courses if course.source_file}))},
+        {"Setting": "input_record_count", "Value": len(courses)},
+        {"Setting": "consolidated_requirement_count", "Value": demand.consolidated_course_requirements},
+        {"Setting": "required_teaching_occurrences", "Value": demand.required_teaching_occurrences},
+        {"Setting": "scheduled_teaching_occurrences", "Value": demand.scheduled_teaching_occurrences},
+        {"Setting": "unscheduled_teaching_occurrences", "Value": demand.unscheduled_teaching_occurrences},
+        {"Setting": "coverage_rate_percent", "Value": demand.coverage_rate_percent},
+        {"Setting": "hard_violations_on_scheduled_assignments", "Value": summary["hard_violations_on_scheduled_assignments"]},
+        {"Setting": "weighted_soft_score", "Value": weighted_soft_score(snapshot)},
+        {"Setting": "validation_status", "Value": validation_status},
+        {"Setting": "loaded_rooms", "Value": len(rooms or [])},
+    ]
+    for key, value in (metadata or {}).items():
+        if key.startswith("optimisation") or key in {"max_iterations", "skip_optimisation"}:
+            manifest_rows.append({"Setting": key, "Value": value})
+    for name, path in (output_files or {}).items():
+        manifest_rows.append({"Setting": f"output_file_{name}", "Value": str(path)})
+
+    before_after = pd.DataFrame(
+        [{"Soft Rule": rule, "Count": count} for rule, count in soft_violation_breakdown(snapshot).items()],
+        columns=["Soft Rule", "Count"],
+    )
+    with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
+        pd.DataFrame(manifest_rows, columns=["Setting", "Value"]).to_excel(writer, sheet_name="Run Manifest", index=False)
+        _soft_weights_df().to_excel(writer, sheet_name="Soft Constraint Weights", index=False)
+        before_after.to_excel(writer, sheet_name="Soft Rule Baseline", index=False)
+        template_validation.to_excel(writer, sheet_name="Template Validation", index=False)
+        _traceability_df(snapshot).to_excel(writer, sheet_name="Traceability", index=False)
 
 
 def export_run_summary(

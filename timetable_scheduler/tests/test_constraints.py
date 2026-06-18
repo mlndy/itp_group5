@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from data.models import Assignment, Course, Room, TimeSlot
-from engine.constraint_checker import check_hard_constraints, count_hard_violations
+from config import SOFT_RULE_ONLINE_PREFERRED_DAY, SOFT_RULE_PROGRAMME_ONLINE_DAY_SPREAD, SOFT_RULE_SHORT_CAMPUS_DAY
+from engine.constraint_checker import annotate_schedule_violations, check_hard_constraints, count_hard_violations, soft_violation_breakdown
 
 
 def make_course(**overrides: object) -> Course:
@@ -695,3 +696,52 @@ def test_scheduler_places_unrelated_online_courses_concurrently(monkeypatch) -> 
     assert len(scheduled) == 2
     assert {item.room.room_id for item in scheduled} == {"ONLINE_ROOM"}
     assert count_hard_violations(schedule) == 0
+
+
+def test_short_campus_day_soft_constraint_is_reported() -> None:
+    """One short F2F campus day should be visible as a soft issue."""
+    assignment = Assignment(
+        course=make_course(duration_hrs=2, group_ids=["DSC/YR 1"]),
+        room=Room("R1", 100, "physical"),
+        timeslot=TimeSlot("Monday", "10:00", 1),
+    )
+
+    annotate_schedule_violations([assignment])
+
+    assert any(issue.startswith(SOFT_RULE_SHORT_CAMPUS_DAY) for issue in assignment.soft_violations)
+    assert soft_violation_breakdown([assignment])[SOFT_RULE_SHORT_CAMPUS_DAY] == 1
+
+
+def test_short_campus_day_does_not_penalise_online_only_day() -> None:
+    """Fully online days should not trigger the campus-day soft rule."""
+    assignment = Assignment(
+        course=make_course(delivery_mode="Online - Synchronous", duration_hrs=2, group_ids=["DSC/YR 1"]),
+        room=Room("ONLINE_ROOM", 9999, "virtual"),
+        timeslot=TimeSlot("Wednesday", "10:00", 1),
+    )
+
+    annotate_schedule_violations([assignment])
+
+    assert not any(issue.startswith(SOFT_RULE_SHORT_CAMPUS_DAY) for issue in assignment.soft_violations)
+
+
+def test_programme_online_day_clustering_soft_constraint_is_reported() -> None:
+    """Online classes for a programme/year should prefer one Monday/Tuesday day."""
+    assignments = [
+        Assignment(
+            course=make_course(module_code="DSC1001", delivery_mode="Online - Synchronous", group_ids=["DSC/YR 1"]),
+            room=Room("ONLINE_ROOM", 9999, "virtual"),
+            timeslot=TimeSlot("Monday", "09:00", 1),
+        ),
+        Assignment(
+            course=make_course(module_code="DSC1002", delivery_mode="Online - Synchronous", group_ids=["DSC/YR 1"]),
+            room=Room("ONLINE_ROOM", 9999, "virtual"),
+            timeslot=TimeSlot("Thursday", "09:00", 1),
+        ),
+    ]
+
+    annotate_schedule_violations(assignments)
+
+    second_issues = assignments[1].soft_violations
+    assert any(issue.startswith(SOFT_RULE_PROGRAMME_ONLINE_DAY_SPREAD) for issue in second_issues)
+    assert any(issue.startswith(SOFT_RULE_ONLINE_PREFERRED_DAY) for issue in second_issues)

@@ -84,14 +84,53 @@ def _create_timetable(path: Path) -> None:
     workbook.save(path)
 
 
+def _create_stakeholder_views(path: Path) -> None:
+    """Create a minimal stakeholder views workbook."""
+    workbook = Workbook()
+    programme = _replace_default_sheet(workbook, "Programme Timetable")
+    programme.append(["Programme/Year", "Week", "Day"])
+    tutor = workbook.create_sheet("Tutor Timetable")
+    tutor.append(["Tutor", "Week", "Day"])
+    room = workbook.create_sheet("Room Timetable")
+    room.append(["Room", "Week", "Day"])
+    queue = workbook.create_sheet("Exception Queue")
+    queue.append(["Original Reason", "Classification", "Recommended Operational Action", "Review Status"])
+    queue.append(["Could not find feasible slot", "Physical room scarcity", "Review large-room availability", "Open"])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    workbook.save(path)
+
+
+def _create_run_manifest(path: Path, validation_status: str = "PASS", template_status: str = "PASS") -> None:
+    """Create a minimal run manifest workbook."""
+    workbook = Workbook()
+    manifest = _replace_default_sheet(workbook, "Run Manifest")
+    manifest.append(["Setting", "Value"])
+    manifest.append(["validation_status", validation_status])
+    weights = workbook.create_sheet("Soft Constraint Weights")
+    weights.append(["Soft Rule", "Weight"])
+    baseline = workbook.create_sheet("Soft Rule Baseline")
+    baseline.append(["Soft Rule", "Count"])
+    template = workbook.create_sheet("Template Validation")
+    template.append(["Check", "Status", "Notes"])
+    template.append(["Template 2 output structure retained", template_status, ""])
+    trace = workbook.create_sheet("Traceability")
+    trace.append(["Status", "Source File", "Module Code"])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    workbook.save(path)
+
+
 def test_release_validator_passes_with_valid_temporary_workbooks(tmp_path: Path) -> None:
     """A minimal valid release package should pass."""
     run_summary = tmp_path / "run_summary.xlsx"
     timetable = tmp_path / "final_timetable_engineering_cluster.xlsx"
+    stakeholder_views = tmp_path / "stakeholder_views.xlsx"
+    run_manifest = tmp_path / "run_manifest.xlsx"
     _create_run_summary(run_summary)
     _create_timetable(timetable)
+    _create_stakeholder_views(stakeholder_views)
+    _create_run_manifest(run_manifest)
 
-    result = validate_release.validate_release(run_summary, timetable)
+    result = validate_release.validate_release(run_summary, timetable, stakeholder_views, run_manifest)
 
     assert result.passed
     assert result.failures == []
@@ -102,7 +141,12 @@ def test_missing_workbook_produces_fail(tmp_path: Path) -> None:
     timetable = tmp_path / "final_timetable_engineering_cluster.xlsx"
     _create_timetable(timetable)
 
-    result = validate_release.validate_release(tmp_path / "missing" / "run_summary.xlsx", timetable)
+    result = validate_release.validate_release(
+        tmp_path / "missing" / "run_summary.xlsx",
+        timetable,
+        tmp_path / "missing" / "stakeholder_views.xlsx",
+        tmp_path / "missing" / "run_manifest.xlsx",
+    )
 
     assert not result.passed
     assert any("Missing workbook" in failure for failure in result.failures)
@@ -112,13 +156,17 @@ def test_missing_required_sheet_produces_fail(tmp_path: Path) -> None:
     """Missing run-summary sheets should fail validation."""
     run_summary = tmp_path / "run_summary.xlsx"
     timetable = tmp_path / "final_timetable_engineering_cluster.xlsx"
+    stakeholder_views = tmp_path / "stakeholder_views.xlsx"
+    run_manifest = tmp_path / "run_manifest.xlsx"
     _create_run_summary(run_summary)
     _create_timetable(timetable)
+    _create_stakeholder_views(stakeholder_views)
+    _create_run_manifest(run_manifest)
     workbook = Workbook()
     _add_metric_sheet(workbook, "Summary", [("Required teaching occurrences", 2777)])
     workbook.save(run_summary)
 
-    result = validate_release.validate_release(run_summary, timetable)
+    result = validate_release.validate_release(run_summary, timetable, stakeholder_views, run_manifest)
 
     assert not result.passed
     assert any("missing required sheet" in failure for failure in result.failures)
@@ -128,10 +176,14 @@ def test_demand_inconsistency_produces_fail(tmp_path: Path) -> None:
     """Required occurrences must equal scheduled plus unscheduled occurrences."""
     run_summary = tmp_path / "run_summary.xlsx"
     timetable = tmp_path / "final_timetable_engineering_cluster.xlsx"
+    stakeholder_views = tmp_path / "stakeholder_views.xlsx"
+    run_manifest = tmp_path / "run_manifest.xlsx"
     _create_run_summary(run_summary, scheduled=2700, unscheduled=10)
     _create_timetable(timetable)
+    _create_stakeholder_views(stakeholder_views)
+    _create_run_manifest(run_manifest)
 
-    result = validate_release.validate_release(run_summary, timetable)
+    result = validate_release.validate_release(run_summary, timetable, stakeholder_views, run_manifest)
 
     assert not result.passed
     assert any("Demand inconsistency" in failure for failure in result.failures)
@@ -141,10 +193,14 @@ def test_non_zero_scheduled_hard_violations_produces_fail(tmp_path: Path) -> Non
     """Scheduled hard violations must be zero."""
     run_summary = tmp_path / "run_summary.xlsx"
     timetable = tmp_path / "final_timetable_engineering_cluster.xlsx"
+    stakeholder_views = tmp_path / "stakeholder_views.xlsx"
+    run_manifest = tmp_path / "run_manifest.xlsx"
     _create_run_summary(run_summary, scheduled_hard=1)
     _create_timetable(timetable)
+    _create_stakeholder_views(stakeholder_views)
+    _create_run_manifest(run_manifest)
 
-    result = validate_release.validate_release(run_summary, timetable)
+    result = validate_release.validate_release(run_summary, timetable, stakeholder_views, run_manifest)
 
     assert not result.passed
     assert any("Scheduled hard violations" in failure for failure in result.failures)
@@ -154,10 +210,14 @@ def test_missing_dsc_produces_fail(tmp_path: Path) -> None:
     """Programme Breakdown must contain DSC evidence."""
     run_summary = tmp_path / "run_summary.xlsx"
     timetable = tmp_path / "final_timetable_engineering_cluster.xlsx"
+    stakeholder_views = tmp_path / "stakeholder_views.xlsx"
+    run_manifest = tmp_path / "run_manifest.xlsx"
     _create_run_summary(run_summary, has_dsc=False)
     _create_timetable(timetable)
+    _create_stakeholder_views(stakeholder_views)
+    _create_run_manifest(run_manifest)
 
-    result = validate_release.validate_release(run_summary, timetable)
+    result = validate_release.validate_release(run_summary, timetable, stakeholder_views, run_manifest)
 
     assert not result.passed
     assert any("does not contain DSC" in failure for failure in result.failures)
@@ -167,12 +227,48 @@ def test_workbooks_validate_without_generated_folders_existing(tmp_path: Path) -
     """Validator should work with explicit paths outside generated folders."""
     run_summary = tmp_path / "release" / "summary.xlsx"
     timetable = tmp_path / "release" / "timetable.xlsx"
+    stakeholder_views = tmp_path / "release" / "stakeholder_views.xlsx"
+    run_manifest = tmp_path / "release" / "run_manifest.xlsx"
     _create_run_summary(run_summary)
     _create_timetable(timetable)
+    _create_stakeholder_views(stakeholder_views)
+    _create_run_manifest(run_manifest)
 
-    result = validate_release.validate_release(run_summary, timetable)
+    result = validate_release.validate_release(run_summary, timetable, stakeholder_views, run_manifest)
 
     assert result.passed
+
+
+def test_missing_stakeholder_views_produces_fail(tmp_path: Path) -> None:
+    """Stakeholder views are part of the acceptance package."""
+    run_summary = tmp_path / "run_summary.xlsx"
+    timetable = tmp_path / "final_timetable_engineering_cluster.xlsx"
+    run_manifest = tmp_path / "run_manifest.xlsx"
+    _create_run_summary(run_summary)
+    _create_timetable(timetable)
+    _create_run_manifest(run_manifest)
+
+    result = validate_release.validate_release(run_summary, timetable, tmp_path / "missing.xlsx", run_manifest)
+
+    assert not result.passed
+    assert any("stakeholder" in failure.lower() or "Missing workbook" in failure for failure in result.failures)
+
+
+def test_manifest_template_validation_failure_produces_fail(tmp_path: Path) -> None:
+    """Template Validation rows must pass in the run manifest."""
+    run_summary = tmp_path / "run_summary.xlsx"
+    timetable = tmp_path / "final_timetable_engineering_cluster.xlsx"
+    stakeholder_views = tmp_path / "stakeholder_views.xlsx"
+    run_manifest = tmp_path / "run_manifest.xlsx"
+    _create_run_summary(run_summary)
+    _create_timetable(timetable)
+    _create_stakeholder_views(stakeholder_views)
+    _create_run_manifest(run_manifest, template_status="FAIL")
+
+    result = validate_release.validate_release(run_summary, timetable, stakeholder_views, run_manifest)
+
+    assert not result.passed
+    assert any("Template Validation" in failure for failure in result.failures)
 
 
 def test_importing_validate_release_does_not_execute_validation(capsys) -> None:
