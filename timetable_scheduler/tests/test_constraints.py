@@ -54,6 +54,63 @@ def test_f2f_cannot_use_virtual_room() -> None:
     assert any("virtual" in issue.lower() for issue in check_hard_constraints(assignment, []))
 
 
+def test_shared_virtual_room_allows_unrelated_online_concurrency() -> None:
+    """Unrelated online classes may share ONLINE_ROOM at the same time."""
+    existing = [
+        Assignment(
+            course=make_course(module_code="DSC1001", delivery_mode="Online - Synchronous", staff_ids=["S001"], prog_yr="DSC/YR 1"),
+            room=Room("ONLINE_ROOM", 9999, "virtual"),
+            timeslot=TimeSlot("Monday", "09:00", 1),
+        )
+    ]
+    candidate = Assignment(
+        course=make_course(module_code="DSC1002", delivery_mode="Online - Synchronous", staff_ids=["S002"], prog_yr="DSC/YR 2"),
+        room=Room("ONLINE_ROOM", 9999, "virtual"),
+        timeslot=TimeSlot("Monday", "09:00", 1),
+    )
+
+    violations = check_hard_constraints(candidate, existing)
+
+    assert not any("room clash" in issue.lower() for issue in violations)
+    assert violations == []
+
+
+def test_shared_virtual_room_still_blocks_same_tutor() -> None:
+    """Online classes sharing a tutor must still clash at the same time."""
+    existing = [
+        Assignment(
+            course=make_course(module_code="DSC1001", delivery_mode="Online - Synchronous", staff_ids=["S001"], prog_yr="DSC/YR 1"),
+            room=Room("ONLINE_ROOM", 9999, "virtual"),
+            timeslot=TimeSlot("Monday", "09:00", 1),
+        )
+    ]
+    candidate = Assignment(
+        course=make_course(module_code="DSC1002", delivery_mode="Online - Synchronous", staff_ids=["S001"], prog_yr="DSC/YR 2"),
+        room=Room("ONLINE_ROOM", 9999, "virtual"),
+        timeslot=TimeSlot("Monday", "09:00", 1),
+    )
+
+    assert any("staff clash" in issue.lower() for issue in check_hard_constraints(candidate, existing))
+
+
+def test_shared_virtual_room_still_blocks_same_student_group() -> None:
+    """Online classes sharing a student group must still clash at the same time."""
+    existing = [
+        Assignment(
+            course=make_course(module_code="DSC1001", delivery_mode="Online - Synchronous", staff_ids=["S001"], prog_yr="DSC/YR 1"),
+            room=Room("ONLINE_ROOM", 9999, "virtual"),
+            timeslot=TimeSlot("Monday", "09:00", 1),
+        )
+    ]
+    candidate = Assignment(
+        course=make_course(module_code="DSC1002", delivery_mode="Online - Synchronous", staff_ids=["S002"], prog_yr="DSC/YR 1"),
+        room=Room("ONLINE_ROOM", 9999, "virtual"),
+        timeslot=TimeSlot("Monday", "09:00", 1),
+    )
+
+    assert any("student group clash" in issue.lower() for issue in check_hard_constraints(candidate, existing))
+
+
 def test_room_clash_violation() -> None:
     """Two classes cannot use the same room at overlapping times."""
     existing = [
@@ -328,6 +385,23 @@ def test_course_ordering_prioritises_more_constrained_courses() -> None:
     assert ordered[0].module_code == "DSC6010"
 
 
+def test_constrained_course_ordering_is_deterministic() -> None:
+    """Repeated constrained-first sorting should produce the same order."""
+    from generator.scheduler import _course_difficulty
+
+    rooms = [Room("SMALL", 40, "physical"), Room("LARGE", 100, "physical")]
+    courses = [
+        make_course(module_code="DSC6030", class_size=30, duration_hrs=1),
+        make_course(module_code="DSC6010", class_size=60, duration_hrs=2),
+        make_course(module_code="DSC6020", class_size=45, duration_hrs=3),
+    ]
+
+    first = [course.module_code for course in sorted(courses, key=lambda course: _course_difficulty(course, rooms))]
+    second = [course.module_code for course in sorted(courses, key=lambda course: _course_difficulty(course, rooms))]
+
+    assert first == second
+
+
 def test_engineering_candidate_generation_excludes_blocked_weeks(monkeypatch) -> None:
     """Engineering candidate generation should skip blocked weeks before search."""
     from generator import scheduler
@@ -550,3 +624,74 @@ def test_max_candidate_patterns_can_leave_course_unscheduled() -> None:
     assert schedule[0].room is None
     assert schedule[0].timeslot is None
     assert scheduler.MAX_CANDIDATE_PATTERN_LIMIT_REASON in schedule[0].hard_violations
+
+
+def test_retry_budget_skips_candidate_limit_placeholders(monkeypatch) -> None:
+    """Candidate-limit placeholders should not consume capped retry slots."""
+    from generator import scheduler
+
+    monkeypatch.setattr(scheduler, "VALID_DAYS", ["Monday"])
+    monkeypatch.setattr(scheduler, "VALID_START_TIMES", ["09:00"])
+
+    candidate_limited = Assignment(
+        course=make_course(module_code="DSC5601", class_size=1, duration_hrs=1),
+        room=None,
+        timeslot=None,
+        hard_violations=[scheduler.MAX_CANDIDATE_PATTERN_LIMIT_REASON],
+    )
+    retriable = Assignment(
+        course=make_course(module_code="DSC5602", class_size=50, duration_hrs=1),
+        room=None,
+        timeslot=None,
+        hard_violations=["Could not find feasible slot for week 1"],
+    )
+
+    result = scheduler.retry_unscheduled_assignments(
+        [candidate_limited, retriable],
+        [Room("R1", 100, "physical")],
+        scheduler.build_schedule_index([]),
+        max_retry_assignments=1,
+    )
+
+    scheduled = [item for item in result if item.room is not None and item.timeslot is not None]
+    still_unscheduled = [item for item in result if item.room is None or item.timeslot is None]
+    assert [item.course.module_code for item in scheduled] == ["DSC5602"]
+    assert len(still_unscheduled) == 1
+    assert scheduler.MAX_CANDIDATE_PATTERN_LIMIT_REASON in still_unscheduled[0].hard_violations
+    assert sum(len(check_hard_constraints(item, [])) for item in scheduled) == 0
+
+
+def test_candidate_limit_excludes_incompatible_rooms() -> None:
+    """Physical rooms should not consume candidate budget for online courses."""
+    from generator import scheduler
+
+    course = make_course(module_code="DSC5601", delivery_mode="Online - Synchronous")
+    rooms = [Room("PHYSICAL", 100, "physical"), Room("ONLINE", 100, "virtual")]
+
+    schedule = scheduler.generate_schedule([course], rooms, max_candidate_patterns=1)
+
+    assert len(schedule) == 1
+    assert schedule[0].room is not None
+    assert schedule[0].room.room_id == "ONLINE"
+    assert count_hard_violations(schedule) == 0
+
+
+def test_scheduler_places_unrelated_online_courses_concurrently(monkeypatch) -> None:
+    """The scheduler should not reserve ONLINE_ROOM as an exclusive venue."""
+    from generator import scheduler
+
+    monkeypatch.setattr(scheduler, "VALID_DAYS", ["Monday"])
+    monkeypatch.setattr(scheduler, "VALID_START_TIMES", ["09:00"])
+
+    courses = [
+        make_course(module_code="DSC5701", delivery_mode="Online - Synchronous", staff_ids=["S001"], prog_yr="DSC/YR 1"),
+        make_course(module_code="DSC5702", delivery_mode="Online - Synchronous", staff_ids=["S002"], prog_yr="DSC/YR 2"),
+    ]
+    rooms = [Room("ONLINE_ROOM", 9999, "virtual")]
+
+    schedule = scheduler.generate_schedule(courses, rooms, allow_weekly_fallback=False)
+
+    scheduled = [item for item in schedule if item.room is not None and item.timeslot is not None]
+    assert len(scheduled) == 2
+    assert {item.room.room_id for item in scheduled} == {"ONLINE_ROOM"}
+    assert count_hard_violations(schedule) == 0

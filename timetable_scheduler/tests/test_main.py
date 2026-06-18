@@ -41,7 +41,7 @@ def _stub_pipeline(monkeypatch, generated: list[Assignment]) -> None:
     monkeypatch.setattr(app, "annotate_schedule_violations", lambda assignments: assignments)
     monkeypatch.setattr(app, "count_soft_violations", lambda assignments: 0)
     monkeypatch.setattr(app, "optimise_schedule", lambda assignments, rooms_arg, max_iterations: assignments)
-    monkeypatch.setattr(app, "export_run_summary", lambda assignments, output_path, metadata=None: None)
+    monkeypatch.setattr(app, "export_run_summary", lambda assignments, output_path, **kwargs: None)
     monkeypatch.setattr(app, "export_outputs", lambda assignments, scope: None)
 
 
@@ -58,6 +58,9 @@ def test_parse_args_accepts_demo_safety_controls() -> None:
             "--skip-unscheduled-diagnostics",
             "--max-candidate-patterns",
             "150",
+            "--max-diagnostic-assignments",
+            "5",
+            "--audit-demand-metrics",
             "--skip-preflight",
         ]
     )
@@ -67,6 +70,8 @@ def test_parse_args_accepts_demo_safety_controls() -> None:
     assert args.progress_interval == 10
     assert args.skip_unscheduled_diagnostics is True
     assert args.max_candidate_patterns == 150
+    assert args.max_diagnostic_assignments == 5
+    assert args.audit_demand_metrics is True
     assert args.skip_preflight is True
 
 
@@ -131,6 +136,30 @@ def test_skip_unscheduled_diagnostics_does_not_break_pipeline(monkeypatch) -> No
     assert exported == {"assignments": generated, "scope": "dsc"}
 
 
+def test_main_passes_max_diagnostic_assignments(monkeypatch) -> None:
+    """main() should pass the optional diagnostic cap into diagnostics."""
+    generated = [Assignment(course=make_course(), room=None, timeslot=None)]
+    captured: dict[str, object] = {}
+    _stub_pipeline(monkeypatch, generated)
+    monkeypatch.setattr(app, "generate_schedule", lambda courses, rooms, **kwargs: generated)
+
+    def fake_diagnose(assignments, rooms, **kwargs):
+        captured.update(kwargs)
+        return app.UnscheduledDiagnosticsReport()
+
+    monkeypatch.setattr(app, "diagnose_unscheduled_assignments", fake_diagnose)
+    monkeypatch.setattr(app, "export_unscheduled_diagnostics", lambda report, output_path: None)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["main.py", "--skip-optimisation", "--skip-preflight", "--max-diagnostic-assignments", "3"],
+    )
+
+    app.main()
+
+    assert captured["max_diagnostic_assignments"] == 3
+
+
 def test_main_accepts_skip_preflight(monkeypatch) -> None:
     """Skipping preflight should avoid preflight checks and still run."""
     generated = [Assignment(course=make_course(), room=None, timeslot=None)]
@@ -144,3 +173,29 @@ def test_main_accepts_skip_preflight(monkeypatch) -> None:
     monkeypatch.setattr(sys, "argv", ["main.py", "--skip-optimisation", "--skip-preflight", "--skip-unscheduled-diagnostics"])
 
     app.main()
+
+
+def test_main_accepts_audit_demand_metrics(monkeypatch) -> None:
+    """The optional demand audit should run without changing the pipeline."""
+    generated = [Assignment(course=make_course(), room=None, timeslot=None)]
+    _stub_pipeline(monkeypatch, generated)
+    monkeypatch.setattr(app, "generate_schedule", lambda courses, rooms, **kwargs: generated)
+    monkeypatch.setattr(sys, "argv", ["main.py", "--skip-optimisation", "--skip-preflight", "--skip-unscheduled-diagnostics", "--audit-demand-metrics"])
+
+    app.main()
+
+
+def test_main_reports_skipped_optimisation(monkeypatch) -> None:
+    """main() should pass skipped optimisation evidence into the run summary."""
+    generated = [Assignment(course=make_course(), room=Room("R1", 100, "physical"), timeslot=None)]
+    captured: dict[str, object] = {}
+    _stub_pipeline(monkeypatch, generated)
+    monkeypatch.setattr(app, "generate_schedule", lambda courses, rooms, **kwargs: generated)
+    monkeypatch.setattr(app, "export_run_summary", lambda assignments, output_path, **kwargs: captured.update(kwargs))
+    monkeypatch.setattr(sys, "argv", ["main.py", "--skip-optimisation", "--skip-preflight", "--skip-unscheduled-diagnostics"])
+
+    app.main()
+
+    optimisation_summary = captured["optimisation_summary"]
+    assert optimisation_summary["optimisation_enabled"] == "No"
+    assert optimisation_summary["status"] == "Skipped"

@@ -10,7 +10,7 @@ from typing import Callable
 
 from config import BLOCKED_WEEKS, LUNCH_BLOCKS, MIN_ROOM_UTILISATION, VALID_DAYS, VALID_START_TIMES
 from data.models import Assignment, Course, Room, TimeSlot
-from engine.constraint_checker import check_hard_constraints, course_groups, is_online_course, occupied_start_times
+from engine.constraint_checker import check_hard_constraints, course_groups, is_online_course, occupied_start_times, room_is_exclusive
 
 MAX_CANDIDATE_PATTERN_LIMIT_REASON = "Stopped after max candidate pattern limit for Engineering demo run"
 
@@ -35,7 +35,8 @@ class ScheduleIndex:
         occupied = occupied_start_times(assignment)
 
         for block in occupied:
-            self.room_slots.add((week, day, block, room_id))
+            if room_is_exclusive(assignment.room):
+                self.room_slots.add((week, day, block, room_id))
             for staff_id in assignment.course.staff_ids:
                 if staff_id:
                     self.staff_slots.add((week, day, block, staff_id))
@@ -220,10 +221,11 @@ def _candidate_precheck(candidate: Assignment, index: ScheduleIndex) -> list[str
     violations: list[str] = []
     groups = course_groups(candidate.course)
 
-    for block in occupied:
-        if (week, day, block, room_id) in index.room_slots:
-            violations.append("Room clash")
-            break
+    if room_is_exclusive(candidate.room):
+        for block in occupied:
+            if (week, day, block, room_id) in index.room_slots:
+                violations.append("Room clash")
+                break
     for staff_id in candidate.course.staff_ids:
         if not staff_id:
             continue
@@ -368,6 +370,11 @@ def _is_unscheduled(assignment: Assignment) -> bool:
     return assignment.room is None or assignment.timeslot is None
 
 
+def _is_candidate_limit_assignment(assignment: Assignment) -> bool:
+    """Return True when retrying would hit the same candidate-pattern cap."""
+    return MAX_CANDIDATE_PATTERN_LIMIT_REASON in assignment.hard_violations
+
+
 def _target_retry_weeks(assignment: Assignment) -> list[int]:
     """Return the specific teaching weeks represented by an unscheduled placeholder."""
     for violation in assignment.hard_violations:
@@ -386,7 +393,7 @@ def _retry_unscheduled_assignment(
     max_candidate_patterns: int | None = None,
 ) -> list[Assignment]:
     """Retry one unscheduled assignment without moving already scheduled ones."""
-    if MAX_CANDIDATE_PATTERN_LIMIT_REASON in assignment.hard_violations:
+    if _is_candidate_limit_assignment(assignment):
         return [assignment]
     if allow_weekly_fallback:
         retry = schedule_course_for_weeks(
@@ -414,14 +421,23 @@ def retry_unscheduled_assignments(
 ) -> list[Assignment]:
     """Retry only unscheduled assignments after the greedy pass has finished."""
     scheduled = [assignment for assignment in assignments if not _is_unscheduled(assignment)]
-    retry_queue = [assignment for assignment in assignments if _is_unscheduled(assignment)]
+    permanent_failures = [
+        assignment
+        for assignment in assignments
+        if _is_unscheduled(assignment) and _is_candidate_limit_assignment(assignment)
+    ]
+    retry_queue = [
+        assignment
+        for assignment in assignments
+        if _is_unscheduled(assignment) and not _is_candidate_limit_assignment(assignment)
+    ]
     retry_queue = sorted(retry_queue, key=lambda item: _course_difficulty(item.course, rooms), reverse=True)
     if max_retry_assignments is None:
         retry_now = retry_queue
-        retry_later: list[Assignment] = []
+        retry_later: list[Assignment] = permanent_failures
     else:
         retry_now = retry_queue[:max_retry_assignments]
-        retry_later = retry_queue[max_retry_assignments:]
+        retry_later = retry_queue[max_retry_assignments:] + permanent_failures
 
     results: list[Assignment] = list(scheduled)
     for placeholder in retry_now:

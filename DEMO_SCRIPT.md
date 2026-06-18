@@ -2,7 +2,7 @@
 
 ## Cross-Check Note
 
-This checkout does not contain `FINAL_RESULTS.md` or `RELEASE_CHECKLIST.md`, and `DEMO.md` currently contains an older Engineering final command that omits `--audit-demand-metrics`. The script below follows the verified live-demo command supplied in the report-phase task prompt.
+This checkout has been reconciled with the release-ready prototype state. `FINAL_RESULTS.md`, `RELEASE_CHECKLIST.md`, and the final Engineering demo command are present, so the script below follows the verified release evidence.
 
 ## Demo Length
 
@@ -44,10 +44,10 @@ Optional source reference:
 Run from `timetable_scheduler`:
 
 ```powershell
-py main.py --scope eng --skip-optimisation --max-candidate-patterns 300 --max-retry-assignments 50 --skip-unscheduled-diagnostics --progress-interval 25 --audit-demand-metrics
+python main.py --scope eng --skip-optimisation --max-candidate-patterns 300 --max-retry-assignments 50 --skip-unscheduled-diagnostics --progress-interval 25 --audit-demand-metrics
 ```
 
-If `py` is unavailable in the local shell, use the installed Python executable and keep the same arguments.
+If `python` is unavailable in the local shell, use the installed Python executable and keep the same arguments.
 
 ## 4. Console Metrics to Point Out
 

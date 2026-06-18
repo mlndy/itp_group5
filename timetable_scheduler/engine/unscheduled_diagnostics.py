@@ -20,6 +20,7 @@ from engine.constraint_checker import (
 )
 from generator import scheduler
 from generator.scheduler import (
+    MAX_CANDIDATE_PATTERN_LIMIT_REASON,
     ScheduleIndex,
     _candidate_precheck,
     build_schedule_index,
@@ -61,6 +62,8 @@ class UnscheduledDiagnosticsReport:
     scheduled_assignments: int = 0
     unscheduled_assignments: int = 0
     hard_violations_on_scheduled_assignments: int = 0
+    diagnosed_assignments: int = 0
+    undiagnosed_assignments: int = 0
 
     def add(self, diagnostic: UnscheduledDiagnostic) -> None:
         """Append one diagnostic row."""
@@ -81,6 +84,8 @@ class UnscheduledDiagnosticsReport:
             {"Metric": "Scheduled assignments", "Value": self.scheduled_assignments},
             {"Metric": "Unscheduled assignments", "Value": self.unscheduled_assignments},
             {"Metric": "Hard violations on scheduled assignments", "Value": self.hard_violations_on_scheduled_assignments},
+            {"Metric": "Fully diagnosed assignments", "Value": self.diagnosed_assignments},
+            {"Metric": "Not fully diagnosed assignments", "Value": self.undiagnosed_assignments},
             {"Metric": "Unique unscheduled reasons", "Value": len(self.reason_counts())},
         ]
         for position, (reason, count) in enumerate(reasons, start=1):
@@ -235,8 +240,26 @@ def diagnose_unscheduled_assignment(
     )
 
 
-def diagnose_unscheduled_assignments(assignments: list[Assignment], rooms: list[Room]) -> UnscheduledDiagnosticsReport:
-    """Generate diagnostics for all unscheduled assignments in a schedule."""
+def _diagnostic_from_original_reasons(assignment: Assignment, rooms: list[Room], reasons: list[str]) -> UnscheduledDiagnostic:
+    """Return a lightweight diagnostic that preserves scheduler reasons."""
+    return UnscheduledDiagnostic(
+        module_code=assignment.course.module_code,
+        activity=assignment.course.activity,
+        prog_yr=assignment.course.prog_yr,
+        source_file=assignment.course.source_file,
+        reasons=reasons,
+        compatible_room_count=len(get_candidate_rooms(assignment.course, rooms)),
+        schedulable_week_count=len(schedulable_weeks(assignment.course.teaching_weeks)),
+        candidate_count=0,
+    )
+
+
+def diagnose_unscheduled_assignments(
+    assignments: list[Assignment],
+    rooms: list[Room],
+    max_diagnostic_assignments: int | None = None,
+) -> UnscheduledDiagnosticsReport:
+    """Generate bounded diagnostics for unscheduled assignments in a schedule."""
     scheduled = _scheduled_assignments(assignments)
     unscheduled = [assignment for assignment in assignments if assignment.room is None or assignment.timeslot is None]
     report = UnscheduledDiagnosticsReport(
@@ -245,8 +268,21 @@ def diagnose_unscheduled_assignments(assignments: list[Assignment], rooms: list[
         hard_violations_on_scheduled_assignments=sum(len(assignment.hard_violations) for assignment in scheduled),
     )
     schedule_index = build_schedule_index(scheduled)
+    diagnosed = 0
     for assignment in unscheduled:
+        has_candidate_limit = MAX_CANDIDATE_PATTERN_LIMIT_REASON in assignment.hard_violations
+        if has_candidate_limit:
+            report.add(_diagnostic_from_original_reasons(assignment, rooms, [MAX_CANDIDATE_PATTERN_LIMIT_REASON]))
+            report.undiagnosed_assignments += 1
+            continue
+        if max_diagnostic_assignments is not None and diagnosed >= max_diagnostic_assignments:
+            reasons = assignment.hard_violations or ["not diagnosed due to diagnostic assignment limit"]
+            report.add(_diagnostic_from_original_reasons(assignment, rooms, reasons))
+            report.undiagnosed_assignments += 1
+            continue
         report.add(diagnose_unscheduled_assignment(assignment, scheduled, rooms, schedule_index))
+        diagnosed += 1
+        report.diagnosed_assignments += 1
     return report
 
 

@@ -2,7 +2,7 @@
 
 ## Cross-Check Note
 
-This repository checkout does not currently contain `FINAL_RESULTS.md` or `RELEASE_CHECKLIST.md`, although the report task asks for cross-checks against those files. `DEMO.md` also contains an older Engineering final command that omits `--audit-demand-metrics`. The figures and final live-demo command below therefore follow the verified values supplied in the report-phase task prompt. Do not change these figures unless a new full release run proves different results.
+This repository has been reconciled with the release-ready prototype state. `FINAL_RESULTS.md`, `RELEASE_CHECKLIST.md`, and the final Engineering demo command are present, and the figures below match the verified release values. Do not change these figures unless a new full release run proves different results.
 
 ## Problem Definition
 

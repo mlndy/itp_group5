@@ -83,6 +83,26 @@ def test_room1_and_location_hostkey_use_assigned_room_id(tmp_path: Path, monkeyp
     assert row["Location Hostkey"] == "PGB-LT-01"
 
 
+def test_online_assignment_exports_online_room(tmp_path: Path, monkeypatch) -> None:
+    """Online assignments should export the synthetic ONLINE_ROOM placeholder."""
+    monkeypatch.setattr(exporter, "DEFAULT_TEMPLATE2_FILE", Path("input/Upload template_System (Template 2).xlsx"))
+    assignment = Assignment(
+        course=make_course(delivery_mode="Online - Synchronous", group_ids=["ENG/YR 1"]),
+        room=Room("ONLINE_ROOM", 9999, "virtual"),
+        timeslot=TimeSlot("Monday", "09:00", 1),
+    )
+    output = tmp_path / "final_timetable.xlsx"
+    export_schedule([assignment], output)
+
+    workbook = load_workbook(output)
+    headers = _headers(workbook["Timetable"])
+    values = [workbook["Timetable"].cell(2, idx + 1).value for idx in range(len(headers))]
+    row = dict(zip(headers, values, strict=False))
+
+    assert row["Room1"] == "ONLINE_ROOM"
+    assert row["Location Hostkey"] == "ONLINE_ROOM"
+
+
 def test_unscheduled_assignment_keeps_room1_blank(tmp_path: Path, monkeypatch) -> None:
     """Unscheduled assignments should not invent a room ID."""
     monkeypatch.setattr(exporter, "DEFAULT_TEMPLATE2_FILE", Path("input/Upload template_System (Template 2).xlsx"))
