@@ -11,6 +11,7 @@ from typing import Iterable
 from config import VALID_DAYS, VALID_START_TIMES
 from data.models import Assignment, Room, TimeSlot
 from engine.constraint_checker import annotate_schedule_violations, check_hard_constraints, count_soft_violations, weighted_soft_score
+from engine.remarks_interpreter import course_remark_requirements
 from generator.scheduler import get_candidate_rooms
 
 
@@ -108,6 +109,16 @@ def _replace_assignment(
     return copied
 
 
+def _selected_delivery_for_move(current: Assignment, room: Room) -> str:
+    """Preserve or derive delivery mode for a moved assignment."""
+    requirements = course_remark_requirements(current.course)
+    if requirements.requires_hybrid_delivery:
+        return "hybrid"
+    if requirements.allowed_delivery_modes:
+        return "Online - Synchronous" if room.room_type == "virtual" else "f2f"
+    return current.selected_delivery_mode
+
+
 def try_move_assignment(
     index: int,
     assignments: list[Assignment],
@@ -141,7 +152,13 @@ def try_move_assignment(
             attempts += 1
             if current.room == room and current.timeslot == timeslot:
                 continue
-            replacement = Assignment(course=current.course, room=room, timeslot=timeslot)
+            replacement = Assignment(
+                course=current.course,
+                room=room,
+                timeslot=timeslot,
+                additional_rooms=current.additional_rooms,
+                selected_delivery_mode=_selected_delivery_for_move(current, room),
+            )
             if check_hard_constraints(replacement, fixed_assignments):
                 continue
             candidate_schedule = _replace_assignment(assignments, index, replacement)

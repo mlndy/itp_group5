@@ -43,6 +43,7 @@ def _stub_pipeline(monkeypatch, generated: list[Assignment]) -> None:
     monkeypatch.setattr(app, "optimise_schedule", lambda assignments, rooms_arg, max_iterations: assignments)
     monkeypatch.setattr(app, "export_run_summary", lambda assignments, output_path, **kwargs: None)
     monkeypatch.setattr(app, "export_stakeholder_views", lambda assignments, rooms_arg, output_path: None)
+    monkeypatch.setattr(app, "export_remarks_audit", lambda courses, output_path: None)
     monkeypatch.setattr(app, "export_run_manifest", lambda courses, assignments, output_path, **kwargs: None)
     monkeypatch.setattr(app, "export_outputs", lambda assignments, scope: {})
 
@@ -68,6 +69,7 @@ def test_parse_args_accepts_demo_safety_controls() -> None:
             "2",
             "--audit-demand-metrics",
             "--skip-preflight",
+            "--disable-remark-interpretation",
         ]
     )
 
@@ -81,6 +83,7 @@ def test_parse_args_accepts_demo_safety_controls() -> None:
     assert args.optimisation_patience == 2
     assert args.audit_demand_metrics is True
     assert args.skip_preflight is True
+    assert args.disable_remark_interpretation is True
 
 
 def test_main_passes_demo_safety_controls_to_generate_schedule(monkeypatch) -> None:
@@ -119,6 +122,7 @@ def test_main_passes_demo_safety_controls_to_generate_schedule(monkeypatch) -> N
     assert captured["progress_interval"] == 25
     assert captured["max_retry_assignments"] == 20
     assert captured["max_candidate_patterns"] == 150
+    assert captured["enable_remark_interpretation"] is True
 
 
 def test_skip_unscheduled_diagnostics_does_not_break_pipeline(monkeypatch) -> None:

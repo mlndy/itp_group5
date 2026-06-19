@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Optional
 
 
 @dataclass(slots=True)
@@ -24,6 +24,9 @@ class Course:
     remarks: str = ""
     source_file: str = ""
     group_ids: list[str] = field(default_factory=list)
+    source_sheet: str = ""
+    source_row: int | None = None
+    remark_requirements: Any = None
 
 
 @dataclass(slots=True)
@@ -55,6 +58,8 @@ class Assignment:
     timeslot: Optional[TimeSlot]
     hard_violations: list[str] = field(default_factory=list)
     soft_violations: list[str] = field(default_factory=list)
+    additional_rooms: tuple[Room, ...] = ()
+    selected_delivery_mode: str = ""
 
     @property
     def status(self) -> str:
@@ -64,3 +69,10 @@ class Assignment:
         if self.soft_violations:
             return "Valid with soft issues"
         return "Valid"
+
+    @property
+    def all_rooms(self) -> tuple[Room, ...]:
+        """Return primary and additional rooms in output order."""
+        if self.room is None:
+            return ()
+        return (self.room, *self.additional_rooms)

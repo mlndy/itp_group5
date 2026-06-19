@@ -1,6 +1,19 @@
+# Virtual environments
 .venv/
+venv/
+env/
+
+# Python/runtime caches
 __pycache__/
 .pytest_cache/
-*.pyc
-timetable_scheduler/generated/
-timetable_scheduler/output_files/
+*.py[cod]
+
+# Generated prototype outputs
+generated/
+output_files/
+dist/
+
+# Editor and temporary files
+.vscode/
+~$*.xlsx
+*.tmp

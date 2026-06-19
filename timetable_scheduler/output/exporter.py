@@ -14,6 +14,7 @@ from openpyxl.utils import get_column_letter
 from config import ACTIVITY_TYPE_CODES, DAY_ABBREVIATIONS, DEFAULT_TEMPLATE2_FILE
 from data.models import Assignment
 from engine.constraint_checker import annotate_schedule_violations, hour_to_time, time_to_hour
+from engine.remarks_interpreter import assignment_room_ids, assignment_rooms
 
 
 def _activity_type_code(activity: str) -> str:
@@ -53,6 +54,10 @@ def _remark_text(assignment: Assignment) -> str | None:
     parts: list[str] = []
     if assignment.course.remarks:
         parts.append(assignment.course.remarks)
+    if assignment.selected_delivery_mode == "hybrid":
+        parts.append("Interpreted as hybrid delivery")
+    if len(assignment_rooms(assignment)) > 1:
+        parts.append(f"Assigned rooms: {assignment_room_ids(assignment)}")
     if assignment.room is None or assignment.timeslot is None:
         parts.append("Unscheduled assignment")
     if assignment.hard_violations:
@@ -67,6 +72,12 @@ def _room_id(assignment: Assignment) -> str | None:
     return assignment.room.room_id if assignment.room else None
 
 
+def _room2_id(assignment: Assignment) -> str | None:
+    """Return the second assigned room ID when available."""
+    rooms = assignment_rooms(assignment)
+    return rooms[1].room_id if len(rooms) > 1 else None
+
+
 def _template_row_values(assignment: Assignment) -> dict[str, object]:
     """Convert one assignment to logical Template 2 values."""
     course = assignment.course
@@ -76,6 +87,7 @@ def _template_row_values(assignment: Assignment) -> dict[str, object]:
         end_time = hour_to_time(time_to_hour(timeslot.start_time) + course.duration_hrs)
 
     room_id = _room_id(assignment)
+    room2_id = _room2_id(assignment)
     return {
         "Module": course.module_code,
         "Class Type": course.activity,
@@ -88,7 +100,7 @@ def _template_row_values(assignment: Assignment) -> dict[str, object]:
         "Sector": "PUNGGOL",
         "RoomGrouping": None,
         "Room1": room_id,
-        "Room2": None,
+        "Room2": room2_id,
         "StaffGrouping": None,
         "Staff1": _staff_value(assignment, 0),
         "Staff2": _staff_value(assignment, 1),
@@ -110,7 +122,7 @@ def _template_row_values(assignment: Assignment) -> dict[str, object]:
         "Location Hostkey": room_id,
         "Location Hostkey.1": room_id,
         "Programme/Year": course.prog_yr,
-        "Delivery Mode": course.delivery_mode,
+        "Delivery Mode": assignment.selected_delivery_mode or course.delivery_mode,
         "Status": assignment.status,
     }
 
@@ -192,7 +204,7 @@ def violations_to_dataframe(assignments: list[Assignment], violation_type: str) 
                     "Week": assignment.timeslot.week if assignment.timeslot else None,
                     "Day": assignment.timeslot.day if assignment.timeslot else None,
                     "Start": assignment.timeslot.start_time if assignment.timeslot else None,
-                    "Room": assignment.room.room_id if assignment.room else None,
+                    "Room": assignment_room_ids(assignment),
                     "Violation": violation,
                 }
             )
@@ -238,14 +250,19 @@ def _autosize_and_style(path: Path) -> None:
     workbook.save(path)
 
 
-def export_schedule(assignments: list[Assignment], output_path: str | Path) -> None:
+def export_schedule(
+    assignments: list[Assignment],
+    output_path: str | Path,
+    template2_path: str | Path | None = None,
+) -> None:
     """Export the final timetable, preferring the provided Template 2 workbook."""
     output_path = Path(output_path)
+    template2_path = Path(template2_path or DEFAULT_TEMPLATE2_FILE)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     snapshot = _annotated_snapshot(assignments)
 
-    if DEFAULT_TEMPLATE2_FILE.exists():
-        workbook = load_workbook(DEFAULT_TEMPLATE2_FILE)
+    if template2_path.exists():
+        workbook = load_workbook(template2_path)
         _write_template_timetable_sheet(workbook, snapshot)
         workbook.save(output_path)
         return

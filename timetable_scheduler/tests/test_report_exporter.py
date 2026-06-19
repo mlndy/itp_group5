@@ -88,6 +88,7 @@ def test_export_run_summary_creates_expected_sheets(tmp_path: Path) -> None:
         "Resource Audit",
         "Virtual Room Detail",
         "Programme Breakdown",
+        "Remarks Interpretation",
         "Validation Checks",
         "Optimisation Summary",
         "Run Metadata",
@@ -450,11 +451,80 @@ def test_stakeholder_views_export_expected_sheets(tmp_path: Path) -> None:
     export_stakeholder_views([scheduled, unscheduled], [Room("R1", 100, "physical")], output)
 
     workbook = load_workbook(output)
-    assert workbook.sheetnames == ["Programme Timetable", "Tutor Timetable", "Room Timetable", "Exception Queue"]
+    assert workbook.sheetnames == [
+        "Programme Timetable",
+        "Tutor Timetable",
+        "Room Timetable",
+        "Exception Queue",
+        "Special Requests Review",
+        "Special Requests Summary",
+    ]
     queue_headers = [cell.value for cell in workbook["Exception Queue"][1]]
     assert "Recommended Operational Action" in queue_headers
     assert "Review Status" in queue_headers
     assert workbook["Exception Queue"]["J2"].value
+
+
+def test_run_summary_includes_remarks_interpretation_sheet(tmp_path: Path) -> None:
+    """Run summary should explain interpreted remark rules."""
+    output = tmp_path / "run_summary.xlsx"
+    course = make_course(remarks="2 rooms", source_file="requirements.xlsx", source_sheet="Module", source_row=4)
+    assignments = [
+        Assignment(
+            course=course,
+            room=Room("R1", 20, "physical"),
+            timeslot=TimeSlot("Monday", "09:00", 1),
+            additional_rooms=(Room("R2", 20, "physical"),),
+        )
+    ]
+
+    export_run_summary(assignments, output)
+
+    workbook = load_workbook(output)
+    sheet = workbook["Remarks Interpretation"]
+    headers = [cell.value for cell in sheet[1]]
+    values = dict(zip(headers, [cell.value for cell in sheet[2]], strict=False))
+    assert values["Raw Remark"] == "2 rooms"
+    assert values["Detected Rule"] == "multiple_room_requirement"
+    assert values["Applied Status"] == "Applied"
+    assert values["Assigned Rooms"] == "R1, R2"
+
+
+def test_stakeholder_views_include_special_requests_review(tmp_path: Path) -> None:
+    """Stakeholder views should include plain-language special-request handling."""
+    output = tmp_path / "stakeholder_views.xlsx"
+    assignment = Assignment(
+        make_course(remarks="Additional rooms for quizzes"),
+        Room("R1", 100, "physical"),
+        TimeSlot("Monday", "09:00", 1),
+    )
+
+    export_stakeholder_views([assignment], [Room("R1", 100, "physical")], output)
+
+    workbook = load_workbook(output)
+    headers = [cell.value for cell in workbook["Special Requests Review"][1]]
+    values = dict(zip(headers, [cell.value for cell in workbook["Special Requests Review"][2]], strict=False))
+    assert values["Special Request"] == "Additional rooms for quizzes"
+    assert values["Needs Manual Review"] == "Yes"
+
+
+def test_remarks_interpretation_handles_room_type_application(tmp_path: Path) -> None:
+    """Room-type applied-status checks should not fail report generation."""
+    output = tmp_path / "run_summary.xlsx"
+    course = make_course(remarks="must use computer lab")
+    assignment = Assignment(
+        course,
+        Room("COMP-LAB-01", 40, "physical", resource_type="Computer Lab"),
+        TimeSlot("Monday", "09:00", 1),
+    )
+
+    export_run_summary([assignment], output)
+
+    workbook = load_workbook(output)
+    rows = _sheet_rows(workbook, "Remarks Interpretation")
+    values = dict(zip(rows[0], rows[1], strict=False))
+    assert values["Detected Rule"] == "room_type"
+    assert values["Applied Status"] == "Applied"
 
 
 def test_run_manifest_exports_template_validation_and_traceability(tmp_path: Path) -> None:
@@ -470,9 +540,10 @@ def test_run_manifest_exports_template_validation_and_traceability(tmp_path: Pat
         [course],
         assignments,
         output,
-        metadata={"scope": "eng", "skip_optimisation": True},
+        metadata={"scope": "eng", "skip_optimisation": True, "input_workbook": "selected_template1.xlsx"},
         rooms=[Room("R1", 100, "physical")],
         output_files={"timetable": timetable},
+        template2_path=Path("input/Upload template_System (Template 2).xlsx"),
     )
 
     exported = load_workbook(output)
@@ -485,6 +556,11 @@ def test_run_manifest_exports_template_validation_and_traceability(tmp_path: Pat
     ]
     manifest = {row[0]: row[1] for row in _sheet_rows(exported, "Run Manifest")[1:]}
     assert manifest["scope"] == "eng"
+    assert manifest["Input role"] == "Template 1 - Scheduling Requirements"
+    assert manifest["Input workbook"] == "selected_template1.xlsx"
+    assert manifest["Output-template role"] == "Template 2 - Proposed Timetable"
+    assert manifest["Output template"].endswith("Upload template_System (Template 2).xlsx")
+    assert manifest["Generated timetable"] == str(timetable)
     assert manifest["validation_status"] == "PASS"
     validation = {row[0]: row[1] for row in _sheet_rows(exported, "Template Validation")[1:]}
     assert validation["Template 2 output structure retained"] == "PASS"

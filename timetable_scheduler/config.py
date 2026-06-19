@@ -5,21 +5,28 @@ from __future__ import annotations
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
-INPUT_DIR = BASE_DIR / "input"
+PROJECT_ROOT = BASE_DIR.parent
+DATA_DIR = PROJECT_ROOT / "Data"
+INPUT_DIR = DATA_DIR if DATA_DIR.exists() else BASE_DIR / "input"
 OUTPUT_DIR = BASE_DIR / "output_files"
 GENERATED_DIR = BASE_DIR / "generated"
 
-DEFAULT_COURSE_FILE = INPUT_DIR / "2510_DSC.xlsx"
 DEFAULT_ENGINEERING_FOLDER = INPUT_DIR / "Requirements_ENG"
+DEFAULT_COURSE_FILE = INPUT_DIR / "2510_DSC.xlsx"
+if not DEFAULT_COURSE_FILE.exists():
+    DEFAULT_COURSE_FILE = DEFAULT_ENGINEERING_FOLDER / "2510_DSC.xlsx"
 DEFAULT_ROOM_FILE = INPUT_DIR / "Venue Information(Campus Court).csv"
 DEFAULT_COMMON_MODULE_FILE = INPUT_DIR / "Common Modules(Sheet1).csv"
 DEFAULT_TEMPLATE2_FILE = INPUT_DIR / "Upload template_System (Template 2).xlsx"
+DEFAULT_CONSTRAINTS_FILE = INPUT_DIR / "TTConstraints_timetline(Constraints).xlsx"
+DEFAULT_UNI_WIDE_MODULE_FILE = INPUT_DIR / "Uni-Wide Module.xlsx"
 DEFAULT_LOADER_REPORT_FILE = GENERATED_DIR / "loader_report.xlsx"
 DEFAULT_UNSCHEDULED_DIAGNOSTICS_FILE = GENERATED_DIR / "unscheduled_diagnostics.xlsx"
 DEFAULT_PREFLIGHT_REPORT_FILE = GENERATED_DIR / "preflight_report.xlsx"
 DEFAULT_RUN_SUMMARY_FILE = GENERATED_DIR / "run_summary.xlsx"
 DEFAULT_STAKEHOLDER_VIEWS_FILE = GENERATED_DIR / "stakeholder_views.xlsx"
 DEFAULT_RUN_MANIFEST_FILE = GENERATED_DIR / "run_manifest.xlsx"
+DEFAULT_REMARKS_AUDIT_FILE = GENERATED_DIR / "remarks_audit.xlsx"
 
 VALID_DAYS: list[str] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
 DAY_ABBREVIATIONS: dict[str, str] = {
@@ -60,6 +67,8 @@ VIRTUAL_ROOM_CAPACITY = 9999
 # Multiple unrelated online classes may use it concurrently. Tutor and
 # student-group clashes still apply, and physical rooms remain exclusive.
 VIRTUAL_ROOM_IS_EXCLUSIVE = False
+ENABLE_REMARK_INTERPRETATION = True
+MAX_REMARK_ROOM_COMBINATIONS = 30
 DEFAULT_UNKNOWN_ROOM_CAPACITY = 999
 MIN_ROOM_UTILISATION = 0.60
 MAX_CONSECUTIVE_HOURS = 4
@@ -109,6 +118,7 @@ SOFT_RULE_MAX_CONSECUTIVE_HOURS = "More than configured consecutive teaching hou
 SOFT_RULE_SHORT_CAMPUS_DAY = "Short campus day"
 SOFT_RULE_PROGRAMME_ONLINE_DAY_SPREAD = "Programme online-day clustering"
 SOFT_RULE_ONLINE_PREFERRED_DAY = "Online class outside preferred Monday/Tuesday window"
+SOFT_RULE_REMARK_ROOM_TYPE_PREFERENCE = "Remark room-type preference not satisfied"
 
 SOFT_CONSTRAINT_WEIGHTS: dict[str, int] = {
     SOFT_RULE_LOW_ROOM_UTILISATION: 1,
@@ -122,4 +132,5 @@ SOFT_CONSTRAINT_WEIGHTS: dict[str, int] = {
     SOFT_RULE_SHORT_CAMPUS_DAY: 2,
     SOFT_RULE_PROGRAMME_ONLINE_DAY_SPREAD: 2,
     SOFT_RULE_ONLINE_PREFERRED_DAY: 1,
+    SOFT_RULE_REMARK_ROOM_TYPE_PREFERENCE: 2,
 }

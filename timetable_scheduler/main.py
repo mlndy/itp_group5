@@ -11,11 +11,13 @@ from config import (
     DEFAULT_ENGINEERING_FOLDER,
     DEFAULT_LOADER_REPORT_FILE,
     DEFAULT_PREFLIGHT_REPORT_FILE,
+    DEFAULT_REMARKS_AUDIT_FILE,
     DEFAULT_UNSCHEDULED_DIAGNOSTICS_FILE,
     DEFAULT_ROOM_FILE,
     DEFAULT_RUN_MANIFEST_FILE,
     DEFAULT_RUN_SUMMARY_FILE,
     DEFAULT_STAKEHOLDER_VIEWS_FILE,
+    DEFAULT_TEMPLATE2_FILE,
     OUTPUT_DIR,
 )
 from data.loader import (
@@ -30,6 +32,7 @@ from data.models import Course
 from engine.constraint_checker import annotate_schedule_violations, count_soft_violations, soft_violation_breakdown, weighted_soft_score
 from engine.demand_metrics import build_demand_metrics
 from engine.preflight_validator import run_preflight_checks
+from engine.remarks_interpreter import export_remarks_audit
 from engine.resource_audit import audit_resources
 from engine.unscheduled_diagnostics import (
     UnscheduledDiagnosticsReport,
@@ -71,6 +74,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--skip-preflight", action="store_true", help="Skip input preflight validation report")
     parser.add_argument("--audit-demand-metrics", action="store_true", help="Print invariant demand coverage metrics")
+    parser.add_argument(
+        "--disable-remark-interpretation",
+        action="store_true",
+        help="Disable deterministic remarks processing for regression comparison",
+    )
     return parser.parse_args(argv)
 
 
@@ -170,6 +178,7 @@ def _run_metadata(args: argparse.Namespace) -> dict[str, object]:
         "max_diagnostic_assignments": args.max_diagnostic_assignments,
         "progress_interval": args.progress_interval,
         "audit_demand_metrics": args.audit_demand_metrics,
+        "remark_interpretation_enabled": not args.disable_remark_interpretation,
     }
 
 
@@ -306,17 +315,18 @@ def _completed_optimisation_summary(
     return summary
 
 
-def export_outputs(assignments: list, scope: str) -> dict[str, object]:
+def export_outputs(assignments: list, scope: str, template2_path=None) -> dict[str, object]:
     """Export timetable and violation reports for the selected scope."""
+    template2_path = template2_path or DEFAULT_TEMPLATE2_FILE
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     suffix = "engineering_cluster" if scope == "eng" else "dsc"
     timetable_path = OUTPUT_DIR / f"final_timetable_{suffix}.xlsx"
     violation_path = OUTPUT_DIR / f"violation_report_{suffix}.xlsx"
-    export_schedule(assignments, timetable_path)
+    export_schedule(assignments, timetable_path, template2_path=template2_path)
     export_violations(assignments, violation_path)
     # Keep the original filenames for demo convenience when running DSC mode.
     if scope == "dsc":
-        export_schedule(assignments, OUTPUT_DIR / "final_timetable.xlsx")
+        export_schedule(assignments, OUTPUT_DIR / "final_timetable.xlsx", template2_path=template2_path)
         export_violations(assignments, OUTPUT_DIR / "violation_report.xlsx")
     print(f"Saved: {timetable_path}")
     print(f"Saved: {violation_path}")
@@ -367,6 +377,7 @@ def main() -> None:
         progress_interval=args.progress_interval,
         max_retry_assignments=args.max_retry_assignments,
         max_candidate_patterns=args.max_candidate_patterns,
+        enable_remark_interpretation=not args.disable_remark_interpretation,
     )
     initial_unscheduled_reasons = _snapshot_unscheduled_reasons(initial_schedule)
     annotate_schedule_violations(initial_schedule)
@@ -432,6 +443,8 @@ def main() -> None:
     print(f"Saved: {DEFAULT_RUN_SUMMARY_FILE}")
     export_stakeholder_views(final_schedule, rooms, DEFAULT_STAKEHOLDER_VIEWS_FILE)
     print(f"Saved: {DEFAULT_STAKEHOLDER_VIEWS_FILE}")
+    export_remarks_audit(courses, DEFAULT_REMARKS_AUDIT_FILE)
+    print(f"Saved: {DEFAULT_REMARKS_AUDIT_FILE}")
     if args.audit_demand_metrics:
         _print_demand_audit(courses, final_schedule)
 
@@ -454,6 +467,7 @@ def main() -> None:
             "loader_report": DEFAULT_LOADER_REPORT_FILE,
             "run_summary": DEFAULT_RUN_SUMMARY_FILE,
             "stakeholder_views": DEFAULT_STAKEHOLDER_VIEWS_FILE,
+            "remarks_audit": DEFAULT_REMARKS_AUDIT_FILE,
         }
     )
     if not args.skip_preflight:

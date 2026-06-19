@@ -4,6 +4,7 @@ Use this checklist before packaging the final submission.
 
 - [ ] Git status reviewed and only intended source/documentation changes are present.
 - [ ] Tests pass with `py -m pytest -q`.
+- [ ] Supplied `Data/` resources are present, including `Requirements_ENG`, common modules, venue data, constraints and Template 2.
 - [ ] Live Engineering run completed.
 - [ ] Required teaching occurrence count verified as `2777`.
 - [ ] Scheduled hard violations verified as `0`.

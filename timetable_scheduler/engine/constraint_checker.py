@@ -29,6 +29,7 @@ from config import (
     SOFT_RULE_ONLINE_F2F_SWITCH,
     SOFT_RULE_ONLINE_PREFERRED_DAY,
     SOFT_RULE_PROGRAMME_ONLINE_DAY_SPREAD,
+    SOFT_RULE_REMARK_ROOM_TYPE_PREFERENCE,
     SOFT_RULE_SHORT_CAMPUS_DAY,
     SOFT_RULE_TUTOR_IDLE_GAP,
     SOFT_RULE_WASTED_FREE_SLOT,
@@ -36,6 +37,13 @@ from config import (
     VALID_DAYS,
 )
 from data.models import Assignment, Course, Room
+from engine.remarks_interpreter import (
+    RemarkEnforcement,
+    assignment_rooms,
+    course_remark_requirements,
+    room_matches_type,
+    room_supports_recording,
+)
 
 MAX_BACK_TO_BACK_GROUP_HOURS = 3
 
@@ -80,6 +88,11 @@ def is_online_course(course: Course) -> bool:
     return "online" in mode or "virtual" in mode or "async" in mode or "e-learning" in mode
 
 
+def assignment_delivery_mode(assignment: Assignment) -> str:
+    """Return the selected delivery mode for an assignment."""
+    return assignment.selected_delivery_mode or assignment.course.delivery_mode
+
+
 def is_physical_course(course: Course) -> bool:
     """Return True if a course needs a physical teaching room."""
     return not is_online_course(course)
@@ -114,10 +127,12 @@ def _staff_intersection(left: Course, right: Course) -> set[str]:
 
 def check_room_capacity(assignment: Assignment) -> list[str]:
     """Check whether the room can hold the class size."""
-    if assignment.room is None:
+    rooms = assignment_rooms(assignment)
+    if not rooms:
         return ["No room assigned"]
-    if assignment.room.capacity < assignment.course.class_size:
-        return [f"Room capacity too small: {assignment.room.capacity} < {assignment.course.class_size}"]
+    total_capacity = sum(room.capacity for room in rooms)
+    if total_capacity < assignment.course.class_size:
+        return [f"Room capacity too small: {total_capacity} < {assignment.course.class_size}"]
     return []
 
 
@@ -127,9 +142,14 @@ def check_delivery_mode_room(assignment: Assignment) -> list[str]:
         return []
     course = assignment.course
     room = assignment.room
-    if is_online_course(course) and room.room_type != "virtual":
+    mode = assignment_delivery_mode(assignment).lower()
+    if "hybrid" in mode:
+        if room.room_type != "physical":
+            return ["Hybrid class must reserve a physical teaching room"]
+        return []
+    if ("online" in mode or "virtual" in mode or "async" in mode or "e-learning" in mode) and room.room_type != "virtual":
         return ["Online class must use a virtual room"]
-    if is_physical_course(course) and room.room_type == "virtual":
+    if not ("online" in mode or "virtual" in mode or "async" in mode or "e-learning" in mode) and room.room_type == "virtual":
         return ["Face-to-face class must not use a virtual room"]
     return []
 
@@ -197,14 +217,55 @@ def check_blocked_time(assignment: Assignment) -> list[str]:
 
 def check_room_clash(assignment: Assignment, existing: list[Assignment]) -> list[str]:
     """Check whether a room is double-booked."""
-    if assignment.room is None or not room_is_exclusive(assignment.room):
+    rooms = [room for room in assignment_rooms(assignment) if room_is_exclusive(room)]
+    if not rooms:
         return []
     for other in existing:
-        if other.room is None or not room_is_exclusive(other.room):
-            continue
-        if other.room.room_id == assignment.room.room_id and assignments_overlap(assignment, other):
-            return [f"Room clash with {other.course.module_code} {other.course.activity}"]
+        other_rooms = [room for room in assignment_rooms(other) if room_is_exclusive(room)]
+        for room in rooms:
+            if any(other_room.room_id == room.room_id for other_room in other_rooms) and assignments_overlap(assignment, other):
+                return [f"Room clash with {other.course.module_code} {other.course.activity}"]
     return []
+
+
+def check_remark_requirements(assignment: Assignment) -> list[str]:
+    """Check hard constraints created from supported remark interpretations."""
+    requirements = course_remark_requirements(assignment.course)
+    violations: list[str] = []
+    hard_interpretations = [
+        item for item in requirements.interpretations if item.enforcement == RemarkEnforcement.HARD
+    ]
+    if not hard_interpretations:
+        return []
+
+    rooms = assignment_rooms(assignment)
+    if requirements.required_room_count > len(rooms):
+        violations.append(
+            f"Remark requires {requirements.required_room_count} room(s), but {len(rooms)} assigned"
+        )
+    if requirements.required_room_count > 2:
+        violations.append("Remark requires more rooms than the output workbook supports")
+    if requirements.fixed_days and assignment.timeslot is not None and assignment.timeslot.day not in requirements.fixed_days:
+        violations.append(f"Remark requires day in {list(requirements.fixed_days)}")
+    if requirements.fixed_start_times and assignment.timeslot is not None and assignment.timeslot.start_time not in requirements.fixed_start_times:
+        violations.append(f"Remark requires start time in {list(requirements.fixed_start_times)}")
+    if requirements.fixed_venues and rooms:
+        assigned = {room.room_id.casefold() for room in rooms}
+        required = {venue.casefold() for venue in requirements.fixed_venues}
+        if not assigned & required:
+            violations.append(f"Remark requires venue in {list(requirements.fixed_venues)}")
+    for room_type in requirements.required_room_types:
+        if not rooms or not all(room_matches_type(room, room_type) for room in rooms):
+            violations.append(f"Remark requires room type: {room_type}")
+    if requirements.requires_hybrid_delivery:
+        if not rooms or rooms[0].room_type != "physical":
+            violations.append("Remark requires hybrid delivery with a physical room")
+        elif not room_supports_recording(rooms[0]):
+            violations.append("Remark requires a recording or hybrid-capable physical room")
+    elif requirements.requires_recording_room:
+        if not rooms or not room_supports_recording(rooms[0]):
+            violations.append("Remark requires a recording-capable room")
+    return violations
 
 
 def check_staff_clash(assignment: Assignment, existing: list[Assignment]) -> list[str]:
@@ -259,6 +320,7 @@ def check_hard_constraints(assignment: Assignment, existing: list[Assignment]) -
     violations: list[str] = []
     violations.extend(check_room_capacity(assignment))
     violations.extend(check_delivery_mode_room(assignment))
+    violations.extend(check_remark_requirements(assignment))
     violations.extend(check_week_pattern(assignment))
     violations.extend(check_time_window(assignment))
     violations.extend(check_blocked_time(assignment))
@@ -279,6 +341,19 @@ def check_room_utilisation(assignment: Assignment) -> list[str]:
     if utilisation < MIN_ROOM_UTILISATION:
         return [f"{SOFT_RULE_LOW_ROOM_UTILISATION}: {utilisation:.0%}"]
     return []
+
+
+def check_remark_preferences(assignment: Assignment) -> list[str]:
+    """Penalise supported remark preferences that are not satisfied."""
+    requirements = course_remark_requirements(assignment.course)
+    if not requirements.preferred_room_types or assignment.room is None:
+        return []
+    rooms = assignment_rooms(assignment)
+    issues: list[str] = []
+    for room_type in requirements.preferred_room_types:
+        if not any(room_matches_type(room, room_type) for room in rooms):
+            issues.append(f"{SOFT_RULE_REMARK_ROOM_TYPE_PREFERENCE}: {room_type}")
+    return issues
 
 
 def check_first_or_last_slot(assignment: Assignment) -> list[str]:
@@ -452,6 +527,7 @@ def annotate_schedule_violations(assignments: list[Assignment]) -> list[Assignme
         assignment.hard_violations = check_hard_constraints(assignment, previous)
         assignment.soft_violations = []
         assignment.soft_violations.extend(check_room_utilisation(assignment))
+        assignment.soft_violations.extend(check_remark_preferences(assignment))
         assignment.soft_violations.extend(check_first_or_last_slot(assignment))
         checked.append(assignment)
 

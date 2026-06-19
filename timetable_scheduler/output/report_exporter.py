@@ -23,6 +23,13 @@ from engine.constraint_checker import (
     weighted_soft_score,
 )
 from engine.demand_metrics import DemandMetrics, build_demand_metrics, requirement_demand_lookup, requirement_key
+from engine.remarks_interpreter import (
+    RemarkEnforcement,
+    assignment_room_ids,
+    assignment_rooms,
+    assignment_satisfies_interpretation,
+    course_remark_requirements,
+)
 from engine.resource_audit import ResourceAudit, audit_resources
 from generator.scheduler import get_candidate_rooms, schedulable_weeks
 
@@ -122,6 +129,36 @@ EXCEPTION_QUEUE_COLUMNS = [
     "Recommended Operational Action",
     "Review Status",
     "Source File",
+]
+REMARKS_INTERPRETATION_COLUMNS = [
+    "Source Workbook",
+    "Source Sheet",
+    "Source Row",
+    "Programme/Year",
+    "Module",
+    "Activity",
+    "Raw Remark",
+    "Detected Rule",
+    "Extracted Parameters",
+    "Enforcement",
+    "Confidence",
+    "Applied Status",
+    "Assigned Rooms",
+    "Selected Delivery Mode",
+    "Explanation",
+    "Review Reason",
+]
+SPECIAL_REQUEST_REVIEW_COLUMNS = [
+    "Programme",
+    "Module",
+    "Activity",
+    "Special Request",
+    "What the System Understood",
+    "How It Was Handled",
+    "Timetable Result",
+    "Needs Manual Review",
+    "Review Notes",
+    "Review Status",
 ]
 TEMPLATE2_REQUIRED_COLUMNS = [
     "Module",
@@ -259,7 +296,7 @@ def _violations_df(assignments: list[Assignment], violation_type: str) -> pd.Dat
                     "Week": assignment.timeslot.week if assignment.timeslot else None,
                     "Day": assignment.timeslot.day if assignment.timeslot else None,
                     "Start": assignment.timeslot.start_time if assignment.timeslot else None,
-                    "Room": assignment.room.room_id if assignment.room else None,
+                    "Room": assignment_room_ids(assignment),
                     "Violation": violation,
                 }
             )
@@ -339,7 +376,7 @@ def _unscheduled_analysis_df(assignments: list[Assignment], demand_courses: list
                     "Activity": assignment.course.activity,
                     "Class Size": assignment.course.class_size,
                     "Class Size Band": _class_size_band(assignment.course.class_size),
-                    "Delivery Mode": assignment.course.delivery_mode,
+                    "Delivery Mode": assignment.selected_delivery_mode or assignment.course.delivery_mode,
                     "Duration": assignment.course.duration_hrs,
                     "Teaching Week": _failed_week(reason),
                     "Common Module": "Yes" if assignment.course.is_common_module else "No",
@@ -446,7 +483,8 @@ def _residual_f2f_analysis_df(
     for assignment in assignments:
         if assignment.room is not None and assignment.timeslot is not None:
             continue
-        if "online" in assignment.course.delivery_mode.lower():
+        delivery_mode = assignment.selected_delivery_mode or assignment.course.delivery_mode
+        if "online" in delivery_mode.lower():
             continue
         key = requirement_key(assignment.course)
         row = grouped.setdefault(
@@ -521,10 +559,11 @@ def _room_utilisation_df(assignments: list[Assignment]) -> pd.DataFrame:
     for assignment in assignments:
         if assignment.room is None or assignment.timeslot is None:
             continue
-        row = usage[assignment.room.room_id]
-        row["Scheduled Assignments"] = int(row["Scheduled Assignments"]) + 1
-        row["Total Enrolment"] = int(row["Total Enrolment"]) + assignment.course.class_size
-        row["Total Capacity"] = int(row["Total Capacity"]) + assignment.room.capacity
+        for room in assignment_rooms(assignment):
+            row = usage[room.room_id]
+            row["Scheduled Assignments"] = int(row["Scheduled Assignments"]) + 1
+            row["Total Enrolment"] = int(row["Total Enrolment"]) + assignment.course.class_size
+            row["Total Capacity"] = int(row["Total Capacity"]) + room.capacity
 
     rows: list[dict[str, object]] = []
     for room_id, row in sorted(usage.items()):
@@ -853,8 +892,8 @@ def _programme_timetable_df(assignments: list[Assignment]) -> pd.DataFrame:
                 "End": _end_time_text(assignment),
                 "Module": assignment.course.module_code,
                 "Activity": assignment.course.activity,
-                "Room": assignment.room.room_id,
-                "Delivery Mode": assignment.course.delivery_mode,
+                "Room": assignment_room_ids(assignment),
+                "Delivery Mode": assignment.selected_delivery_mode or assignment.course.delivery_mode,
                 "Tutor": ", ".join(_assignment_tutors(assignment)),
             }
         )
@@ -895,8 +934,8 @@ def _tutor_timetable_df(assignments: list[Assignment]) -> pd.DataFrame:
                     "Module": assignment.course.module_code,
                     "Activity": assignment.course.activity,
                     "Programme/Year": assignment.course.prog_yr,
-                    "Location": assignment.room.room_id,
-                    "Delivery Mode": assignment.course.delivery_mode,
+                    "Location": assignment_room_ids(assignment),
+                    "Delivery Mode": assignment.selected_delivery_mode or assignment.course.delivery_mode,
                     "Idle Gap Since Previous": idle_gap,
                     "Online/F2F Transition": transition,
                 }
@@ -911,24 +950,25 @@ def _room_timetable_df(assignments: list[Assignment]) -> pd.DataFrame:
     for assignment in assignments:
         if not _is_scheduled_assignment(assignment):
             continue
-        if assignment.room.room_type == "virtual":
-            continue
-        utilisation = assignment.course.class_size / assignment.room.capacity if assignment.room.capacity else 0
-        rows.append(
-            {
-                "Room": assignment.room.room_id,
-                "Week": assignment.timeslot.week,
-                "Day": assignment.timeslot.day,
-                "Start": assignment.timeslot.start_time,
-                "End": _end_time_text(assignment),
-                "Module": assignment.course.module_code,
-                "Activity": assignment.course.activity,
-                "Programme/Year": assignment.course.prog_yr,
-                "Class Size": assignment.course.class_size,
-                "Room Capacity": assignment.room.capacity,
-                "Utilisation Percentage": round(utilisation * 100, 2),
-            }
-        )
+        for room in assignment_rooms(assignment):
+            if room.room_type == "virtual":
+                continue
+            utilisation = assignment.course.class_size / room.capacity if room.capacity else 0
+            rows.append(
+                {
+                    "Room": room.room_id,
+                    "Week": assignment.timeslot.week,
+                    "Day": assignment.timeslot.day,
+                    "Start": assignment.timeslot.start_time,
+                    "End": _end_time_text(assignment),
+                    "Module": assignment.course.module_code,
+                    "Activity": assignment.course.activity,
+                    "Programme/Year": assignment.course.prog_yr,
+                    "Class Size": assignment.course.class_size,
+                    "Room Capacity": room.capacity,
+                    "Utilisation Percentage": round(utilisation * 100, 2),
+                }
+            )
     return pd.DataFrame(rows, columns=STAKEHOLDER_ROOM_COLUMNS).sort_values(
         by=["Room", "Week", "Day", "Start", "Module"],
         kind="stable",
@@ -987,6 +1027,143 @@ def _exception_queue_df(assignments: list[Assignment], rooms: list[Room] | None 
     return pd.DataFrame(rows, columns=EXCEPTION_QUEUE_COLUMNS)
 
 
+def _remarks_result_text(assignment: Assignment) -> str:
+    """Return a concise timetable result for a special request."""
+    if not _is_scheduled_assignment(assignment):
+        reasons = " | ".join(assignment.hard_violations) or "Unscheduled without recorded reason"
+        return f"Unscheduled: {reasons}"
+    return f"Scheduled {assignment.timeslot.day} {assignment.timeslot.start_time}, rooms {assignment_room_ids(assignment)}"
+
+
+def _remarks_interpretation_df(assignments: list[Assignment]) -> pd.DataFrame:
+    """Return row-level explainability for interpreted scheduling remarks."""
+    rows: list[dict[str, object]] = []
+    seen: set[tuple[object, ...]] = set()
+    for assignment in assignments:
+        requirements = course_remark_requirements(assignment.course)
+        if not assignment.course.remarks and not requirements.interpretations:
+            continue
+        for interpretation in requirements.interpretations:
+            key = (
+                assignment.course.source_file,
+                assignment.course.source_row,
+                assignment.course.module_code,
+                assignment.course.activity,
+                interpretation.rule_name,
+                str(interpretation.parameters),
+                assignment.timeslot.week if assignment.timeslot else None,
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            applied = assignment_satisfies_interpretation(assignment, interpretation)
+            if interpretation.enforcement == RemarkEnforcement.REVIEW:
+                applied_status = "Manual review"
+            elif applied:
+                applied_status = "Applied"
+            elif _is_scheduled_assignment(assignment):
+                applied_status = "Not applied"
+            else:
+                applied_status = "Unscheduled"
+            rows.append(
+                {
+                    "Source Workbook": assignment.course.source_file,
+                    "Source Sheet": assignment.course.source_sheet,
+                    "Source Row": assignment.course.source_row,
+                    "Programme/Year": assignment.course.prog_yr,
+                    "Module": assignment.course.module_code,
+                    "Activity": assignment.course.activity,
+                    "Raw Remark": interpretation.raw_text,
+                    "Detected Rule": interpretation.rule_name,
+                    "Extracted Parameters": str(interpretation.parameters),
+                    "Enforcement": interpretation.enforcement.value,
+                    "Confidence": interpretation.confidence.value,
+                    "Applied Status": applied_status,
+                    "Assigned Rooms": assignment_room_ids(assignment),
+                    "Selected Delivery Mode": assignment.selected_delivery_mode or assignment.course.delivery_mode,
+                    "Explanation": interpretation.explanation,
+                    "Review Reason": requirements.review_reason,
+                }
+            )
+    return pd.DataFrame(rows, columns=REMARKS_INTERPRETATION_COLUMNS)
+
+
+def _special_requests_review_df(assignments: list[Assignment]) -> pd.DataFrame:
+    """Return plain-language special-request review rows."""
+    rows: list[dict[str, object]] = []
+    seen: set[tuple[object, ...]] = set()
+    for assignment in assignments:
+        requirements = course_remark_requirements(assignment.course)
+        if not assignment.course.remarks:
+            continue
+        understood = "; ".join(item.explanation for item in requirements.interpretations)
+        handled_parts: list[str] = []
+        if requirements.interpretations:
+            for interpretation in requirements.interpretations:
+                if interpretation.enforcement == RemarkEnforcement.REVIEW:
+                    handled_parts.append("Sent for manual review")
+                elif assignment_satisfies_interpretation(assignment, interpretation):
+                    handled_parts.append(f"Applied {interpretation.rule_name}")
+                elif _is_scheduled_assignment(assignment):
+                    handled_parts.append(f"Not applied: {interpretation.rule_name}")
+                else:
+                    handled_parts.append(f"Could not schedule: {interpretation.rule_name}")
+        key = (
+            assignment.course.source_file,
+            assignment.course.source_row,
+            assignment.course.module_code,
+            assignment.course.activity,
+            assignment.timeslot.week if assignment.timeslot else None,
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append(
+            {
+                "Programme": assignment.course.prog_yr,
+                "Module": assignment.course.module_code,
+                "Activity": assignment.course.activity,
+                "Special Request": assignment.course.remarks,
+                "What the System Understood": understood or "No supported pattern detected.",
+                "How It Was Handled": "; ".join(dict.fromkeys(handled_parts)) or "Sent for manual review",
+                "Timetable Result": _remarks_result_text(assignment),
+                "Needs Manual Review": "Yes" if requirements.needs_manual_review else "No",
+                "Review Notes": requirements.review_reason,
+                "Review Status": "Open" if requirements.needs_manual_review else "For review",
+            }
+        )
+    return pd.DataFrame(rows, columns=SPECIAL_REQUEST_REVIEW_COLUMNS)
+
+
+def _special_requests_summary_df(assignments: list[Assignment]) -> pd.DataFrame:
+    """Return headline counts for special-request handling."""
+    review_df = _special_requests_review_df(assignments)
+    interpretation_df = _remarks_interpretation_df(assignments)
+    if review_df.empty:
+        return _metric_rows(
+            {
+                "Remarks found": 0,
+                "Automatically applied": 0,
+                "Partially applied": 0,
+                "Needs manual review": 0,
+                "Unsupported": 0,
+            }
+        )
+    applied = int((interpretation_df["Applied Status"] == "Applied").sum()) if not interpretation_df.empty else 0
+    review = int((review_df["Needs Manual Review"] == "Yes").sum())
+    unsupported = int((interpretation_df["Detected Rule"] == "unsupported_remark").sum()) if not interpretation_df.empty else 0
+    partial = int((interpretation_df["Applied Status"] == "Not applied").sum()) if not interpretation_df.empty else 0
+    return _metric_rows(
+        {
+            "Remarks found": len(review_df),
+            "Automatically applied": applied,
+            "Partially applied": partial,
+            "Needs manual review": review,
+            "Unsupported": unsupported,
+        }
+    )
+
+
 def export_stakeholder_views(assignments: list[Assignment], rooms: list[Room], output_path: Path) -> None:
     """Export separate stakeholder timetable and exception views."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -996,6 +1173,8 @@ def export_stakeholder_views(assignments: list[Assignment], rooms: list[Room], o
         _tutor_timetable_df(snapshot).to_excel(writer, sheet_name="Tutor Timetable", index=False)
         _room_timetable_df(snapshot).to_excel(writer, sheet_name="Room Timetable", index=False)
         _exception_queue_df(snapshot, rooms=rooms).to_excel(writer, sheet_name="Exception Queue", index=False)
+        _special_requests_review_df(snapshot).to_excel(writer, sheet_name="Special Requests Review", index=False)
+        _special_requests_summary_df(snapshot).to_excel(writer, sheet_name="Special Requests Summary", index=False)
 
 
 def _soft_weights_df() -> pd.DataFrame:
@@ -1083,7 +1262,7 @@ def _traceability_df(assignments: list[Assignment]) -> pd.DataFrame:
                 "Scheduled Week": assignment.timeslot.week if assignment.timeslot else "",
                 "Day": assignment.timeslot.day if assignment.timeslot else "",
                 "Start": assignment.timeslot.start_time if assignment.timeslot else "",
-                "Room": assignment.room.room_id if assignment.room else "",
+                "Room": assignment_room_ids(assignment),
                 "Original Reason": " | ".join(assignment.hard_violations),
             }
         )
@@ -1125,6 +1304,11 @@ def export_run_manifest(
     manifest_rows = [
         {"Setting": "run_timestamp", "Value": generated_at},
         {"Setting": "scope", "Value": (metadata or {}).get("scope", "")},
+        {"Setting": "Input role", "Value": "Template 1 - Scheduling Requirements"},
+        {"Setting": "Input workbook", "Value": (metadata or {}).get("input_workbook", "")},
+        {"Setting": "Output-template role", "Value": "Template 2 - Proposed Timetable"},
+        {"Setting": "Output template", "Value": str(template2_path)},
+        {"Setting": "Generated timetable", "Value": str((output_files or {}).get("timetable", ""))},
         {"Setting": "input_files", "Value": "; ".join(sorted({course.source_file for course in courses if course.source_file}))},
         {"Setting": "input_record_count", "Value": len(courses)},
         {"Setting": "consolidated_requirement_count", "Value": demand.consolidated_course_requirements},
@@ -1192,6 +1376,7 @@ def export_run_summary(
         _resource_audit_df(resource_audit).to_excel(writer, sheet_name="Resource Audit", index=False)
         _virtual_room_detail_df(resource_audit).to_excel(writer, sheet_name="Virtual Room Detail", index=False)
         _programme_breakdown_df(snapshot).to_excel(writer, sheet_name="Programme Breakdown", index=False)
+        _remarks_interpretation_df(snapshot).to_excel(writer, sheet_name="Remarks Interpretation", index=False)
         _validation_checks_df(
             snapshot,
             generated_at,

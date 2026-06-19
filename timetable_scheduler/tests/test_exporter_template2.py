@@ -83,6 +83,27 @@ def test_room1_and_location_hostkey_use_assigned_room_id(tmp_path: Path, monkeyp
     assert row["Location Hostkey"] == "PGB-LT-01"
 
 
+def test_room2_exports_second_assigned_room(tmp_path: Path, monkeypatch) -> None:
+    """A two-room assignment should populate Room2 without changing Room1."""
+    monkeypatch.setattr(exporter, "DEFAULT_TEMPLATE2_FILE", Path("input/Upload template_System (Template 2).xlsx"))
+    assignment = Assignment(
+        course=make_course(remarks="2 rooms", group_ids=["ENG/YR 1"]),
+        room=Room("PGB-R1", 30, "physical"),
+        timeslot=TimeSlot("Monday", "09:00", 1),
+        additional_rooms=(Room("PGB-R2", 30, "physical"),),
+    )
+    output = tmp_path / "final_timetable.xlsx"
+    export_schedule([assignment], output)
+
+    workbook = load_workbook(output)
+    headers = _headers(workbook["Timetable"])
+    values = [workbook["Timetable"].cell(2, idx + 1).value for idx in range(len(headers))]
+    row = dict(zip(headers, values, strict=False))
+
+    assert row["Room1"] == "PGB-R1"
+    assert row["Room2"] == "PGB-R2"
+
+
 def test_online_assignment_exports_online_room(tmp_path: Path, monkeypatch) -> None:
     """Online assignments should export the synthetic ONLINE_ROOM placeholder."""
     monkeypatch.setattr(exporter, "DEFAULT_TEMPLATE2_FILE", Path("input/Upload template_System (Template 2).xlsx"))

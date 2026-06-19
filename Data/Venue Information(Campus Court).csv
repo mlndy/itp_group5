@@ -1,0 +1,170 @@
+Location Name,Location Description,Capacity,Resource Type,Recording?
+E2-01-01-Lectorial 6,Lectorial 6 E2-01-01,158,Lectorial,Yes
+E2-01-02-Lectorial 7,Lectorial 7 E2-01-02,255,Lectorial,Yes
+E2-02-01-Lectorial 9,Lectorial 9 E2-02-01,160,Lectorial,Yes
+E2-02-06-SR203,Seminar Room E2-02-06,35,Seminar Room,No
+E2-02-07-SR204,Seminar Room E2-02-07,50,Seminar Room,Yes
+E2-02-09-SR205,Seminar Room E2-02-09,50,Seminar Room,Yes
+E2-02-14-Lectorial 10,Lectorial 10 E2-02-14,245,Lectorial,Yes
+E2-03-01,Chua Thian Poh Discovery Hub 1,,Laboratory,N.A
+E2-03-02-SR220,Seminar Room E2-03-02,70,Seminar Room,Yes
+E2-03-03-SR221,Seminar Room E2-03-03,35,Seminar Room,No
+E2-03-04-SR222,Seminar Room E2-03-04,35,Seminar Room,No
+E2-03-05-SR223,Seminar Room E2-03-05,70,Seminar Room,Yes
+E2-03-06-SR224,Seminar Room E2-03-06,25,Seminar Room,No
+E2-03-09-SR225,Seminar Room E2-03-09,25,Seminar Room,No
+E2-03-18-SR230,Seminar Room E2-03-18,25,Seminar Room,No
+E2-03-21-SR231,Seminar Room E2-03-21,25,Seminar Room,No
+E2-04-01,ProjectHub - Prototyping,,Laboratory,N.A
+E2-04-02-SR232,Seminar Room E2-04-02,70,Seminar Room,Yes
+E2-04-03-SR233,Seminar Room E2-04-03,35,Seminar Room,No
+E2-04-04-SR234,Seminar Room E2-04-04,35,Seminar Room,No
+E2-04-05-SR235,Seminar Room E2-04-05,70,Seminar Room,Yes
+E2-04-07-SR236,Seminar Room E2-04-07,25,Seminar Room,No
+E2-04-10-SR237,Seminar Room E2-04-10,25,Seminar Room,No
+E2-04-19-SR242,Seminar Room E2-04-19,25,Seminar Room,No
+E2-04-22-SR243,Seminar Room E2-04-22,25,Seminar Room,No
+E2-05-01,Chua Thian Poh Discovery Hub 2,,Laboratory,N.A
+E2-05-03,Chua Thian Poh Discovery Hub 3,,Laboratory,N.A
+E2-05-04,Chua Thian Poh Discovery Hub 4,,Laboratory,N.A
+E2-05-05,Edge Computing Lab,,Laboratory,N.A
+E2-05-07,Emerging Technologies Lab,,Laboratory,N.A
+E2-05-09-SR247,Seminar Room E2-05-09,35,Seminar Room,No
+E2-05-10-SR248,Seminar Room E2-05-10,25,Seminar Room,No
+E2-05-11-SR249,Seminar Room E2-05-11,25,Seminar Room,No
+E2-05-12,Integrated Electronics & Instrumentation Lab,,Laboratory,N.A
+E2-05-13,Sensors & Imaging Lab,,Laboratory,N.A
+E2-05-14,Embedded Systems & IOT Lab,,Laboratory,N.A
+E2-05-15,Future Mobility Lab,,Laboratory,N.A
+E2-06-01,ProjectHub – Collaboration,,Laboratory,N.A
+E2-06-02,Info-Security Lab,,Laboratory,N.A
+E2-06-03-SR250,Seminar Room E2-06-03,35,Seminar Room,No
+E2-06-04-SR251,Seminar Room E2-06-04,35,Seminar Room,No
+E2-06-05-SR252,Seminar Room E2-06-05,70,Seminar Room,Yes
+E2-06-06,Digital Forensics & System Security Lab,,Laboratory,N.A
+E2-06-07-SR253,Seminar Room E2-06-07,25,Seminar Room,No
+E2-06-08-SR254,Seminar Room E2-06-08,25,Seminar Room,No
+E2-06-09-SR256,Seminar Room E2-06-09,25,Seminar Room,No
+E2-06-10-SR257,Seminar Room E2-06-10,25,Seminar Room,No
+E2-06-11-SR258,Seminar Room E2-06-11,25,Seminar Room,No
+E2-06-16,Primary Server Room ,,Laboratory,N.A
+E2-06-17,Server Systems & Networking Lab,,Laboratory,N.A
+E2-06-18,Cyber-Security Lab 1,,Laboratory,N.A
+E2-06-19,Cyber-Security Lab 2,,Laboratory,N.A
+E2-07-01-SR259,Computer Room E2-07-01,50,Computer Room,Yes
+E2-07-02-SR260,Computer Room E2-07-02,48,Computer Room,Yes
+E2-07-05-SR263,Seminar Room E2-07-05,70,Seminar Room,Yes
+E2-07-06-SR264,Seminar Room E2-07-06,35,Seminar Room,No
+E2-07-07-SR265,Seminar Room E2-07-07,35,Seminar Room,No
+E2-07-08-SR266,Seminar Room E2-07-08,70,Seminar Room,Yes
+E2-07-09,Sound Studio,,Laboratory,N.A
+E2-07-10,Motion Capture Studio,,Laboratory,N.A
+E2-07-13,Applied AI Lab,,Laboratory,N.A
+E2-07-14,Data Analytics Lab ,,Laboratory,N.A
+E2-07-15-SR267,Seminar Room E2-07-15,25,Seminar Room,No
+E2-07-16-SR268,Seminar Room E2-07-16,25,Seminar Room,No
+E2-07-17-SR269,Seminar Room E2-07-17,25,Seminar Room,No
+E2-08-01,Business Analytics & Technology Lab,100,Laboratory,Yes
+E2-08-02,Immersive Interaction Studio,,Laboratory,N.A
+E2-08-05,Computer Graphics Studio 1 ,,Laboratory,N.A
+E2-08-06,Drawing Studio 2 ,,Laboratory,N.A
+E2-08-07,Drawing Studio 1,,Laboratory,N.A
+E2-08-08,Games Development Studio,,Laboratory,N.A
+E2-08-09,Computer Graphics Studio 2 ,,Laboratory,N.A
+E2-08-10,Computer Graphics Studio 3,,Laboratory,N.A
+E2-08-11,Secondary Server Room ,,Laboratory,N.A
+E2-08-12,2D Animation Studio ,,Laboratory,N.A
+E2-08-13,UI/UX Studio,,Laboratory,N.A
+E2-08-14,Open Production Studio,,Laboratory,N.A
+E2-1M-01,Food Fermentation Lab,,Laboratory,N.A
+E2-2M-02-SR210,Seminar Room E2-2M-02,70,Seminar Room,Yes
+E2-2M-03-SR211,Seminar Room E2-2M-03,35,Seminar Room,No
+E2-2M-04-SR212,Seminar Room E2-2M-04,35,Seminar Room,No
+E2-2M-05-SR213,Seminar Room E2-2M-05,70,Seminar Room,Yes
+E2-2M-06-SR214,Seminar Room E2-2M-06,25,Seminar Room,No
+E2-2M-09-SR215,Seminar Room E2-2M-09,25,Seminar Room,No
+E2-2M-14-SR218,Seminar Room E2-2M-14,25,Seminar Room,No
+E2-2M-17-SR219,Seminar Room E2-2M-17,25,Seminar Room,No
+E2-RF-01,Sustainable Building Lab,,Laboratory,N.A
+E3-01-01-Lectorial 8,Lectorial 8 E3-01-01,250,Lectorial,Yes
+E3-02-01-Auditorium,Auditorium E3-02-01,823,Auditorium,N.A
+E3-1M-03,Food Characterisation Lab,,Laboratory,N.A
+E3-1M-07,Agritech Lab,,Laboratory,N.A
+E5-01-01,Construction & Naval Architecture Lab,,Laboratory,N.A
+E5-1M-01,Fluid Mechanics Lab,,Laboratory,N.A
+E6-01-04,Autonomous Vehicle Lab,,Laboratory,N.A
+E6-02-01-SR301,Seminar Room E6-02-01,35,Seminar Room,No
+E6-02-02-SR302,Seminar Room E6-02-02,50,Seminar Room,Yes
+E6-02-03-Lectorial 11,Lectorial 11 E6-02-03,160,Lectorial,Yes
+E6-02-04-SR303,Seminar Room E6-02-04,35,Seminar Room,No
+E6-02-05-SR304,Seminar Room E6-02-05,25,Seminar Room,No
+E6-02-06-SR305,Seminar Room E6-02-06,25,Seminar Room,No
+E6-02-07-SR306,Seminar Room E6-02-07,25,Seminar Room,No
+E6-02-08-SR307,Seminar Room E6-02-08,35,Seminar Room,No
+E6-02-11-SR310,Seminar Room E6-02-11,25,Seminar Room,No
+E6-02-12-SR311,Seminar Room E6-02-12,25,Seminar Room,No
+E6-02-13-SR312,Seminar Room E6-02-13,25,Seminar Room,No
+E6-02-14-SR313,Seminar Room E6-02-14,25,Seminar Room,No
+E6-02-15-SR314,Seminar Room E6-02-15,25,Seminar Room,No
+E6-02-16-SR315,Seminar Room E6-02-16,25,Seminar Room,No
+E6-03-05-SR335,Seminar Room E6-03-05,50,Seminar Room,Yes
+E6-03-07-SR336,Case Study Room E6-03-07,60,Seminar Room,Yes
+E6-03-10-SR337,Seminar Room E6-03-10,35,Seminar Room,No
+E6-03-11-SR338,Seminar Room E6-03-11,35,Seminar Room,Yes
+E6-03-13-SR340,Seminar Room E6-03-13,90,Seminar Room,Yes
+E6-03-14-SR341,Seminar Room E6-03-14,80,Seminar Room,Yes
+E6-03-15-SR342,Seminar Room E6-03-15,80,Seminar Room,Yes
+E6-03-16-SR343,Seminar Room E6-03-16,90,Seminar Room,Yes
+E6-04-02-SR346,Seminar Room E6-04-02,35,Seminar Room,No
+E6-04-04-SR347,Seminar Room E6-04-04,50,Seminar Room,Yes
+E6-04-10-SR348,Seminar Room E6-04-10,25,Seminar Room,No
+E6-04-11-SR349,Seminar Room E6-04-11,25,Seminar Room,No
+E6-04-13-SR351,Seminar Room E6-04-13,90,Seminar Room,Yes
+E6-04-14-SR352,Seminar Room E6-04-14,80,Seminar Room,Yes
+E6-04-15-SR353,Seminar Room E6-04-15,80,Seminar Room,Yes
+E6-04-16-SR354,Seminar Room E6-04-16,90,Seminar Room,Yes
+E6-04-17-SR355,Seminar Room E6-04-17,25,Seminar Room,No
+E6-04-18-SR356,Seminar Room E6-04-18,25,Seminar Room,No
+E6-05-01-SR357,Seminar Room E6-05-01,80,Seminar Room,Yes
+E6-05-03,Power & Energy Lab ,,Laboratory,N.A
+E6-05-04-SR358,Seminar Room E6-05-04,80,Seminar Room,Yes
+E6-05-05-SR359,Seminar Room E6-05-05,90,Seminar Room,Yes
+E6-05-06-SR360,Seminar Room E6-05-06,25,Seminar Room,No
+E6-05-07-SR361,Seminar Room E6-05-07,25,Seminar Room,No
+E6-06-01-SR362,Seminar Room E6-06-01,50,Seminar Room,Yes
+E6-06-05,Geotechnical Lab,,Laboratory,N.A
+E6-06-06,Fire Testing  Lab,,Laboratory,N.A
+E6-06-07,Fire Manager Lab,,Laboratory,N.A
+E6-06-08,Engineering Graphics Lab 1,,Laboratory,N.A
+E6-06-09,Engineering Graphics Lab 2,,Laboratory,N.A
+E6-06-10,Engineering Simulation Lab,,Laboratory,N.A
+E6-06-11,Heat Transfer & Thermodynamics Lab,,Laboratory,N.A
+E6-06-12,Electric Propulsion Lab,,Laboratory,N.A
+E6-06-13,System Integration & Assembly Lab,,Laboratory,N.A
+E6-07-01-SR363,Seminar Room E6-07-01,50,Seminar Room,Yes
+E6-07-02-SR364,Seminar Room E6-07-02,25,Seminar Room,No
+E6-07-07,LTARC @SIT,,Laboratory,N.A
+E6-07-08,Engineering Physics Lab,,Laboratory,N.A
+E6-07-09,Electronics Lab,,Laboratory,N.A
+E6-07-10,Electronics Lab,,Laboratory,N.A
+E6-08-01-SR365,Seminar Room E6-08-01,50,Seminar Room,Yes
+E6-08-05,Composite & Mechanical Testing Lab,,Laboratory,N.A
+E6-08-06,Surface Engineering Lab,,Laboratory,N.A
+E6-08-07,Materials Engineering Lab,,Laboratory,N.A
+E6-08-08,Electronics Testing & Measurement Lab,,Laboratory,N.A
+E6-08-09,Control & Instrumentation Lab,,Laboratory,N.A
+E6-09-02-SR367,Seminar Room E6-09-02,25,Seminar Room,No
+E6-09-07,Gas Turbine & Engine Lab,,Laboratory,N.A
+E6-2M-02-SR319,Seminar Room E6-2M-02,60,Seminar Room,Yes
+E6-2M-09-SR320,Seminar Room E6-2M-09,25,Seminar Room,No
+E6-2M-10-SR321,Seminar Room E6-2M-10,25,Seminar Room,No
+E6-2M-11-SR322,Seminar Room E6-2M-11,25,Seminar Room,No
+E6-2M-12-SR323,Seminar Room E6-2M-12,80,Seminar Room,Yes
+E6-2M-01-SR318,Seminar Room E6-2M-01,35,Seminar Room,No
+E6-2M-14-SR325,Seminar Room E6-2M-14,35,Seminar Room,No
+E6-2M-15-SR326,Seminar Room E6-2M-15,25,Seminar Room,No
+E6-2M-16-SR327,Seminar Room E6-2M-16,25,Seminar Room,No
+E6-2M-17-SR328,Seminar Room E6-2M-17,25,Seminar Room,No
+E6-2M-18-SR329,Seminar Room E6-2M-18,25,Seminar Room,No
+E6-2M-19-SR330,Seminar Room E6-2M-19,25,Seminar Room,No
+E6-2M-20-SR331,Seminar Room E6-2M-20,25,Seminar Room,No
