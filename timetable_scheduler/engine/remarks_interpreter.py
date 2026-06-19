@@ -659,6 +659,13 @@ def course_scheduling_requirements(course: "Course") -> RemarkRequirements:
     return scheduling_requirements(course_remark_requirements(course))
 
 
+def effective_remark_requirements(course: "Course", *, enabled: bool) -> RemarkRequirements:
+    """Return scheduling-effective remark requirements for a feature-flag state."""
+    if not enabled:
+        return RemarkRequirements()
+    return course_scheduling_requirements(course)
+
+
 def has_hard_enforceable_remark(course: "Course") -> bool:
     """Return True when a course has at least one hard-enforceable remark."""
     return bool(hard_enforceable_interpretations(course_remark_requirements(course)))

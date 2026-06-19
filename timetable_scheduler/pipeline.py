@@ -230,9 +230,18 @@ def run_timetable_pipeline(
         enable_remark_interpretation=options.enable_remark_interpretation,
     )
     initial_reasons = _snapshot_unscheduled_reasons(initial_schedule)
-    annotate_schedule_violations(initial_schedule)
-    initial_soft = count_soft_violations(initial_schedule)
-    initial_soft_score = _count_weighted_soft_score(initial_schedule)
+    annotate_schedule_violations(
+        initial_schedule,
+        enable_remark_interpretation=options.enable_remark_interpretation,
+    )
+    initial_soft = count_soft_violations(
+        initial_schedule,
+        enable_remark_interpretation=options.enable_remark_interpretation,
+    )
+    initial_soft_score = _count_weighted_soft_score(
+        initial_schedule,
+        options.enable_remark_interpretation,
+    )
     _restore_unscheduled_reasons(initial_schedule, initial_reasons)
 
     args = _args_namespace(options)
@@ -248,12 +257,19 @@ def run_timetable_pipeline(
             max_iterations=options.max_iterations,
             time_limit_seconds=options.optimisation_time_limit,
             patience=options.optimisation_patience,
+            enable_remark_interpretation=options.enable_remark_interpretation,
         )
         runtime_seconds = perf_counter() - started
         final_schedule = result.assignments
         final_reasons = _snapshot_unscheduled_reasons(final_schedule)
-        final_soft = count_soft_violations(final_schedule)
-        final_soft_score = _count_weighted_soft_score(final_schedule)
+        final_soft = count_soft_violations(
+            final_schedule,
+            enable_remark_interpretation=options.enable_remark_interpretation,
+        )
+        final_soft_score = _count_weighted_soft_score(
+            final_schedule,
+            options.enable_remark_interpretation,
+        )
         _restore_unscheduled_reasons(final_schedule, final_reasons)
         optimisation_metrics = _completed_optimisation_summary(
             args,
@@ -283,8 +299,14 @@ def run_timetable_pipeline(
         rooms=rooms,
         room_source_path=_room_source_path(options),
         optimisation_summary=optimisation_metrics,
+        enable_remark_interpretation=options.enable_remark_interpretation,
     )
-    export_stakeholder_views(final_schedule, rooms, DEFAULT_STAKEHOLDER_VIEWS_FILE)
+    export_stakeholder_views(
+        final_schedule,
+        rooms,
+        DEFAULT_STAKEHOLDER_VIEWS_FILE,
+        enable_remark_interpretation=options.enable_remark_interpretation,
+    )
     export_remarks_audit(courses, DEFAULT_REMARKS_AUDIT_FILE)
 
     if not options.skip_unscheduled_diagnostics:
@@ -292,12 +314,18 @@ def run_timetable_pipeline(
             final_schedule,
             rooms,
             max_diagnostic_assignments=options.max_diagnostic_assignments,
+            enable_remark_interpretation=options.enable_remark_interpretation,
         )
         export_unscheduled_diagnostics(report, DEFAULT_UNSCHEDULED_DIAGNOSTICS_FILE)
     _check_cancel(cancel_event)
 
     _emit(progress_callback, "Exporting proposed timetable")
-    output_paths = export_outputs(final_schedule, options.scope, template2_path=options.template2_output_template_path)
+    output_paths = export_outputs(
+        final_schedule,
+        options.scope,
+        template2_path=options.template2_output_template_path,
+        enable_remark_interpretation=options.enable_remark_interpretation,
+    )
     output_paths.update(
         {
             "loader_report": DEFAULT_LOADER_REPORT_FILE,
@@ -320,6 +348,7 @@ def run_timetable_pipeline(
         rooms=rooms,
         output_files=output_paths,
         template2_path=options.template2_output_template_path,
+        enable_remark_interpretation=options.enable_remark_interpretation,
     )
     output_paths["run_manifest"] = DEFAULT_RUN_MANIFEST_FILE
     output_paths["proposed_template2"] = Path(output_paths["timetable"])

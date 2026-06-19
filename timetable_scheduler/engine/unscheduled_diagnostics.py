@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from config import DEFAULT_UNSCHEDULED_DIAGNOSTICS_FILE
+from config import DEFAULT_UNSCHEDULED_DIAGNOSTICS_FILE, ENABLE_REMARK_INTERPRETATION
 from data.models import Assignment, Room, TimeSlot
 from engine.constraint_checker import (
     check_blocked_time,
@@ -158,6 +158,7 @@ def diagnose_unscheduled_assignment(
     scheduled: list[Assignment],
     rooms: list[Room],
     index: ScheduleIndex | None = None,
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
 ) -> UnscheduledDiagnostic:
     """Classify why an assignment could not be scheduled."""
     base_reasons = _base_reason_for_room_type(assignment, rooms)
@@ -168,7 +169,13 @@ def diagnose_unscheduled_assignment(
             prog_yr=assignment.course.prog_yr,
             source_file=assignment.course.source_file,
             reasons=base_reasons,
-            compatible_room_count=len(get_candidate_rooms(assignment.course, rooms)),
+            compatible_room_count=len(
+                get_candidate_rooms(
+                    assignment.course,
+                    rooms,
+                    enable_remark_interpretation=enable_remark_interpretation,
+                )
+            ),
             schedulable_week_count=len(schedulable_weeks(assignment.course.teaching_weeks)),
             candidate_count=0,
         )
@@ -186,7 +193,11 @@ def diagnose_unscheduled_assignment(
             candidate_count=0,
         )
 
-    compatible_rooms = get_candidate_rooms(assignment.course, rooms)
+    compatible_rooms = get_candidate_rooms(
+        assignment.course,
+        rooms,
+        enable_remark_interpretation=enable_remark_interpretation,
+    )
     if not compatible_rooms:
         return UnscheduledDiagnostic(
             module_code=assignment.course.module_code,
@@ -240,7 +251,12 @@ def diagnose_unscheduled_assignment(
     )
 
 
-def _diagnostic_from_original_reasons(assignment: Assignment, rooms: list[Room], reasons: list[str]) -> UnscheduledDiagnostic:
+def _diagnostic_from_original_reasons(
+    assignment: Assignment,
+    rooms: list[Room],
+    reasons: list[str],
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
+) -> UnscheduledDiagnostic:
     """Return a lightweight diagnostic that preserves scheduler reasons."""
     return UnscheduledDiagnostic(
         module_code=assignment.course.module_code,
@@ -248,7 +264,13 @@ def _diagnostic_from_original_reasons(assignment: Assignment, rooms: list[Room],
         prog_yr=assignment.course.prog_yr,
         source_file=assignment.course.source_file,
         reasons=reasons,
-        compatible_room_count=len(get_candidate_rooms(assignment.course, rooms)),
+        compatible_room_count=len(
+            get_candidate_rooms(
+                assignment.course,
+                rooms,
+                enable_remark_interpretation=enable_remark_interpretation,
+            )
+        ),
         schedulable_week_count=len(schedulable_weeks(assignment.course.teaching_weeks)),
         candidate_count=0,
     )
@@ -258,6 +280,7 @@ def diagnose_unscheduled_assignments(
     assignments: list[Assignment],
     rooms: list[Room],
     max_diagnostic_assignments: int | None = None,
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
 ) -> UnscheduledDiagnosticsReport:
     """Generate bounded diagnostics for unscheduled assignments in a schedule."""
     scheduled = _scheduled_assignments(assignments)
@@ -272,15 +295,37 @@ def diagnose_unscheduled_assignments(
     for assignment in unscheduled:
         has_candidate_limit = MAX_CANDIDATE_PATTERN_LIMIT_REASON in assignment.hard_violations
         if has_candidate_limit:
-            report.add(_diagnostic_from_original_reasons(assignment, rooms, [MAX_CANDIDATE_PATTERN_LIMIT_REASON]))
+            report.add(
+                _diagnostic_from_original_reasons(
+                    assignment,
+                    rooms,
+                    [MAX_CANDIDATE_PATTERN_LIMIT_REASON],
+                    enable_remark_interpretation=enable_remark_interpretation,
+                )
+            )
             report.undiagnosed_assignments += 1
             continue
         if max_diagnostic_assignments is not None and diagnosed >= max_diagnostic_assignments:
             reasons = assignment.hard_violations or ["not diagnosed due to diagnostic assignment limit"]
-            report.add(_diagnostic_from_original_reasons(assignment, rooms, reasons))
+            report.add(
+                _diagnostic_from_original_reasons(
+                    assignment,
+                    rooms,
+                    reasons,
+                    enable_remark_interpretation=enable_remark_interpretation,
+                )
+            )
             report.undiagnosed_assignments += 1
             continue
-        report.add(diagnose_unscheduled_assignment(assignment, scheduled, rooms, schedule_index))
+        report.add(
+            diagnose_unscheduled_assignment(
+                assignment,
+                scheduled,
+                rooms,
+                schedule_index,
+                enable_remark_interpretation=enable_remark_interpretation,
+            )
+        )
         diagnosed += 1
         report.diagnosed_assignments += 1
     return report

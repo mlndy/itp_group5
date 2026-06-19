@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from collections import Counter
 from dataclasses import dataclass
@@ -30,11 +32,11 @@ ATTRIBUTION_CATEGORIES = [
     "required room type",
     "delivery-mode requirement",
     "sequencing",
-    "other",
-    "suspected false positive",
+    "indirect search displacement",
+    "other direct remark effect",
 ]
 
-NEWLY_UNSCHEDULED_COLUMNS = [
+EFFECT_COLUMNS = [
     "Programme/Year",
     "Module",
     "Activity",
@@ -47,13 +49,19 @@ NEWLY_UNSCHEDULED_COLUMNS = [
     "Confidence",
     "Baseline Room",
     "Baseline Day/Time",
-    "Enhanced Failure Reason",
+    "Enhanced Room",
+    "Enhanced Day/Time",
+    "Failure Reason",
     "Responsible Remark Rule",
     "Explicit Interpretation",
-    "Manual Review Required",
-    "Recommended Action",
     "Attribution Category",
+    "Attribution Evidence",
+    "Recommended Action",
 ]
+
+FINGERPRINT_COLUMNS = ["Run", "Metric", "Value"]
+OVERALL_COLUMNS = ["Metric", "Baseline", "Enhanced", "Difference"]
+RECONCILIATION_COLUMNS = ["Metric", "Value", "Status", "Notes"]
 
 
 @dataclass(slots=True)
@@ -62,20 +70,38 @@ class RemarksComparison:
 
     baseline_metrics: DemandMetrics
     enhanced_metrics: DemandMetrics
-    newly_unscheduled_rows: list[dict[str, object]]
+    direct_remark_effect_rows: list[dict[str, object]]
+    indirect_remark_effect_rows: list[dict[str, object]]
+    unchanged_unscheduled_rows: list[dict[str, object]]
+    enhanced_improvement_rows: list[dict[str, object]]
     rule_attribution: dict[str, int]
     scheduled_hard_violations: int
-    remark_related_hard_violations: int
+    baseline_fingerprint: dict[str, object]
+    enhanced_fingerprint: dict[str, object]
+
+    @property
+    def newly_unscheduled_rows(self) -> list[dict[str, object]]:
+        """Return all enhanced-only unscheduled occurrences."""
+        return [*self.direct_remark_effect_rows, *self.indirect_remark_effect_rows]
 
     @property
     def attribution_total(self) -> int:
         """Return total attributed newly unscheduled occurrences."""
-        return sum(self.rule_attribution.values())
+        return len(self.newly_unscheduled_rows)
 
     @property
     def attribution_reconciles(self) -> bool:
-        """Return True when attribution exactly matches newly unscheduled rows."""
-        return self.attribution_total == len(self.newly_unscheduled_rows)
+        """Return True when attribution matches the enhanced unscheduled count equation."""
+        baseline_unscheduled = self.baseline_metrics.unscheduled_teaching_occurrences
+        direct = len(self.direct_remark_effect_rows)
+        indirect = len(self.indirect_remark_effect_rows)
+        recoveries = len(self.enhanced_improvement_rows)
+        return baseline_unscheduled + direct + indirect - recoveries == self.enhanced_metrics.unscheduled_teaching_occurrences
+
+    @property
+    def remark_related_hard_violations(self) -> int:
+        """Return direct explicit remark-effect count for legacy callers."""
+        return len(self.direct_remark_effect_rows)
 
 
 def _course_identity(course: Course) -> tuple[str, str, str, tuple[str, ...], str, object]:
@@ -129,36 +155,51 @@ def _unscheduled_occurrences(assignments: list[Assignment]) -> dict[OccurrenceKe
     return rows
 
 
-def _assignment_room_text(assignment: Assignment) -> str:
-    """Return baseline room text without importing report helpers."""
-    rooms = assignment.all_rooms
-    return ", ".join(room.room_id for room in rooms)
+def _assignment_room_text(assignment: Assignment | None) -> str:
+    """Return assigned room text."""
+    if assignment is None:
+        return ""
+    return ", ".join(room.room_id for room in assignment.all_rooms)
+
+
+def _assignment_time_text(assignment: Assignment | None) -> str:
+    """Return assigned day/time text."""
+    if assignment is None or assignment.timeslot is None:
+        return ""
+    return f"{assignment.timeslot.day} {assignment.timeslot.start_time}"
 
 
 def _failure_reason(assignment: Assignment | None) -> str:
-    """Return enhanced failure reason text."""
+    """Return unscheduled failure reason text."""
     if assignment is None:
-        return "No enhanced unscheduled placeholder found for this occurrence."
+        return "No unscheduled placeholder found for this occurrence."
     return " | ".join(assignment.hard_violations) or "Unscheduled without recorded reason"
 
 
 def _primary_interpretation(course: Course, assignment: Assignment | None) -> RemarkInterpretation | None:
-    """Return the interpretation most likely responsible for an enhanced failure."""
+    """Return the interpretation most likely responsible for an enhanced difference."""
     requirements = course_remark_requirements(course)
     hard_items = hard_enforceable_interpretations(requirements)
-    if assignment is not None and (assignment.remark_unscheduled_reason or any("explicit" in reason.casefold() for reason in assignment.hard_violations)):
+    if assignment is not None and _has_direct_remark_failure(assignment):
         return hard_items[0] if hard_items else None
     return hard_items[0] if hard_items else (requirements.interpretations[0] if requirements.interpretations else None)
 
 
-def _attribution_category(interpretation: RemarkInterpretation | None, assignment: Assignment | None) -> str:
-    """Map one responsible interpretation to an attribution bucket."""
-    has_explicit_failure = assignment is not None and (
-        bool(assignment.remark_unscheduled_reason)
-        or any("explicit" in reason.casefold() for reason in assignment.hard_violations)
+def _has_direct_remark_failure(assignment: Assignment | None) -> bool:
+    """Return True when an unscheduled row records an explicit remark reason."""
+    if assignment is None:
+        return False
+    return bool(assignment.remark_unscheduled_reason) or any(
+        "explicit" in reason.casefold() for reason in assignment.hard_violations
     )
-    if interpretation is None or not has_explicit_failure:
-        return "suspected false positive"
+
+
+def _attribution_category(interpretation: RemarkInterpretation | None, assignment: Assignment | None) -> str:
+    """Map one difference to a deterministic attribution bucket."""
+    if not _has_direct_remark_failure(assignment):
+        return "indirect search displacement"
+    if interpretation is None:
+        return "other direct remark effect"
     if interpretation.rule_name in {"multiple_room_requirement", "concurrent_parallel_groups"}:
         return "multiple-room requirement"
     if interpretation.rule_name in {"hybrid_delivery", "recording_capable_room"}:
@@ -168,14 +209,14 @@ def _attribution_category(interpretation: RemarkInterpretation | None, assignmen
             return "fixed time"
         if interpretation.parameters.get("fixed_days"):
             return "fixed day"
-        return "other"
+        return "other direct remark effect"
     if interpretation.rule_name == "room_type":
         return "required room type"
     if interpretation.rule_name == "flexible_delivery_mode":
         return "delivery-mode requirement"
     if interpretation.rule_name == "activity_sequence":
         return "sequencing"
-    return "other"
+    return "other direct remark effect"
 
 
 def _recommended_action(category: str) -> str:
@@ -192,9 +233,70 @@ def _recommended_action(category: str) -> str:
         return "Confirm the allowed delivery mode with programme staff."
     if category == "sequencing":
         return "Review sequencing manually because it is not fully represented."
-    if category == "suspected false positive":
-        return "Investigate the interpretation; ambiguous, unsupported, or preference wording should not block scheduling."
+    if category == "indirect search displacement":
+        return "Review as an indirect enhanced-run displacement, not a direct explicit request failure."
     return "Review the remark and scheduler evidence manually."
+
+
+def _attribution_evidence(category: str, assignment: Assignment | None) -> str:
+    """Return concise evidence explaining one attribution."""
+    if category == "indirect search displacement":
+        return (
+            "Baseline scheduled this occurrence, but the enhanced run did not. "
+            "No explicit remark failure was recorded on this occurrence, so it is not counted as a direct remark failure."
+        )
+    reason = _failure_reason(assignment)
+    return f"Enhanced unscheduled reason records an explicit interpreted request: {reason}"
+
+
+def _effect_row(
+    key: OccurrenceKey,
+    baseline: Assignment | None,
+    enhanced: Assignment | None,
+    category: str,
+) -> dict[str, object]:
+    """Return a comparison row for one occurrence difference."""
+    course = (enhanced or baseline).course  # type: ignore[union-attr]
+    interpretation = _primary_interpretation(course, enhanced)
+    return {
+        "Programme/Year": course.prog_yr,
+        "Module": course.module_code,
+        "Activity": course.activity,
+        "Teaching Week": key[3],
+        "Source Workbook": course.source_file,
+        "Source Row": course.source_row,
+        "Raw Remark": course.remarks,
+        "Detected Rule": interpretation.rule_name if interpretation else "",
+        "Enforcement": interpretation.enforcement.value if interpretation else "",
+        "Confidence": interpretation.confidence.value if interpretation else "",
+        "Baseline Room": _assignment_room_text(baseline),
+        "Baseline Day/Time": _assignment_time_text(baseline),
+        "Enhanced Room": _assignment_room_text(enhanced),
+        "Enhanced Day/Time": _assignment_time_text(enhanced),
+        "Failure Reason": _failure_reason(enhanced),
+        "Responsible Remark Rule": interpretation.rule_name if category != "indirect search displacement" and interpretation else category,
+        "Explicit Interpretation": "Yes" if interpretation and interpretation.parameters.get("explicit") else "No",
+        "Attribution Category": category,
+        "Attribution Evidence": _attribution_evidence(category, enhanced),
+        "Recommended Action": _recommended_action(category),
+    }
+
+
+def _unchanged_row(key: OccurrenceKey, baseline: Assignment, enhanced: Assignment) -> dict[str, object]:
+    """Return one occurrence that remained unscheduled in both runs."""
+    row = _effect_row(key, baseline, enhanced, "unchanged unscheduled")
+    row["Attribution Evidence"] = "This occurrence was unscheduled in both baseline and enhanced runs."
+    row["Recommended Action"] = "Treat as unchanged residual demand, not a new remark effect."
+    return row
+
+
+def _improvement_row(key: OccurrenceKey, baseline: Assignment, enhanced: Assignment) -> dict[str, object]:
+    """Return one baseline-unscheduled occurrence recovered in the enhanced run."""
+    row = _effect_row(key, baseline, enhanced, "enhanced recovery")
+    row["Failure Reason"] = _failure_reason(baseline)
+    row["Attribution Evidence"] = "This occurrence was unscheduled in the baseline but scheduled in the enhanced run."
+    row["Recommended Action"] = "No exception action required unless programme review is requested."
+    return row
 
 
 def _scheduled_hard_violations(assignments: list[Assignment]) -> int:
@@ -206,46 +308,58 @@ def _scheduled_hard_violations(assignments: list[Assignment]) -> int:
     )
 
 
-def _newly_unscheduled_rows(
-    baseline_scheduled: dict[OccurrenceKey, Assignment],
-    enhanced_scheduled: dict[OccurrenceKey, Assignment],
-    enhanced_unscheduled: dict[OccurrenceKey, Assignment],
-) -> list[dict[str, object]]:
-    """Return rows scheduled in baseline but not scheduled with remarks enabled."""
-    rows: list[dict[str, object]] = []
-    for key in sorted(set(baseline_scheduled) - set(enhanced_scheduled)):
-        baseline = baseline_scheduled[key]
-        enhanced = enhanced_unscheduled.get(key)
-        course = enhanced.course if enhanced is not None else baseline.course
-        requirements = course_remark_requirements(course)
-        interpretation = _primary_interpretation(course, enhanced)
-        category = _attribution_category(interpretation, enhanced)
-        manual_review = requirements.needs_manual_review or category == "suspected false positive"
-        rows.append(
-            {
-                "Programme/Year": course.prog_yr,
-                "Module": course.module_code,
-                "Activity": course.activity,
-                "Teaching Week": key[3],
-                "Source Workbook": course.source_file,
-                "Source Row": course.source_row,
-                "Raw Remark": course.remarks,
-                "Detected Rule": interpretation.rule_name if interpretation else "",
-                "Enforcement": interpretation.enforcement.value if interpretation else "",
-                "Confidence": interpretation.confidence.value if interpretation else "",
-                "Baseline Room": _assignment_room_text(baseline),
-                "Baseline Day/Time": (
-                    f"{baseline.timeslot.day} {baseline.timeslot.start_time}" if baseline.timeslot else ""
-                ),
-                "Enhanced Failure Reason": _failure_reason(enhanced),
-                "Responsible Remark Rule": interpretation.rule_name if category != "suspected false positive" and interpretation else category,
-                "Explicit Interpretation": "Yes" if interpretation and interpretation.parameters.get("explicit") else "No",
-                "Manual Review Required": "Yes" if manual_review else "No",
-                "Recommended Action": _recommended_action(category),
-                "Attribution Category": category,
-            }
-        )
-    return rows
+def _course_fingerprint(courses: list[Course], input_course_records: int | None) -> str:
+    """Return a deterministic fingerprint for the shared input demand pool."""
+    payload = [
+        {
+            "module": course.module_code,
+            "activity": course.activity,
+            "programme": course.prog_yr,
+            "class_size": course.class_size,
+            "delivery_mode": course.delivery_mode,
+            "weeks": list(course.teaching_weeks),
+            "duration": course.duration_hrs,
+            "source_file": course.source_file,
+            "source_sheet": course.source_sheet,
+            "source_row": course.source_row,
+            "groups": list(course.group_ids),
+            "staff": list(course.staff_ids),
+            "remarks": course.remarks,
+        }
+        for course in courses
+    ]
+    wrapper = {"input_course_records": input_course_records, "courses": payload}
+    encoded = json.dumps(wrapper, sort_keys=True, default=str).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _scheduler_fingerprint(metadata: dict[str, object] | None, remarks_enabled: bool) -> str:
+    """Return a deterministic fingerprint for comparable scheduler settings."""
+    payload = dict(metadata or {})
+    payload["remark_interpretation_enabled"] = remarks_enabled
+    encoded = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _run_fingerprint(
+    label: str,
+    courses: list[Course],
+    metrics: DemandMetrics,
+    input_course_records: int | None,
+    scheduler_metadata: dict[str, object] | None,
+    remarks_enabled: bool,
+) -> dict[str, object]:
+    """Return run fingerprint rows for comparison reproducibility."""
+    return {
+        "run": label,
+        "remark_interpretation_enabled": remarks_enabled,
+        "input_course_records": input_course_records,
+        "consolidated_requirement_count": metrics.consolidated_course_requirements,
+        "required_teaching_occurrences": metrics.required_teaching_occurrences,
+        "input_demand_fingerprint": _course_fingerprint(courses, input_course_records),
+        "scheduler_settings_fingerprint": _scheduler_fingerprint(scheduler_metadata, remarks_enabled),
+        **(scheduler_metadata or {}),
+    }
 
 
 def compare_remark_runs(
@@ -253,54 +367,142 @@ def compare_remark_runs(
     baseline_assignments: list[Assignment],
     enhanced_assignments: list[Assignment],
     input_course_records: int | None = None,
+    scheduler_metadata: dict[str, object] | None = None,
 ) -> RemarksComparison:
     """Compare baseline and remarks-enabled schedules using one demand pool."""
     baseline_metrics = build_demand_metrics(courses, baseline_assignments, input_course_records=input_course_records)
     enhanced_metrics = build_demand_metrics(courses, enhanced_assignments, input_course_records=input_course_records)
     baseline_scheduled = _scheduled_occurrences(baseline_assignments)
     enhanced_scheduled = _scheduled_occurrences(enhanced_assignments)
+    baseline_unscheduled = _unscheduled_occurrences(baseline_assignments)
     enhanced_unscheduled = _unscheduled_occurrences(enhanced_assignments)
-    rows = _newly_unscheduled_rows(baseline_scheduled, enhanced_scheduled, enhanced_unscheduled)
-    counts = Counter(str(row["Attribution Category"]) for row in rows)
+
+    direct_rows: list[dict[str, object]] = []
+    indirect_rows: list[dict[str, object]] = []
+    for key in sorted(set(baseline_scheduled) - set(enhanced_scheduled)):
+        baseline = baseline_scheduled[key]
+        enhanced = enhanced_unscheduled.get(key)
+        category = _attribution_category(_primary_interpretation((enhanced or baseline).course, enhanced), enhanced)
+        row = _effect_row(key, baseline, enhanced, category)
+        if category == "indirect search displacement":
+            indirect_rows.append(row)
+        else:
+            direct_rows.append(row)
+
+    unchanged_rows = [
+        _unchanged_row(key, baseline_unscheduled[key], enhanced_unscheduled[key])
+        for key in sorted(set(baseline_unscheduled) & set(enhanced_unscheduled))
+    ]
+    improvement_rows = [
+        _improvement_row(key, baseline_unscheduled[key], enhanced_scheduled[key])
+        for key in sorted(set(baseline_unscheduled) & set(enhanced_scheduled))
+    ]
+
+    counts = Counter(str(row["Attribution Category"]) for row in direct_rows + indirect_rows)
     attribution = {category: int(counts.get(category, 0)) for category in ATTRIBUTION_CATEGORIES}
     return RemarksComparison(
         baseline_metrics=baseline_metrics,
         enhanced_metrics=enhanced_metrics,
-        newly_unscheduled_rows=rows,
+        direct_remark_effect_rows=direct_rows,
+        indirect_remark_effect_rows=indirect_rows,
+        unchanged_unscheduled_rows=unchanged_rows,
+        enhanced_improvement_rows=improvement_rows,
         rule_attribution=attribution,
         scheduled_hard_violations=_scheduled_hard_violations(enhanced_assignments),
-        remark_related_hard_violations=sum(1 for row in rows if row["Attribution Category"] != "suspected false positive"),
+        baseline_fingerprint=_run_fingerprint(
+            "Baseline",
+            courses,
+            baseline_metrics,
+            input_course_records,
+            scheduler_metadata,
+            remarks_enabled=False,
+        ),
+        enhanced_fingerprint=_run_fingerprint(
+            "Enhanced",
+            courses,
+            enhanced_metrics,
+            input_course_records,
+            scheduler_metadata,
+            remarks_enabled=True,
+        ),
     )
 
 
-def _summary_df(comparison: RemarksComparison) -> pd.DataFrame:
-    """Return summary metrics for the comparison workbook."""
+def _run_fingerprints_df(comparison: RemarksComparison) -> pd.DataFrame:
+    """Return run fingerprint rows."""
+    rows: list[dict[str, object]] = []
+    for fingerprint in [comparison.baseline_fingerprint, comparison.enhanced_fingerprint]:
+        run = str(fingerprint.get("run", ""))
+        for key, value in fingerprint.items():
+            if key == "run":
+                continue
+            rows.append({"Run": run, "Metric": key, "Value": value})
+    return pd.DataFrame(rows, columns=FINGERPRINT_COLUMNS)
+
+
+def _overall_metrics_df(comparison: RemarksComparison) -> pd.DataFrame:
+    """Return headline baseline and enhanced metrics."""
     baseline = comparison.baseline_metrics
     enhanced = comparison.enhanced_metrics
-    coverage_difference = enhanced.coverage_rate_percent - baseline.coverage_rate_percent
-    values = {
-        "Baseline required": baseline.required_teaching_occurrences,
-        "Baseline scheduled": baseline.scheduled_teaching_occurrences,
-        "Baseline unscheduled": baseline.unscheduled_teaching_occurrences,
-        "Enhanced required": enhanced.required_teaching_occurrences,
-        "Enhanced scheduled": enhanced.scheduled_teaching_occurrences,
-        "Enhanced unscheduled": enhanced.unscheduled_teaching_occurrences,
-        "Coverage difference": coverage_difference,
-        "Additional unscheduled occurrences": len(comparison.newly_unscheduled_rows),
-        "Scheduled hard violations": comparison.scheduled_hard_violations,
-        "Remark-related hard violations": comparison.remark_related_hard_violations,
-        "Attribution total": comparison.attribution_total,
-        "Attribution reconciliation status": "PASS" if comparison.attribution_reconciles else "FAIL",
-    }
-    return pd.DataFrame([{"Metric": key, "Value": value} for key, value in values.items()])
-
-
-def _rule_attribution_df(comparison: RemarksComparison) -> pd.DataFrame:
-    """Return attribution counts by required rule bucket."""
+    values = [
+        ("Input course records", baseline.input_course_records, enhanced.input_course_records),
+        ("Consolidated requirements", baseline.consolidated_course_requirements, enhanced.consolidated_course_requirements),
+        ("Required teaching occurrences", baseline.required_teaching_occurrences, enhanced.required_teaching_occurrences),
+        ("Scheduled teaching occurrences", baseline.scheduled_teaching_occurrences, enhanced.scheduled_teaching_occurrences),
+        ("Unscheduled teaching occurrences", baseline.unscheduled_teaching_occurrences, enhanced.unscheduled_teaching_occurrences),
+        ("Coverage rate percent", baseline.coverage_rate_percent, enhanced.coverage_rate_percent),
+        ("Scheduled hard violations", 0, comparison.scheduled_hard_violations),
+        ("Direct remark effects", 0, len(comparison.direct_remark_effect_rows)),
+        ("Indirect remark effects", 0, len(comparison.indirect_remark_effect_rows)),
+        ("Enhanced recoveries", 0, len(comparison.enhanced_improvement_rows)),
+    ]
     return pd.DataFrame(
-        [{"Rule Attribution": category, "Count": comparison.rule_attribution.get(category, 0)} for category in ATTRIBUTION_CATEGORIES],
-        columns=["Rule Attribution", "Count"],
+        [
+            {
+                "Metric": metric,
+                "Baseline": baseline_value,
+                "Enhanced": enhanced_value,
+                "Difference": enhanced_value - baseline_value if isinstance(baseline_value, (int, float)) and isinstance(enhanced_value, (int, float)) else "",
+            }
+            for metric, baseline_value, enhanced_value in values
+        ],
+        columns=OVERALL_COLUMNS,
     )
+
+
+def _attribution_reconciliation_df(comparison: RemarksComparison) -> pd.DataFrame:
+    """Return mathematical reconciliation rows for enhanced unscheduled demand."""
+    baseline_unscheduled = comparison.baseline_metrics.unscheduled_teaching_occurrences
+    direct = len(comparison.direct_remark_effect_rows)
+    indirect = len(comparison.indirect_remark_effect_rows)
+    recoveries = len(comparison.enhanced_improvement_rows)
+    enhanced_unscheduled = comparison.enhanced_metrics.unscheduled_teaching_occurrences
+    calculated = baseline_unscheduled + direct + indirect - recoveries
+    rows = [
+        {"Metric": "Baseline unscheduled occurrences", "Value": baseline_unscheduled, "Status": "INFO", "Notes": "Unscheduled demand with remark interpretation disabled."},
+        {"Metric": "Direct remark effects", "Value": direct, "Status": "INFO", "Notes": "Enhanced-only unscheduled occurrences with explicit remark failure reasons."},
+        {"Metric": "Indirect remark effects", "Value": indirect, "Status": "INFO", "Notes": "Enhanced-only unscheduled occurrences without direct explicit failure reasons."},
+        {"Metric": "Enhanced recoveries", "Value": recoveries, "Status": "INFO", "Notes": "Baseline-unscheduled occurrences scheduled by the enhanced run."},
+        {"Metric": "Calculated enhanced unscheduled", "Value": calculated, "Status": "PASS" if calculated == enhanced_unscheduled else "FAIL", "Notes": "Baseline + direct + indirect - recoveries."},
+        {"Metric": "Actual enhanced unscheduled", "Value": enhanced_unscheduled, "Status": "INFO", "Notes": "Reported by demand metrics."},
+        {"Metric": "Attribution reconciliation", "Value": calculated == enhanced_unscheduled, "Status": "PASS" if comparison.attribution_reconciles else "FAIL", "Notes": "No unexplained or suspected categories remain."},
+        {"Metric": "Scheduled hard violations", "Value": comparison.scheduled_hard_violations, "Status": "PASS" if comparison.scheduled_hard_violations == 0 else "FAIL", "Notes": "Enhanced scheduled assignments must remain hard-feasible."},
+    ]
+    for category in ATTRIBUTION_CATEGORIES:
+        rows.append(
+            {
+                "Metric": f"Rule attribution - {category}",
+                "Value": comparison.rule_attribution.get(category, 0),
+                "Status": "INFO",
+                "Notes": "Deterministic attribution bucket.",
+            }
+        )
+    return pd.DataFrame(rows, columns=RECONCILIATION_COLUMNS)
+
+
+def _rows_df(rows: list[dict[str, object]]) -> pd.DataFrame:
+    """Return effect rows with stable columns."""
+    return pd.DataFrame(rows, columns=EFFECT_COLUMNS)
 
 
 def export_remarks_coverage_comparison(
@@ -309,6 +511,7 @@ def export_remarks_coverage_comparison(
     enhanced_assignments: list[Assignment],
     output_path: Path,
     input_course_records: int | None = None,
+    scheduler_metadata: dict[str, object] | None = None,
 ) -> RemarksComparison:
     """Export baseline versus remarks-enabled coverage attribution."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -317,13 +520,14 @@ def export_remarks_coverage_comparison(
         baseline_assignments,
         enhanced_assignments,
         input_course_records=input_course_records,
+        scheduler_metadata=scheduler_metadata,
     )
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
-        _summary_df(comparison).to_excel(writer, sheet_name="Summary", index=False)
-        pd.DataFrame(comparison.newly_unscheduled_rows, columns=NEWLY_UNSCHEDULED_COLUMNS).to_excel(
-            writer,
-            sheet_name="Newly Unscheduled",
-            index=False,
-        )
-        _rule_attribution_df(comparison).to_excel(writer, sheet_name="Rule Attribution", index=False)
+        _run_fingerprints_df(comparison).to_excel(writer, sheet_name="Run Fingerprints", index=False)
+        _overall_metrics_df(comparison).to_excel(writer, sheet_name="Overall Metrics", index=False)
+        _rows_df(comparison.direct_remark_effect_rows).to_excel(writer, sheet_name="Direct Remark Effects", index=False)
+        _rows_df(comparison.indirect_remark_effect_rows).to_excel(writer, sheet_name="Indirect Remark Effects", index=False)
+        _rows_df(comparison.unchanged_unscheduled_rows).to_excel(writer, sheet_name="Unchanged Unscheduled", index=False)
+        _rows_df(comparison.enhanced_improvement_rows).to_excel(writer, sheet_name="Enhanced Improvements", index=False)
+        _attribution_reconciliation_df(comparison).to_excel(writer, sheet_name="Attribution Reconciliation", index=False)
     return comparison

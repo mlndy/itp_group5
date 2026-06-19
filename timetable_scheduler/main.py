@@ -150,18 +150,33 @@ def _count_scheduled_hard_violations(assignments: list) -> int:
     )
 
 
-def _count_weighted_soft_score(assignments: list) -> int:
+def _remark_interpretation_enabled(args: argparse.Namespace) -> bool:
+    """Return whether remark rules should affect scheduling and scoring."""
+    return not args.disable_remark_interpretation
+
+
+def _count_weighted_soft_score(assignments: list, enable_remark_interpretation: bool = True) -> int:
     """Count weighted soft score without replacing unscheduled reasons."""
     reasons = _snapshot_unscheduled_reasons(assignments)
-    score = weighted_soft_score(assignments)
+    score = weighted_soft_score(
+        assignments,
+        enable_remark_interpretation=enable_remark_interpretation,
+    )
     _restore_unscheduled_reasons(assignments, reasons)
     return score
 
 
-def _soft_rule_breakdown_metrics(prefix: str, assignments: list) -> dict[str, object]:
+def _soft_rule_breakdown_metrics(
+    prefix: str,
+    assignments: list,
+    enable_remark_interpretation: bool = True,
+) -> dict[str, object]:
     """Return per-soft-rule counts with stable metric labels."""
     reasons = _snapshot_unscheduled_reasons(assignments)
-    breakdown = soft_violation_breakdown(assignments)
+    breakdown = soft_violation_breakdown(
+        assignments,
+        enable_remark_interpretation=enable_remark_interpretation,
+    )
     _restore_unscheduled_reasons(assignments, reasons)
     return {f"{prefix} soft rule - {rule}": count for rule, count in breakdown.items()}
 
@@ -210,6 +225,7 @@ def _skipped_optimisation_summary(
     demand = build_demand_metrics(courses, assignments, input_course_records=len(courses))
     resource_audit = audit_resources(courses, rooms, assignments)
     scheduled_hard = _count_scheduled_hard_violations(assignments)
+    remarks_enabled = _remark_interpretation_enabled(args)
     summary = {
         "optimisation_enabled": "No",
         "status": "Skipped",
@@ -241,8 +257,8 @@ def _skipped_optimisation_summary(
         "soft_score_not_worsened_status": "PASS",
         "online_coverage_preserved_status": "PASS",
     }
-    summary.update(_soft_rule_breakdown_metrics("Before", assignments))
-    summary.update(_soft_rule_breakdown_metrics("After", assignments))
+    summary.update(_soft_rule_breakdown_metrics("Before", assignments, remarks_enabled))
+    summary.update(_soft_rule_breakdown_metrics("After", assignments, remarks_enabled))
     return summary
 
 
@@ -280,6 +296,7 @@ def _completed_optimisation_summary(
         and before_audit.scheduled_online_teaching_occurrences == after_audit.scheduled_online_teaching_occurrences
     )
     hard_after = _count_scheduled_hard_violations(after)
+    remarks_enabled = _remark_interpretation_enabled(args)
     summary = {
         "optimisation_enabled": "Yes",
         "status": optimisation_status,
@@ -312,24 +329,47 @@ def _completed_optimisation_summary(
         "soft_score_not_worsened_status": "PASS" if score_improvement >= 0 else "FAIL",
         "online_coverage_preserved_status": "PASS" if online_preserved else "FAIL",
     }
-    summary.update(_soft_rule_breakdown_metrics("Before", before))
-    summary.update(_soft_rule_breakdown_metrics("After", after))
+    summary.update(_soft_rule_breakdown_metrics("Before", before, remarks_enabled))
+    summary.update(_soft_rule_breakdown_metrics("After", after, remarks_enabled))
     return summary
 
 
-def export_outputs(assignments: list, scope: str, template2_path=None) -> dict[str, object]:
+def export_outputs(
+    assignments: list,
+    scope: str,
+    template2_path=None,
+    enable_remark_interpretation: bool = True,
+) -> dict[str, object]:
     """Export timetable and violation reports for the selected scope."""
     template2_path = template2_path or DEFAULT_TEMPLATE2_FILE
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     suffix = "engineering_cluster" if scope == "eng" else "dsc"
     timetable_path = OUTPUT_DIR / f"final_timetable_{suffix}.xlsx"
     violation_path = OUTPUT_DIR / f"violation_report_{suffix}.xlsx"
-    export_schedule(assignments, timetable_path, template2_path=template2_path)
-    export_violations(assignments, violation_path)
+    export_schedule(
+        assignments,
+        timetable_path,
+        template2_path=template2_path,
+        enable_remark_interpretation=enable_remark_interpretation,
+    )
+    export_violations(
+        assignments,
+        violation_path,
+        enable_remark_interpretation=enable_remark_interpretation,
+    )
     # Keep the original filenames for demo convenience when running DSC mode.
     if scope == "dsc":
-        export_schedule(assignments, OUTPUT_DIR / "final_timetable.xlsx", template2_path=template2_path)
-        export_violations(assignments, OUTPUT_DIR / "violation_report.xlsx")
+        export_schedule(
+            assignments,
+            OUTPUT_DIR / "final_timetable.xlsx",
+            template2_path=template2_path,
+            enable_remark_interpretation=enable_remark_interpretation,
+        )
+        export_violations(
+            assignments,
+            OUTPUT_DIR / "violation_report.xlsx",
+            enable_remark_interpretation=enable_remark_interpretation,
+        )
     print(f"Saved: {timetable_path}")
     print(f"Saved: {violation_path}")
     return {"timetable": timetable_path, "violations": violation_path}
@@ -367,6 +407,7 @@ def main() -> None:
         print(f"Saved: {DEFAULT_PREFLIGHT_REPORT_FILE}")
 
     print("\nGenerating initial schedule...")
+    remarks_enabled = _remark_interpretation_enabled(args)
 
     def _progress(position: int, total: int, course: Course) -> None:
         if args.scope == "eng":
@@ -379,12 +420,12 @@ def main() -> None:
         progress_interval=args.progress_interval,
         max_retry_assignments=args.max_retry_assignments,
         max_candidate_patterns=args.max_candidate_patterns,
-        enable_remark_interpretation=not args.disable_remark_interpretation,
+        enable_remark_interpretation=remarks_enabled,
     )
     initial_unscheduled_reasons = _snapshot_unscheduled_reasons(initial_schedule)
-    annotate_schedule_violations(initial_schedule)
-    initial_soft = count_soft_violations(initial_schedule)
-    initial_soft_score = _count_weighted_soft_score(initial_schedule)
+    annotate_schedule_violations(initial_schedule, enable_remark_interpretation=remarks_enabled)
+    initial_soft = count_soft_violations(initial_schedule, enable_remark_interpretation=remarks_enabled)
+    initial_soft_score = _count_weighted_soft_score(initial_schedule, remarks_enabled)
     _restore_unscheduled_reasons(initial_schedule, initial_unscheduled_reasons)
     initial_hard = _count_current_hard_violations(initial_schedule)
     _report_schedule_metrics("Initial", initial_schedule)
@@ -403,12 +444,13 @@ def main() -> None:
             max_iterations=args.max_iterations,
             time_limit_seconds=args.optimisation_time_limit,
             patience=args.optimisation_patience,
+            enable_remark_interpretation=remarks_enabled,
         )
         runtime_seconds = perf_counter() - started
         final_schedule = result.assignments
     final_unscheduled_reasons = _snapshot_unscheduled_reasons(final_schedule)
-    final_soft = count_soft_violations(final_schedule)
-    final_soft_score = _count_weighted_soft_score(final_schedule)
+    final_soft = count_soft_violations(final_schedule, enable_remark_interpretation=remarks_enabled)
+    final_soft_score = _count_weighted_soft_score(final_schedule, remarks_enabled)
     _restore_unscheduled_reasons(final_schedule, final_unscheduled_reasons)
     final_hard = _count_current_hard_violations(final_schedule)
     if not args.skip_optimisation:
@@ -441,9 +483,15 @@ def main() -> None:
         rooms=rooms,
         room_source_path=DEFAULT_ROOM_FILE,
         optimisation_summary=optimisation_metrics,
+        enable_remark_interpretation=remarks_enabled,
     )
     print(f"Saved: {DEFAULT_RUN_SUMMARY_FILE}")
-    export_stakeholder_views(final_schedule, rooms, DEFAULT_STAKEHOLDER_VIEWS_FILE)
+    export_stakeholder_views(
+        final_schedule,
+        rooms,
+        DEFAULT_STAKEHOLDER_VIEWS_FILE,
+        enable_remark_interpretation=remarks_enabled,
+    )
     print(f"Saved: {DEFAULT_STAKEHOLDER_VIEWS_FILE}")
     export_remarks_audit(courses, DEFAULT_REMARKS_AUDIT_FILE)
     print(f"Saved: {DEFAULT_REMARKS_AUDIT_FILE}")
@@ -469,6 +517,7 @@ def main() -> None:
                 max_iterations=args.max_iterations,
                 time_limit_seconds=args.optimisation_time_limit,
                 patience=args.optimisation_patience,
+                enable_remark_interpretation=False,
             )
             baseline_schedule = baseline_result.assignments
         comparison = export_remarks_coverage_comparison(
@@ -477,6 +526,16 @@ def main() -> None:
             final_schedule,
             DEFAULT_REMARKS_COMPARISON_FILE,
             input_course_records=len(courses),
+            scheduler_metadata={
+                "scope": args.scope,
+                "skip_optimisation": args.skip_optimisation,
+                "max_iterations": args.max_iterations,
+                "optimisation_time_limit": args.optimisation_time_limit,
+                "optimisation_patience": args.optimisation_patience,
+                "max_candidate_patterns": args.max_candidate_patterns,
+                "max_retry_assignments": args.max_retry_assignments,
+                "progress_interval": args.progress_interval,
+            },
         )
         remarks_comparison_path = DEFAULT_REMARKS_COMPARISON_FILE
         print(f"Saved: {DEFAULT_REMARKS_COMPARISON_FILE}")
@@ -489,13 +548,18 @@ def main() -> None:
             final_schedule,
             rooms,
             max_diagnostic_assignments=args.max_diagnostic_assignments,
+            enable_remark_interpretation=remarks_enabled,
         )
         _print_unscheduled_reason_summary(unscheduled_report)
         export_unscheduled_diagnostics(unscheduled_report, DEFAULT_UNSCHEDULED_DIAGNOSTICS_FILE)
         print(f"Saved: {DEFAULT_UNSCHEDULED_DIAGNOSTICS_FILE}")
 
     print("\nExporting files...")
-    output_paths = export_outputs(final_schedule, args.scope) or {}
+    output_paths = export_outputs(
+        final_schedule,
+        args.scope,
+        enable_remark_interpretation=remarks_enabled,
+    ) or {}
     output_paths.update(
         {
             "loader_report": DEFAULT_LOADER_REPORT_FILE,
@@ -517,6 +581,7 @@ def main() -> None:
         metadata=_run_metadata(args),
         rooms=rooms,
         output_files=output_paths,
+        enable_remark_interpretation=remarks_enabled,
     )
     print(f"Saved: {DEFAULT_RUN_MANIFEST_FILE}")
 

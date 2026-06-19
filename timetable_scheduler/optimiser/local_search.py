@@ -8,10 +8,10 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import Iterable
 
-from config import VALID_DAYS, VALID_START_TIMES
+from config import ENABLE_REMARK_INTERPRETATION, VALID_DAYS, VALID_START_TIMES
 from data.models import Assignment, Room, TimeSlot
 from engine.constraint_checker import annotate_schedule_violations, check_hard_constraints, count_soft_violations, weighted_soft_score
-from engine.remarks_interpreter import course_scheduling_requirements
+from engine.remarks_interpreter import effective_remark_requirements
 from generator.scheduler import get_candidate_rooms
 
 
@@ -46,27 +46,45 @@ def _restore_unscheduled_reasons(assignments: list[Assignment], reasons: dict[in
             assignments[index].hard_violations = list(reason_list)
 
 
-def _scheduled_hard_violations(assignments: list[Assignment]) -> int:
+def _scheduled_hard_violations(
+    assignments: list[Assignment],
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
+) -> int:
     """Count hard violations only on scheduled timetable entries."""
     reasons = _snapshot_unscheduled_reasons(assignments)
-    annotate_schedule_violations(assignments)
+    annotate_schedule_violations(
+        assignments,
+        enable_remark_interpretation=enable_remark_interpretation,
+    )
     total = sum(len(item.hard_violations) for item in assignments if _is_scheduled(item))
     _restore_unscheduled_reasons(assignments, reasons)
     return total
 
 
-def _soft_violations(assignments: list[Assignment]) -> int:
+def _soft_violations(
+    assignments: list[Assignment],
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
+) -> int:
     """Count soft violations while preserving unscheduled reasons."""
     reasons = _snapshot_unscheduled_reasons(assignments)
-    total = count_soft_violations(assignments)
+    total = count_soft_violations(
+        assignments,
+        enable_remark_interpretation=enable_remark_interpretation,
+    )
     _restore_unscheduled_reasons(assignments, reasons)
     return total
 
 
-def _weighted_soft_score(assignments: list[Assignment]) -> int:
+def _weighted_soft_score(
+    assignments: list[Assignment],
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
+) -> int:
     """Calculate weighted soft score while preserving unscheduled reasons."""
     reasons = _snapshot_unscheduled_reasons(assignments)
-    total = weighted_soft_score(assignments)
+    total = weighted_soft_score(
+        assignments,
+        enable_remark_interpretation=enable_remark_interpretation,
+    )
     _restore_unscheduled_reasons(assignments, reasons)
     return total
 
@@ -76,12 +94,18 @@ def _deadline_reached(deadline: float | None) -> bool:
     return deadline is not None and perf_counter() >= deadline
 
 
-def score_schedule(assignments: list[Assignment]) -> int:
+def score_schedule(
+    assignments: list[Assignment],
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
+) -> int:
     """Return a weighted timetable score; lower is better."""
     reasons = _snapshot_unscheduled_reasons(assignments)
-    annotate_schedule_violations(assignments)
+    annotate_schedule_violations(
+        assignments,
+        enable_remark_interpretation=enable_remark_interpretation,
+    )
     hard = sum(len(item.hard_violations) for item in assignments if _is_scheduled(item))
-    soft = _weighted_soft_score(assignments)
+    soft = _weighted_soft_score(assignments, enable_remark_interpretation=enable_remark_interpretation)
     _restore_unscheduled_reasons(assignments, reasons)
     return hard * 10_000 + soft
 
@@ -109,9 +133,16 @@ def _replace_assignment(
     return copied
 
 
-def _selected_delivery_for_move(current: Assignment, room: Room) -> str:
+def _selected_delivery_for_move(
+    current: Assignment,
+    room: Room,
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
+) -> str:
     """Preserve or derive delivery mode for a moved assignment."""
-    requirements = course_scheduling_requirements(current.course)
+    requirements = effective_remark_requirements(
+        current.course,
+        enabled=enable_remark_interpretation,
+    )
     if requirements.requires_hybrid_delivery:
         return "hybrid"
     if requirements.allowed_delivery_modes:
@@ -127,17 +158,25 @@ def try_move_assignment(
     max_candidates: int = 8,
     current_score: int | None = None,
     deadline: float | None = None,
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
 ) -> list[Assignment]:
     """Try moving one assignment and return the best found schedule."""
     current = assignments[index]
     if not _is_scheduled(current) or _deadline_reached(deadline):
         return assignments
 
-    current_score = current_score if current_score is not None else score_schedule(assignments)
+    current_score = current_score if current_score is not None else score_schedule(
+        assignments,
+        enable_remark_interpretation=enable_remark_interpretation,
+    )
     best_schedule = assignments
     best_score = current_score
 
-    candidate_rooms = get_candidate_rooms(current.course, rooms)[:5]
+    candidate_rooms = get_candidate_rooms(
+        current.course,
+        rooms,
+        enable_remark_interpretation=enable_remark_interpretation,
+    )[:5]
     candidate_slots = list(_candidate_timeslots(current))
     rng.shuffle(candidate_rooms)
     rng.shuffle(candidate_slots)
@@ -157,14 +196,25 @@ def try_move_assignment(
                 room=room,
                 timeslot=timeslot,
                 additional_rooms=current.additional_rooms,
-                selected_delivery_mode=_selected_delivery_for_move(current, room),
+                selected_delivery_mode=_selected_delivery_for_move(
+                    current,
+                    room,
+                    enable_remark_interpretation=enable_remark_interpretation,
+                ),
             )
-            if check_hard_constraints(replacement, fixed_assignments):
+            if check_hard_constraints(
+                replacement,
+                fixed_assignments,
+                enable_remark_interpretation=enable_remark_interpretation,
+            ):
                 continue
             candidate_schedule = _replace_assignment(assignments, index, replacement)
             if _deadline_reached(deadline):
                 continue
-            candidate_score = score_schedule(candidate_schedule)
+            candidate_score = score_schedule(
+                candidate_schedule,
+                enable_remark_interpretation=enable_remark_interpretation,
+            )
             if candidate_score < best_score:
                 best_schedule = candidate_schedule
                 best_score = candidate_score
@@ -178,6 +228,7 @@ def optimise_schedule_with_stats(
     seed: int = 42,
     time_limit_seconds: float | None = None,
     patience: int | None = None,
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
 ) -> OptimisationResult:
     """Improve scheduled assignments using local search and report iterations."""
     rng = random.Random(seed)
@@ -185,10 +236,13 @@ def optimise_schedule_with_stats(
     deadline = started + time_limit_seconds if time_limit_seconds is not None else None
     best = copy.deepcopy(assignments)
     reasons = _snapshot_unscheduled_reasons(best)
-    annotate_schedule_violations(best)
+    annotate_schedule_violations(
+        best,
+        enable_remark_interpretation=enable_remark_interpretation,
+    )
     _restore_unscheduled_reasons(best, reasons)
 
-    if _scheduled_hard_violations(best) != 0:
+    if _scheduled_hard_violations(best, enable_remark_interpretation=enable_remark_interpretation) != 0:
         return OptimisationResult(best, 0, status="Preserved", stop_reason="Baseline has scheduled hard violations")
 
     if time_limit_seconds is not None and time_limit_seconds <= 0:
@@ -201,7 +255,7 @@ def optimise_schedule_with_stats(
             stop_reason="Time-limited large Engineering run preserved the baseline instead of starting expensive local-search moves",
         )
 
-    best_score = score_schedule(best)
+    best_score = score_schedule(best, enable_remark_interpretation=enable_remark_interpretation)
     baseline = copy.deepcopy(best)
     baseline_score = best_score
     iterations_completed = 0
@@ -224,14 +278,25 @@ def optimise_schedule_with_stats(
                 status = "Time limit reached"
                 stop_reason = f"Stopped after {time_limit_seconds} seconds"
                 break
-            candidate = try_move_assignment(index, best, rooms, rng, current_score=best_score, deadline=deadline)
+            candidate = try_move_assignment(
+                index,
+                best,
+                rooms,
+                rng,
+                current_score=best_score,
+                deadline=deadline,
+                enable_remark_interpretation=enable_remark_interpretation,
+            )
             if _deadline_reached(deadline):
                 status = "Time limit reached"
                 stop_reason = f"Stopped after {time_limit_seconds} seconds"
                 break
             if candidate is best:
                 continue
-            candidate_score = score_schedule(candidate)
+            candidate_score = score_schedule(
+                candidate,
+                enable_remark_interpretation=enable_remark_interpretation,
+            )
             if candidate_score < best_score:
                 best = candidate
                 best_score = candidate_score
@@ -256,7 +321,10 @@ def optimise_schedule_with_stats(
     elif best_score == baseline_score and status == "Improved":
         status = "Preserved"
     reasons = _snapshot_unscheduled_reasons(best)
-    annotate_schedule_violations(best)
+    annotate_schedule_violations(
+        best,
+        enable_remark_interpretation=enable_remark_interpretation,
+    )
     _restore_unscheduled_reasons(best, reasons)
     return OptimisationResult(best, iterations_completed, status=status, stop_reason=stop_reason)
 
@@ -268,6 +336,7 @@ def optimise_schedule(
     seed: int = 42,
     time_limit_seconds: float | None = None,
     patience: int | None = None,
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
 ) -> list[Assignment]:
     """Improve a feasible timetable using local search."""
     return optimise_schedule_with_stats(
@@ -277,16 +346,21 @@ def optimise_schedule(
         seed=seed,
         time_limit_seconds=time_limit_seconds,
         patience=patience,
+        enable_remark_interpretation=enable_remark_interpretation,
     ).assignments
 
 
-def optimisation_summary(before: list[Assignment], after: list[Assignment]) -> dict[str, int]:
+def optimisation_summary(
+    before: list[Assignment],
+    after: list[Assignment],
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
+) -> dict[str, int]:
     """Return before/after violation counts."""
     return {
-        "hard_before": _scheduled_hard_violations(before),
-        "soft_before": _soft_violations(before),
-        "weighted_soft_score_before": _weighted_soft_score(before),
-        "hard_after": _scheduled_hard_violations(after),
-        "soft_after": _soft_violations(after),
-        "weighted_soft_score_after": _weighted_soft_score(after),
+        "hard_before": _scheduled_hard_violations(before, enable_remark_interpretation),
+        "soft_before": _soft_violations(before, enable_remark_interpretation),
+        "weighted_soft_score_before": _weighted_soft_score(before, enable_remark_interpretation),
+        "hard_after": _scheduled_hard_violations(after, enable_remark_interpretation),
+        "soft_after": _soft_violations(after, enable_remark_interpretation),
+        "weighted_soft_score_after": _weighted_soft_score(after, enable_remark_interpretation),
     }

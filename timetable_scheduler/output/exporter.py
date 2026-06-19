@@ -11,7 +11,7 @@ from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-from config import ACTIVITY_TYPE_CODES, DAY_ABBREVIATIONS, DEFAULT_TEMPLATE2_FILE
+from config import ACTIVITY_TYPE_CODES, DAY_ABBREVIATIONS, DEFAULT_TEMPLATE2_FILE, ENABLE_REMARK_INTERPRETATION
 from data.models import Assignment
 from engine.constraint_checker import annotate_schedule_violations, hour_to_time, time_to_hour
 from engine.remarks_interpreter import assignment_room_ids, assignment_rooms
@@ -42,10 +42,16 @@ def _staff_value(assignment: Assignment, index: int) -> str | None:
     return None
 
 
-def _annotated_snapshot(assignments: list[Assignment]) -> list[Assignment]:
+def _annotated_snapshot(
+    assignments: list[Assignment],
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
+) -> list[Assignment]:
     """Return a deep-copied, annotated version of the schedule."""
     snapshot = deepcopy(assignments)
-    annotate_schedule_violations(snapshot)
+    annotate_schedule_violations(
+        snapshot,
+        enable_remark_interpretation=enable_remark_interpretation,
+    )
     return snapshot
 
 
@@ -171,9 +177,15 @@ def assignment_to_row(assignment: Assignment) -> dict[str, object]:
     return _template_row_values(assignment)
 
 
-def assignments_to_dataframe(assignments: list[Assignment]) -> pd.DataFrame:
+def assignments_to_dataframe(
+    assignments: list[Assignment],
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
+) -> pd.DataFrame:
     """Convert assignments to a timetable DataFrame."""
-    snapshot = _annotated_snapshot(assignments)
+    snapshot = _annotated_snapshot(
+        assignments,
+        enable_remark_interpretation=enable_remark_interpretation,
+    )
     rows = [assignment_to_row(assignment) for assignment in snapshot]
     return pd.DataFrame(rows)
 
@@ -211,9 +223,15 @@ def violations_to_dataframe(assignments: list[Assignment], violation_type: str) 
     return pd.DataFrame(rows, columns=columns)
 
 
-def summary_to_dataframe(assignments: list[Assignment]) -> pd.DataFrame:
+def summary_to_dataframe(
+    assignments: list[Assignment],
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
+) -> pd.DataFrame:
     """Create summary metrics for stakeholder reporting."""
-    snapshot = _annotated_snapshot(assignments)
+    snapshot = _annotated_snapshot(
+        assignments,
+        enable_remark_interpretation=enable_remark_interpretation,
+    )
     total = len(snapshot)
     hard = sum(len(item.hard_violations) for item in snapshot)
     soft = sum(len(item.soft_violations) for item in snapshot)
@@ -254,12 +272,16 @@ def export_schedule(
     assignments: list[Assignment],
     output_path: str | Path,
     template2_path: str | Path | None = None,
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
 ) -> None:
     """Export the final timetable, preferring the provided Template 2 workbook."""
     output_path = Path(output_path)
     template2_path = Path(template2_path or DEFAULT_TEMPLATE2_FILE)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    snapshot = _annotated_snapshot(assignments)
+    snapshot = _annotated_snapshot(
+        assignments,
+        enable_remark_interpretation=enable_remark_interpretation,
+    )
 
     if template2_path.exists():
         workbook = load_workbook(template2_path)
@@ -267,10 +289,16 @@ def export_schedule(
         workbook.save(output_path)
         return
 
-    timetable_df = assignments_to_dataframe(snapshot)
+    timetable_df = assignments_to_dataframe(
+        snapshot,
+        enable_remark_interpretation=enable_remark_interpretation,
+    )
     hard_df = violations_to_dataframe(snapshot, "hard")
     soft_df = violations_to_dataframe(snapshot, "soft")
-    summary_df = summary_to_dataframe(snapshot)
+    summary_df = summary_to_dataframe(
+        snapshot,
+        enable_remark_interpretation=enable_remark_interpretation,
+    )
 
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
         summary_df.to_excel(writer, sheet_name="Summary", index=False)
@@ -280,11 +308,18 @@ def export_schedule(
     _autosize_and_style(output_path)
 
 
-def export_violations(assignments: list[Assignment], output_path: str | Path) -> None:
+def export_violations(
+    assignments: list[Assignment],
+    output_path: str | Path,
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
+) -> None:
     """Export only hard and soft violation reports."""
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    snapshot = _annotated_snapshot(assignments)
+    snapshot = _annotated_snapshot(
+        assignments,
+        enable_remark_interpretation=enable_remark_interpretation,
+    )
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
         violations_to_dataframe(snapshot, "hard").to_excel(writer, sheet_name="Hard Violations", index=False)
         violations_to_dataframe(snapshot, "soft").to_excel(writer, sheet_name="Soft Violations", index=False)

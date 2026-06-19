@@ -22,7 +22,7 @@ from engine.constraint_checker import check_hard_constraints, course_groups, is_
 from engine.remarks_interpreter import (
     RemarkRequirements,
     assignment_rooms,
-    course_scheduling_requirements,
+    effective_remark_requirements,
     interpret_remarks,
     remark_unscheduled_reason,
     room_matches_type,
@@ -135,9 +135,7 @@ def _room_preference_score(course: Course, room: Room) -> tuple[int, int, int, i
 
 def _remarks_for_course(course: Course, enabled: bool = ENABLE_REMARK_INTERPRETATION) -> RemarkRequirements:
     """Return remark requirements when the feature flag is enabled."""
-    if not enabled:
-        return RemarkRequirements()
-    return course_scheduling_requirements(course)
+    return effective_remark_requirements(course, enabled=enabled)
 
 
 def _room_suitability_score(course: Course, room: Room) -> tuple[int, int]:
@@ -255,9 +253,13 @@ def get_candidate_room_groups(
     return groups[:MAX_REMARK_ROOM_COMBINATIONS]
 
 
-def _course_difficulty(course: Course, rooms: list[Room]) -> tuple[int, int, int, int]:
+def _course_difficulty(
+    course: Course,
+    rooms: list[Room],
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
+) -> tuple[int, int, int, int]:
     """Sort hardest courses first for better greedy feasibility."""
-    room_count = len(get_candidate_rooms(course, rooms))
+    room_count = len(get_candidate_rooms(course, rooms, enable_remark_interpretation=enable_remark_interpretation))
     week_count = len(schedulable_weeks(course.teaching_weeks))
     return (0 if course.is_common_module else 1, -course.class_size, -course.duration_hrs, room_count, -week_count)
 
@@ -412,11 +414,15 @@ def can_place_assignments(candidates: list[Assignment], index: ScheduleIndex) ->
     return True
 
 
-def _validate_candidate_pattern(candidates: list[Assignment], existing: list[Assignment]) -> bool:
+def _validate_candidate_pattern(
+    candidates: list[Assignment],
+    existing: list[Assignment],
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
+) -> bool:
     """Run the full constraint checker on a candidate pattern once."""
     staged = existing.copy()
     for candidate in candidates:
-        if check_hard_constraints(candidate, staged):
+        if check_hard_constraints(candidate, staged, enable_remark_interpretation=enable_remark_interpretation):
             return False
         staged.append(candidate)
     return True
@@ -500,7 +506,11 @@ def schedule_course(
                     additional_rooms=additional_rooms,
                     selected_delivery_mode=selected_delivery_mode,
                 )
-                if can_place_assignments(candidates, index) and _validate_candidate_pattern(candidates, existing):
+                if can_place_assignments(candidates, index) and _validate_candidate_pattern(
+                    candidates,
+                    existing,
+                    enable_remark_interpretation=enable_remark_interpretation,
+                ):
                     return candidates
     return [_unscheduled_assignment(course, "Could not find feasible weekly room/day/start pattern")]
 
@@ -558,7 +568,11 @@ def schedule_course_for_weeks(
                     )
                     if _candidate_precheck(candidate, staged_index):
                         continue
-                    violations = check_hard_constraints(candidate, staged)
+                    violations = check_hard_constraints(
+                        candidate,
+                        staged,
+                        enable_remark_interpretation=enable_remark_interpretation,
+                    )
                     if not violations:
                         found = candidate
                         break
@@ -656,7 +670,15 @@ def retry_unscheduled_assignments(
         for assignment in assignments
         if _is_unscheduled(assignment) and not _is_candidate_limit_assignment(assignment)
     ]
-    retry_queue = sorted(retry_queue, key=lambda item: _course_difficulty(item.course, rooms), reverse=True)
+    retry_queue = sorted(
+        retry_queue,
+        key=lambda item: _course_difficulty(
+            item.course,
+            rooms,
+            enable_remark_interpretation=enable_remark_interpretation,
+        ),
+        reverse=True,
+    )
     if max_retry_assignments is None:
         retry_now = retry_queue
         retry_later: list[Assignment] = permanent_failures
@@ -700,7 +722,14 @@ def generate_schedule(
     assignments: list[Assignment] = []
     index = build_schedule_index(assignments)
     prepared_courses = prepare_courses_for_scheduling(courses)
-    ordered_courses = sorted(prepared_courses, key=lambda item: _course_difficulty(item, rooms))
+    ordered_courses = sorted(
+        prepared_courses,
+        key=lambda item: _course_difficulty(
+            item,
+            rooms,
+            enable_remark_interpretation=enable_remark_interpretation,
+        ),
+    )
     total = len(ordered_courses)
 
     for position, course in enumerate(ordered_courses, start=1):

@@ -11,7 +11,15 @@ from pathlib import Path
 import pandas as pd
 from openpyxl import load_workbook
 
-from config import BLOCKED_START_TIMES, DEFAULT_TEMPLATE2_FILE, LATEST_END_HOUR, SOFT_CONSTRAINT_WEIGHTS, VALID_DAYS, VALID_START_TIMES
+from config import (
+    BLOCKED_START_TIMES,
+    DEFAULT_TEMPLATE2_FILE,
+    ENABLE_REMARK_INTERPRETATION,
+    LATEST_END_HOUR,
+    SOFT_CONSTRAINT_WEIGHTS,
+    VALID_DAYS,
+    VALID_START_TIMES,
+)
 from data.models import Assignment, Course, Room, TimeSlot
 from engine.constraint_checker import (
     annotate_schedule_violations,
@@ -215,7 +223,10 @@ def export_preflight_report(issues: list[dict[str, str]], output_path: Path) -> 
     pd.DataFrame(rows, columns=PREFLIGHT_COLUMNS).to_excel(output_path, sheet_name="Preflight Issues", index=False)
 
 
-def _snapshot(assignments: list[Assignment]) -> list[Assignment]:
+def _snapshot(
+    assignments: list[Assignment],
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
+) -> list[Assignment]:
     """Return an annotated copy while preserving original unscheduled reasons."""
     original_unscheduled_reasons = {
         id(assignment): list(assignment.hard_violations)
@@ -223,7 +234,10 @@ def _snapshot(assignments: list[Assignment]) -> list[Assignment]:
         if assignment.room is None or assignment.timeslot is None
     }
     copied = deepcopy(assignments)
-    annotate_schedule_violations(copied)
+    annotate_schedule_violations(
+        copied,
+        enable_remark_interpretation=enable_remark_interpretation,
+    )
     for original, copied_assignment in zip(assignments, copied, strict=False):
         reasons = original_unscheduled_reasons.get(id(original))
         if reasons:
@@ -248,9 +262,16 @@ def _demand_summary_rows(demand_metrics: DemandMetrics | None) -> dict[str, obje
     }
 
 
-def build_run_summary(assignments: list[Assignment], demand_metrics: DemandMetrics | None = None) -> dict[str, object]:
+def build_run_summary(
+    assignments: list[Assignment],
+    demand_metrics: DemandMetrics | None = None,
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
+) -> dict[str, object]:
     """Build headline metrics for a completed run."""
-    snapshot = _snapshot(assignments)
+    snapshot = _snapshot(
+        assignments,
+        enable_remark_interpretation=enable_remark_interpretation,
+    )
     total = len(snapshot)
     scheduled = [item for item in snapshot if item.room is not None and item.timeslot is not None]
     unscheduled_items = [item for item in snapshot if item.room is None or item.timeslot is None]
@@ -273,9 +294,17 @@ def build_run_summary(assignments: list[Assignment], demand_metrics: DemandMetri
     return summary
 
 
-def _summary_df(assignments: list[Assignment], demand_metrics: DemandMetrics | None = None) -> pd.DataFrame:
+def _summary_df(
+    assignments: list[Assignment],
+    demand_metrics: DemandMetrics | None = None,
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
+) -> pd.DataFrame:
     """Return summary metrics as rows."""
-    summary = build_run_summary(assignments, demand_metrics=demand_metrics)
+    summary = build_run_summary(
+        assignments,
+        demand_metrics=demand_metrics,
+        enable_remark_interpretation=enable_remark_interpretation,
+    )
     labels = {
         "assignments": "Assignments",
         "scheduled_assignments": "Scheduled assignments",
@@ -493,6 +522,7 @@ def _classify_residual_f2f(
 def _residual_f2f_analysis_df(
     assignments: list[Assignment],
     rooms: list[Room] | None = None,
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
 ) -> pd.DataFrame:
     """Return detailed residual F2F classifications for unresolved requirements."""
     physical_rooms = rooms or []
@@ -531,7 +561,15 @@ def _residual_f2f_analysis_df(
         course = assignment.course
         reasons = list(dict.fromkeys(data["reasons"]))  # type: ignore[arg-type]
         compatible_rooms = sorted(
-            [room for room in get_candidate_rooms(course, physical_rooms) if room.room_type == "physical"],
+            [
+                room
+                for room in get_candidate_rooms(
+                    course,
+                    physical_rooms,
+                    enable_remark_interpretation=enable_remark_interpretation,
+                )
+                if room.room_type == "physical"
+            ],
             key=lambda room: (room.capacity, room.room_id),
         )
         scheduled_weeks = scheduled_by_key.get(key, set())
@@ -701,9 +739,14 @@ def _validation_checks_df(
     demand_metrics: DemandMetrics | None = None,
     optimisation_summary: dict[str, object] | None = None,
     resource_audit: ResourceAudit | None = None,
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
 ) -> pd.DataFrame:
     """Return validation checks for Engineering final evidence."""
-    summary = build_run_summary(assignments, demand_metrics=demand_metrics)
+    summary = build_run_summary(
+        assignments,
+        demand_metrics=demand_metrics,
+        enable_remark_interpretation=enable_remark_interpretation,
+    )
     programme_df = _programme_breakdown_df(assignments)
     reasons_df = _unscheduled_reasons_df(assignments)
     total = int(summary["assignments"])
@@ -1009,14 +1052,24 @@ def _recommended_action(classification: str, compatible_room_count: int) -> str:
     return "Verify input data and review manually."
 
 
-def _exception_queue_df(assignments: list[Assignment], rooms: list[Room] | None = None) -> pd.DataFrame:
+def _exception_queue_df(
+    assignments: list[Assignment],
+    rooms: list[Room] | None = None,
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
+) -> pd.DataFrame:
     """Return unresolved requirements as an operational exception queue."""
     rows: list[dict[str, object]] = []
     for assignment in assignments:
         if _is_scheduled_assignment(assignment):
             continue
         compatible_rooms = [
-            room for room in get_candidate_rooms(assignment.course, rooms or []) if room.room_type == "physical"
+            room
+            for room in get_candidate_rooms(
+                assignment.course,
+                rooms or [],
+                enable_remark_interpretation=enable_remark_interpretation,
+            )
+            if room.room_type == "physical"
         ]
         reasons = assignment.hard_violations or ["Unscheduled without recorded reason"]
         classification, _ = _classify_residual_f2f(
@@ -1372,15 +1425,27 @@ def _special_requests_summary_df(assignments: list[Assignment]) -> pd.DataFrame:
     )
 
 
-def export_stakeholder_views(assignments: list[Assignment], rooms: list[Room], output_path: Path) -> None:
+def export_stakeholder_views(
+    assignments: list[Assignment],
+    rooms: list[Room],
+    output_path: Path,
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
+) -> None:
     """Export separate stakeholder timetable and exception views."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    snapshot = _snapshot(assignments)
+    snapshot = _snapshot(
+        assignments,
+        enable_remark_interpretation=enable_remark_interpretation,
+    )
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
         _programme_timetable_df(snapshot).to_excel(writer, sheet_name="Programme Timetable", index=False)
         _tutor_timetable_df(snapshot).to_excel(writer, sheet_name="Tutor Timetable", index=False)
         _room_timetable_df(snapshot).to_excel(writer, sheet_name="Room Timetable", index=False)
-        _exception_queue_df(snapshot, rooms=rooms).to_excel(writer, sheet_name="Exception Queue", index=False)
+        _exception_queue_df(
+            snapshot,
+            rooms=rooms,
+            enable_remark_interpretation=enable_remark_interpretation,
+        ).to_excel(writer, sheet_name="Exception Queue", index=False)
         _special_requests_review_df(snapshot).to_excel(writer, sheet_name="Special Requests Review", index=False)
         _special_requests_summary_df(snapshot).to_excel(writer, sheet_name="Special Requests Summary", index=False)
 
@@ -1500,12 +1565,20 @@ def export_run_manifest(
     rooms: list[Room] | None = None,
     output_files: dict[str, Path] | None = None,
     template2_path: Path = DEFAULT_TEMPLATE2_FILE,
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
 ) -> None:
     """Export reproducibility, validation, and traceability evidence."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    snapshot = _snapshot(assignments)
+    snapshot = _snapshot(
+        assignments,
+        enable_remark_interpretation=enable_remark_interpretation,
+    )
     demand = build_demand_metrics(courses, snapshot, input_course_records=len(courses))
-    summary = build_run_summary(snapshot, demand_metrics=demand)
+    summary = build_run_summary(
+        snapshot,
+        demand_metrics=demand,
+        enable_remark_interpretation=enable_remark_interpretation,
+    )
     template_validation = _template_validation_df(courses, snapshot, (output_files or {}).get("timetable"), template2_path)
     validation_status = "PASS" if demand.is_consistent and summary["hard_violations_on_scheduled_assignments"] == 0 else "FAIL"
     generated_at = datetime.now().isoformat(timespec="seconds")
@@ -1525,7 +1598,13 @@ def export_run_manifest(
         {"Setting": "unscheduled_teaching_occurrences", "Value": demand.unscheduled_teaching_occurrences},
         {"Setting": "coverage_rate_percent", "Value": demand.coverage_rate_percent},
         {"Setting": "hard_violations_on_scheduled_assignments", "Value": summary["hard_violations_on_scheduled_assignments"]},
-        {"Setting": "weighted_soft_score", "Value": weighted_soft_score(snapshot)},
+        {
+            "Setting": "weighted_soft_score",
+            "Value": weighted_soft_score(
+                snapshot,
+                enable_remark_interpretation=enable_remark_interpretation,
+            ),
+        },
         {"Setting": "validation_status", "Value": validation_status},
         {"Setting": "loaded_rooms", "Value": len(rooms or [])},
     ]
@@ -1536,7 +1615,13 @@ def export_run_manifest(
         manifest_rows.append({"Setting": f"output_file_{name}", "Value": str(path)})
 
     before_after = pd.DataFrame(
-        [{"Soft Rule": rule, "Count": count} for rule, count in soft_violation_breakdown(snapshot).items()],
+        [
+            {"Soft Rule": rule, "Count": count}
+            for rule, count in soft_violation_breakdown(
+                snapshot,
+                enable_remark_interpretation=enable_remark_interpretation,
+            ).items()
+        ],
         columns=["Soft Rule", "Count"],
     )
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
@@ -1556,10 +1641,14 @@ def export_run_summary(
     rooms: list[Room] | None = None,
     room_source_path: Path | None = None,
     optimisation_summary: dict[str, object] | None = None,
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
 ) -> None:
     """Export a stakeholder-friendly run summary workbook."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    snapshot = _snapshot(assignments)
+    snapshot = _snapshot(
+        assignments,
+        enable_remark_interpretation=enable_remark_interpretation,
+    )
     generated_at = datetime.now().isoformat(timespec="seconds")
     demand_metrics = (
         build_demand_metrics(demand_courses, snapshot, input_course_records=input_course_records)
@@ -1573,13 +1662,21 @@ def export_run_summary(
         else None
     )
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
-        _summary_df(snapshot, demand_metrics=demand_metrics).to_excel(writer, sheet_name="Summary", index=False)
+        _summary_df(
+            snapshot,
+            demand_metrics=demand_metrics,
+            enable_remark_interpretation=enable_remark_interpretation,
+        ).to_excel(writer, sheet_name="Summary", index=False)
         _violations_df(snapshot, "hard").to_excel(writer, sheet_name="Hard Violations", index=False)
         _violations_df(snapshot, "soft").to_excel(writer, sheet_name="Soft Violations", index=False)
         _unscheduled_reasons_df(snapshot).to_excel(writer, sheet_name="Unscheduled Reasons", index=False)
         unscheduled_analysis.to_excel(writer, sheet_name="Unscheduled Analysis", index=False)
         _unscheduled_breakdown_df(unscheduled_analysis).to_excel(writer, sheet_name="Unscheduled Breakdown", index=False)
-        _residual_f2f_analysis_df(snapshot, rooms=rooms).to_excel(writer, sheet_name="Residual F2F Analysis", index=False)
+        _residual_f2f_analysis_df(
+            snapshot,
+            rooms=rooms,
+            enable_remark_interpretation=enable_remark_interpretation,
+        ).to_excel(writer, sheet_name="Residual F2F Analysis", index=False)
         _room_utilisation_df(snapshot).to_excel(writer, sheet_name="Room Utilisation", index=False)
         _resource_audit_df(resource_audit).to_excel(writer, sheet_name="Resource Audit", index=False)
         _virtual_room_detail_df(resource_audit).to_excel(writer, sheet_name="Virtual Room Detail", index=False)
@@ -1591,6 +1688,7 @@ def export_run_summary(
             demand_metrics=demand_metrics,
             optimisation_summary=optimisation_summary,
             resource_audit=resource_audit,
+            enable_remark_interpretation=enable_remark_interpretation,
         ).to_excel(writer, sheet_name="Validation Checks", index=False)
         _optimisation_summary_df(optimisation_summary).to_excel(writer, sheet_name="Optimisation Summary", index=False)
         _metadata_df(metadata, generated_at).to_excel(writer, sheet_name="Run Metadata", index=False)

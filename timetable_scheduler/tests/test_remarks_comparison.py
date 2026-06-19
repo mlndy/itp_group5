@@ -80,17 +80,18 @@ def test_newly_unscheduled_occurrence_is_attributed_to_explicit_rule() -> None:
     assert comparison.attribution_reconciles is True
 
 
-def test_unsupported_remark_creates_suspected_false_positive_if_it_blocks() -> None:
-    """Unsupported remarks should not create attributed hard-rule failures."""
+def test_unsupported_remark_difference_is_indirect_displacement() -> None:
+    """Unsupported enhanced-only failures should be classified without suspected buckets."""
     course = make_course(remarks="Discuss with programme")
     baseline = [Assignment(course, Room("R1", 100, "physical"), TimeSlot("Monday", "09:00", 1))]
     enhanced = [Assignment(course, None, None, hard_violations=["Could not find feasible pattern"])]
 
     comparison = compare_remark_runs([course], baseline, enhanced)
 
-    assert comparison.rule_attribution["suspected false positive"] == 1
+    assert comparison.rule_attribution["indirect search displacement"] == 1
     assert comparison.remark_related_hard_violations == 0
     assert comparison.attribution_reconciles is True
+    assert all("suspected" not in row["Attribution Category"] for row in comparison.newly_unscheduled_rows)
 
 
 def test_preferences_create_zero_newly_unscheduled_when_scheduled() -> None:
@@ -126,7 +127,50 @@ def test_export_remarks_coverage_comparison_creates_expected_workbook(tmp_path: 
     export_remarks_coverage_comparison([course], baseline, enhanced, output)
 
     workbook = load_workbook(output)
-    assert workbook.sheetnames == ["Summary", "Newly Unscheduled", "Rule Attribution"]
-    summary = {row[0]: row[1] for row in workbook["Summary"].iter_rows(min_row=2, values_only=True)}
-    assert summary["Additional unscheduled occurrences"] == 1
-    assert summary["Attribution reconciliation status"] == "PASS"
+    assert workbook.sheetnames == [
+        "Run Fingerprints",
+        "Overall Metrics",
+        "Direct Remark Effects",
+        "Indirect Remark Effects",
+        "Unchanged Unscheduled",
+        "Enhanced Improvements",
+        "Attribution Reconciliation",
+    ]
+    reconciliation = {row[0]: row[2] for row in workbook["Attribution Reconciliation"].iter_rows(min_row=2, values_only=True)}
+    assert reconciliation["Calculated enhanced unscheduled"] == "PASS"
+    assert reconciliation["Attribution reconciliation"] == "PASS"
+
+
+def test_comparison_tracks_recoveries_in_reconciliation() -> None:
+    """Enhanced recoveries should subtract from the reconciliation equation."""
+    course = make_course(remarks="Computer room preferred")
+    baseline = [Assignment(course, None, None, hard_violations=["Could not find feasible pattern"])]
+    enhanced = [Assignment(course, Room("R1", 100, "physical"), TimeSlot("Monday", "09:00", 1))]
+
+    comparison = compare_remark_runs([course], baseline, enhanced)
+
+    assert len(comparison.enhanced_improvement_rows) == 1
+    assert comparison.attribution_reconciles is True
+
+
+def test_comparison_exports_run_fingerprints(tmp_path: Path) -> None:
+    """The comparison workbook should include comparable run fingerprints."""
+    output = tmp_path / "remarks_coverage_comparison.xlsx"
+    course = make_course(remarks="")
+    assignment = Assignment(course, Room("R1", 100, "physical"), TimeSlot("Monday", "09:00", 1))
+
+    export_remarks_coverage_comparison(
+        [course],
+        [assignment],
+        [assignment],
+        output,
+        input_course_records=1,
+        scheduler_metadata={"max_candidate_patterns": 300},
+    )
+
+    workbook = load_workbook(output)
+    rows = list(workbook["Run Fingerprints"].iter_rows(min_row=2, values_only=True))
+    metrics = {(run, metric): value for run, metric, value in rows}
+    assert metrics[("Baseline", "input_demand_fingerprint")] == metrics[("Enhanced", "input_demand_fingerprint")]
+    assert metrics[("Baseline", "max_candidate_patterns")] == 300
+    assert metrics[("Enhanced", "max_candidate_patterns")] == 300

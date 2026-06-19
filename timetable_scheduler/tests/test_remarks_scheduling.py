@@ -282,3 +282,77 @@ def test_fixed_day_time_filters_candidate_patterns_before_demo_cap(monkeypatch) 
     assert schedule[0].timeslot.day == "Thursday"
     assert schedule[0].timeslot.start_time == "14:00"
     assert schedule[0].hard_violations == []
+
+
+def test_disabled_remarks_do_not_filter_candidate_rooms() -> None:
+    """Feature-flag-disabled runs should use the same room pool as plain structured data."""
+    course = make_course(remarks="Hybrid delivery required")
+    rooms = [
+        Room("NORMAL", 100, "physical", recording="No"),
+        Room("REC", 100, "physical", recording="Yes"),
+        Room("ONLINE_ROOM", 9999, "virtual"),
+    ]
+
+    enabled = scheduler.get_candidate_rooms(course, rooms, enable_remark_interpretation=True)
+    disabled = scheduler.get_candidate_rooms(course, rooms, enable_remark_interpretation=False)
+
+    assert [room.room_id for room in enabled] == ["REC"]
+    assert [room.room_id for room in disabled] == ["NORMAL", "REC"]
+
+
+def test_disabled_remarks_do_not_create_hard_violations() -> None:
+    """Remark-derived hard rules must disappear when the feature flag is disabled."""
+    course = make_course(remarks="Must use computer lab")
+    assignment = Assignment(
+        course,
+        Room("SEM1", 100, "physical", resource_type="Seminar Room"),
+        TimeSlot("Monday", "09:00", 1),
+    )
+
+    enabled = check_hard_constraints(assignment, [], enable_remark_interpretation=True)
+    disabled = check_hard_constraints(assignment, [], enable_remark_interpretation=False)
+
+    assert any("room type" in issue.lower() for issue in enabled)
+    assert disabled == []
+
+
+def test_disabled_remarks_keep_course_ordering_neutral() -> None:
+    """Source remark metadata must not change disabled baseline course difficulty."""
+    remarked = make_course(remarks="Hybrid delivery required")
+    plain = make_course(remarks="")
+    rooms = [Room("NORMAL", 100, "physical", recording="No")]
+
+    assert scheduler._course_difficulty(  # noqa: SLF001 - regression coverage for deterministic ordering.
+        remarked,
+        rooms,
+        enable_remark_interpretation=False,
+    ) == scheduler._course_difficulty(  # noqa: SLF001 - regression coverage for deterministic ordering.
+        plain,
+        rooms,
+        enable_remark_interpretation=False,
+    )
+
+
+def test_disabled_remarks_can_schedule_otherwise_blocked_remark_course(monkeypatch) -> None:
+    """A disabled baseline should schedule by structured fields even when remarks would block it."""
+    monkeypatch.setattr(scheduler, "VALID_DAYS", ["Monday"])
+    monkeypatch.setattr(scheduler, "VALID_START_TIMES", ["09:00"])
+    course = make_course(remarks="Hybrid delivery required")
+    rooms = [Room("NORMAL", 100, "physical", recording="No")]
+
+    enabled = scheduler.generate_schedule(
+        [course],
+        rooms,
+        allow_weekly_fallback=False,
+        enable_remark_interpretation=True,
+    )
+    disabled = scheduler.generate_schedule(
+        [course],
+        rooms,
+        allow_weekly_fallback=False,
+        enable_remark_interpretation=False,
+    )
+
+    assert enabled[0].room is None
+    assert disabled[0].room.room_id == "NORMAL"
+    assert disabled[0].hard_violations == []

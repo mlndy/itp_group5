@@ -70,14 +70,14 @@ def test_pipeline_keeps_template1_input_separate_from_template2_output_template(
     monkeypatch.setattr(pipeline, "load_rooms_from_csv", lambda path: [room])
     monkeypatch.setattr(pipeline, "export_loader_report", lambda report, path: None)
     monkeypatch.setattr(pipeline, "generate_schedule", lambda courses, rooms, **kwargs: [assignment])
-    monkeypatch.setattr(pipeline, "annotate_schedule_violations", lambda assignments: None)
-    monkeypatch.setattr(pipeline, "count_soft_violations", lambda assignments: 0)
-    monkeypatch.setattr(pipeline, "_count_weighted_soft_score", lambda assignments: 0)
+    monkeypatch.setattr(pipeline, "annotate_schedule_violations", lambda assignments, **kwargs: None)
+    monkeypatch.setattr(pipeline, "count_soft_violations", lambda assignments, **kwargs: 0)
+    monkeypatch.setattr(pipeline, "_count_weighted_soft_score", lambda assignments, *args, **kwargs: 0)
     monkeypatch.setattr(pipeline, "_skipped_optimisation_summary", lambda *args, **kwargs: {"status": "Skipped"})
     monkeypatch.setattr(pipeline, "export_run_summary", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline, "export_stakeholder_views", lambda *args, **kwargs: None)
 
-    def fake_export_outputs(assignments, scope, template2_path):
+    def fake_export_outputs(assignments, scope, template2_path, **kwargs):
         captured["export_template2_path"] = template2_path
         return {"timetable": generated_template2, "violations": tmp_path / "violations.xlsx"}
 

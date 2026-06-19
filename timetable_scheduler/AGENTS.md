@@ -36,7 +36,7 @@ The core prototype is complete through:
 
 Current validated result:
 
-- Tests: `191 passed`
+- Tests: `220 passed`
 - Release validator: `PASS`
 - DSC demo: runs successfully with `0` hard violations on scheduled assignments
 - Engineering controlled demo with remarks interpretation enabled: runs successfully
@@ -44,9 +44,9 @@ Current validated result:
   - Input course records: `507`
   - Consolidated scheduling requirements: `465`
   - Required teaching occurrences: `2777`
-  - Scheduled teaching occurrences: `2714`
-  - Unscheduled teaching occurrences: `63`
-  - Coverage rate: `97.73%`
+  - Scheduled teaching occurrences: `2715`
+  - Unscheduled teaching occurrences: `62`
+  - Coverage rate: `97.77%`
   - Scheduled hard violations: `0`
   - DSC inclusion: `PASS`
 
@@ -139,6 +139,38 @@ For Engineering scope:
 - Zero scheduled hard violations must remain the primary safety requirement.
 - Do not change the existing timetable output structure.
 - Do not add Template 1 or Template 2 wording back into the UI.
+
+## Baseline Restoration and Deterministic Remarks Comparison
+
+- Disabling remarks interpretation must restore the original non-remarks scheduling behaviour.
+- Remarks-related dataclass fields must have neutral defaults.
+- Source metadata and audit fields must not change candidate ordering or feasibility.
+- The baseline and enhanced runs must use identical input, consolidation, room data, scheduler limits and optimisation settings.
+- Comparison runs must be deterministic.
+- Search displacement must not be labelled as a remark-caused failure without evidence.
+- Every enhanced-only scheduling difference must be classified precisely.
+- Suspected false positives are not acceptable final classifications.
+- Zero scheduled hard violations remains mandatory.
+- Timetable output structure must remain unchanged.
+- User-facing UI must continue to avoid template-number terminology.
+- Current restored disabled baseline:
+  - Required teaching occurrences: `2777`
+  - Scheduled teaching occurrences: `2747`
+  - Unscheduled teaching occurrences: `30`
+  - Coverage rate: `98.92%`
+  - Scheduled hard violations: `0`
+- Current enhanced remarks run:
+  - Required teaching occurrences: `2777`
+  - Scheduled teaching occurrences: `2715`
+  - Unscheduled teaching occurrences: `62`
+  - Coverage rate: `97.77%`
+  - Scheduled hard violations: `0`
+- Current attribution reconciliation:
+  - Direct explicit remark effects: `13`
+  - Indirect enhanced-run displacements: `19`
+  - Unchanged unscheduled occurrences: `30`
+  - Enhanced recoveries: `0`
+  - Unexplained or suspected categories: `0`
 
 ## Engineering Coverage and Bottleneck Resolution
 
@@ -422,7 +454,7 @@ py -m pytest -q
 Expected result:
 
 ```text
-191 passed
+220 passed
 ```
 
 Run DSC demo:
@@ -448,8 +480,8 @@ Expected key result:
 ```text
 Scheduled hard violations: 0
 Required teaching occurrences: 2777
-Scheduled teaching occurrences: 2714
-Unscheduled teaching occurrences: 63
+Scheduled teaching occurrences: 2715
+Unscheduled teaching occurrences: 62
 ```
 
 Scheduled and unscheduled counts may vary after scheduling-readiness changes, but scheduled hard violations must remain `0`.

@@ -35,6 +35,7 @@ from config import (
     SOFT_RULE_WASTED_FREE_SLOT,
     TERM_BREAK_WEEKS,
     VALID_DAYS,
+    ENABLE_REMARK_INTERPRETATION,
 )
 from data.models import Assignment, Course, Room
 from engine.remarks_interpreter import (
@@ -230,6 +231,19 @@ def check_room_clash(assignment: Assignment, existing: list[Assignment]) -> list
 
 def check_remark_requirements(assignment: Assignment) -> list[str]:
     """Check hard constraints created from supported remark interpretations."""
+    return check_remark_requirements_for_mode(
+        assignment,
+        enable_remark_interpretation=ENABLE_REMARK_INTERPRETATION,
+    )
+
+
+def check_remark_requirements_for_mode(
+    assignment: Assignment,
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
+) -> list[str]:
+    """Check hard constraints created from remarks when the feature is enabled."""
+    if not enable_remark_interpretation:
+        return []
     requirements = course_scheduling_requirements(assignment.course)
     violations: list[str] = []
     if (
@@ -320,12 +334,21 @@ def check_lunch_break(assignment: Assignment, existing: list[Assignment]) -> lis
     return violations
 
 
-def check_hard_constraints(assignment: Assignment, existing: list[Assignment]) -> list[str]:
+def check_hard_constraints(
+    assignment: Assignment,
+    existing: list[Assignment],
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
+) -> list[str]:
     """Return all hard constraint violations for one candidate assignment."""
     violations: list[str] = []
     violations.extend(check_room_capacity(assignment))
     violations.extend(check_delivery_mode_room(assignment))
-    violations.extend(check_remark_requirements(assignment))
+    violations.extend(
+        check_remark_requirements_for_mode(
+            assignment,
+            enable_remark_interpretation=enable_remark_interpretation,
+        )
+    )
     violations.extend(check_week_pattern(assignment))
     violations.extend(check_time_window(assignment))
     violations.extend(check_blocked_time(assignment))
@@ -348,8 +371,13 @@ def check_room_utilisation(assignment: Assignment) -> list[str]:
     return []
 
 
-def check_remark_preferences(assignment: Assignment) -> list[str]:
+def check_remark_preferences(
+    assignment: Assignment,
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
+) -> list[str]:
     """Penalise supported remark preferences that are not satisfied."""
+    if not enable_remark_interpretation:
+        return []
     requirements = course_remark_requirements(assignment.course)
     if not requirements.preferred_room_types or assignment.room is None:
         return []
@@ -524,15 +552,27 @@ def check_programme_online_day_clustering(assignments: list[Assignment]) -> dict
     return issues
 
 
-def annotate_schedule_violations(assignments: list[Assignment]) -> list[Assignment]:
+def annotate_schedule_violations(
+    assignments: list[Assignment],
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
+) -> list[Assignment]:
     """Refresh hard and soft violation lists for a full schedule."""
     checked: list[Assignment] = []
     for assignment in assignments:
         previous = [item for item in checked]
-        assignment.hard_violations = check_hard_constraints(assignment, previous)
+        assignment.hard_violations = check_hard_constraints(
+            assignment,
+            previous,
+            enable_remark_interpretation=enable_remark_interpretation,
+        )
         assignment.soft_violations = []
         assignment.soft_violations.extend(check_room_utilisation(assignment))
-        assignment.soft_violations.extend(check_remark_preferences(assignment))
+        assignment.soft_violations.extend(
+            check_remark_preferences(
+                assignment,
+                enable_remark_interpretation=enable_remark_interpretation,
+            )
+        )
         assignment.soft_violations.extend(check_first_or_last_slot(assignment))
         checked.append(assignment)
 
@@ -557,18 +597,24 @@ def soft_violation_rule(violation: str) -> str:
     return violation.split(":", 1)[0]
 
 
-def soft_violation_breakdown(assignments: list[Assignment]) -> dict[str, int]:
+def soft_violation_breakdown(
+    assignments: list[Assignment],
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
+) -> dict[str, int]:
     """Return raw soft-violation counts by canonical rule name."""
-    annotate_schedule_violations(assignments)
+    annotate_schedule_violations(assignments, enable_remark_interpretation=enable_remark_interpretation)
     counts: Counter[str] = Counter()
     for assignment in assignments:
         counts.update(soft_violation_rule(violation) for violation in assignment.soft_violations)
     return dict(sorted(counts.items()))
 
 
-def weighted_soft_score(assignments: list[Assignment]) -> int:
+def weighted_soft_score(
+    assignments: list[Assignment],
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
+) -> int:
     """Return weighted soft score using configured soft-constraint weights."""
-    annotate_schedule_violations(assignments)
+    annotate_schedule_violations(assignments, enable_remark_interpretation=enable_remark_interpretation)
     total = 0
     for assignment in assignments:
         for violation in assignment.soft_violations:
@@ -576,13 +622,19 @@ def weighted_soft_score(assignments: list[Assignment]) -> int:
     return total
 
 
-def count_hard_violations(assignments: list[Assignment]) -> int:
+def count_hard_violations(
+    assignments: list[Assignment],
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
+) -> int:
     """Count hard violations in a schedule."""
-    annotate_schedule_violations(assignments)
+    annotate_schedule_violations(assignments, enable_remark_interpretation=enable_remark_interpretation)
     return sum(len(assignment.hard_violations) for assignment in assignments)
 
 
-def count_soft_violations(assignments: list[Assignment]) -> int:
+def count_soft_violations(
+    assignments: list[Assignment],
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
+) -> int:
     """Count soft violations in a schedule."""
-    annotate_schedule_violations(assignments)
+    annotate_schedule_violations(assignments, enable_remark_interpretation=enable_remark_interpretation)
     return sum(len(assignment.soft_violations) for assignment in assignments)

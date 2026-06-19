@@ -38,11 +38,11 @@ def _stub_pipeline(monkeypatch, generated: list[Assignment]) -> None:
     monkeypatch.setattr(app, "export_loader_report", lambda report, output_path: None)
     monkeypatch.setattr(app, "run_preflight_checks", lambda courses, rooms: [])
     monkeypatch.setattr(app, "export_preflight_report", lambda issues, output_path: None)
-    monkeypatch.setattr(app, "annotate_schedule_violations", lambda assignments: assignments)
-    monkeypatch.setattr(app, "count_soft_violations", lambda assignments: 0)
+    monkeypatch.setattr(app, "annotate_schedule_violations", lambda assignments, **kwargs: assignments)
+    monkeypatch.setattr(app, "count_soft_violations", lambda assignments, **kwargs: 0)
     monkeypatch.setattr(app, "optimise_schedule", lambda assignments, rooms_arg, max_iterations: assignments)
     monkeypatch.setattr(app, "export_run_summary", lambda assignments, output_path, **kwargs: None)
-    monkeypatch.setattr(app, "export_stakeholder_views", lambda assignments, rooms_arg, output_path: None)
+    monkeypatch.setattr(app, "export_stakeholder_views", lambda assignments, rooms_arg, output_path, **kwargs: None)
     monkeypatch.setattr(app, "export_remarks_audit", lambda courses, output_path: None)
     monkeypatch.setattr(
         app,
@@ -50,7 +50,7 @@ def _stub_pipeline(monkeypatch, generated: list[Assignment]) -> None:
         lambda courses, baseline, enhanced, output_path, **kwargs: type("Comparison", (), {"attribution_reconciles": True})(),
     )
     monkeypatch.setattr(app, "export_run_manifest", lambda courses, assignments, output_path, **kwargs: None)
-    monkeypatch.setattr(app, "export_outputs", lambda assignments, scope: {})
+    monkeypatch.setattr(app, "export_outputs", lambda assignments, scope, **kwargs: {})
 
 
 def test_parse_args_accepts_demo_safety_controls() -> None:
@@ -147,7 +147,7 @@ def test_skip_unscheduled_diagnostics_does_not_break_pipeline(monkeypatch) -> No
     monkeypatch.setattr(
         app,
         "export_outputs",
-        lambda assignments, scope: exported.update({"assignments": assignments, "scope": scope}),
+        lambda assignments, scope, **kwargs: exported.update({"assignments": assignments, "scope": scope}),
     )
     monkeypatch.setattr(sys, "argv", ["main.py", "--skip-optimisation", "--skip-unscheduled-diagnostics"])
 
@@ -265,7 +265,7 @@ def test_main_exports_acceptance_workbooks(monkeypatch) -> None:
     exported: dict[str, bool] = {}
     _stub_pipeline(monkeypatch, generated)
     monkeypatch.setattr(app, "generate_schedule", lambda courses, rooms, **kwargs: generated)
-    monkeypatch.setattr(app, "export_stakeholder_views", lambda assignments, rooms, output_path: exported.update({"stakeholder": True}))
+    monkeypatch.setattr(app, "export_stakeholder_views", lambda assignments, rooms, output_path, **kwargs: exported.update({"stakeholder": True}))
     monkeypatch.setattr(app, "export_run_manifest", lambda courses, assignments, output_path, **kwargs: exported.update({"manifest": True}))
     monkeypatch.setattr(sys, "argv", ["main.py", "--skip-optimisation", "--skip-preflight", "--skip-unscheduled-diagnostics"])
 
