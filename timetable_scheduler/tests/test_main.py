@@ -38,11 +38,19 @@ def _stub_pipeline(monkeypatch, generated: list[Assignment]) -> None:
     monkeypatch.setattr(app, "export_loader_report", lambda report, output_path: None)
     monkeypatch.setattr(app, "run_preflight_checks", lambda courses, rooms: [])
     monkeypatch.setattr(app, "export_preflight_report", lambda issues, output_path: None)
-    monkeypatch.setattr(app, "annotate_schedule_violations", lambda assignments: assignments)
-    monkeypatch.setattr(app, "count_soft_violations", lambda assignments: 0)
+    monkeypatch.setattr(app, "annotate_schedule_violations", lambda assignments, **kwargs: assignments)
+    monkeypatch.setattr(app, "count_soft_violations", lambda assignments, **kwargs: 0)
     monkeypatch.setattr(app, "optimise_schedule", lambda assignments, rooms_arg, max_iterations: assignments)
     monkeypatch.setattr(app, "export_run_summary", lambda assignments, output_path, **kwargs: None)
-    monkeypatch.setattr(app, "export_outputs", lambda assignments, scope: None)
+    monkeypatch.setattr(app, "export_stakeholder_views", lambda assignments, rooms_arg, output_path, **kwargs: None)
+    monkeypatch.setattr(app, "export_remarks_audit", lambda courses, output_path: None)
+    monkeypatch.setattr(
+        app,
+        "export_remarks_coverage_comparison",
+        lambda courses, baseline, enhanced, output_path, **kwargs: type("Comparison", (), {"attribution_reconciles": True})(),
+    )
+    monkeypatch.setattr(app, "export_run_manifest", lambda courses, assignments, output_path, **kwargs: None)
+    monkeypatch.setattr(app, "export_outputs", lambda assignments, scope, **kwargs: {})
 
 
 def test_parse_args_accepts_demo_safety_controls() -> None:
@@ -60,8 +68,13 @@ def test_parse_args_accepts_demo_safety_controls() -> None:
             "150",
             "--max-diagnostic-assignments",
             "5",
+            "--optimisation-time-limit",
+            "120",
+            "--optimisation-patience",
+            "2",
             "--audit-demand-metrics",
             "--skip-preflight",
+            "--disable-remark-interpretation",
         ]
     )
 
@@ -71,18 +84,21 @@ def test_parse_args_accepts_demo_safety_controls() -> None:
     assert args.skip_unscheduled_diagnostics is True
     assert args.max_candidate_patterns == 150
     assert args.max_diagnostic_assignments == 5
+    assert args.optimisation_time_limit == 120
+    assert args.optimisation_patience == 2
     assert args.audit_demand_metrics is True
     assert args.skip_preflight is True
+    assert args.disable_remark_interpretation is True
 
 
 def test_main_passes_demo_safety_controls_to_generate_schedule(monkeypatch) -> None:
     """main() should pass demo safety controls into generate_schedule()."""
     generated = [Assignment(course=make_course(), room=None, timeslot=None)]
-    captured: dict[str, object] = {}
+    captured: list[dict[str, object]] = []
     _stub_pipeline(monkeypatch, generated)
 
     def fake_generate_schedule(courses, rooms, **kwargs):
-        captured.update(kwargs)
+        captured.append(kwargs)
         return generated
 
     monkeypatch.setattr(app, "generate_schedule", fake_generate_schedule)
@@ -108,9 +124,13 @@ def test_main_passes_demo_safety_controls_to_generate_schedule(monkeypatch) -> N
 
     app.main()
 
-    assert captured["progress_interval"] == 25
-    assert captured["max_retry_assignments"] == 20
-    assert captured["max_candidate_patterns"] == 150
+    enhanced_call = captured[0]
+    baseline_call = captured[1]
+    assert enhanced_call["progress_interval"] == 25
+    assert enhanced_call["max_retry_assignments"] == 20
+    assert enhanced_call["max_candidate_patterns"] == 150
+    assert enhanced_call["enable_remark_interpretation"] is True
+    assert baseline_call["enable_remark_interpretation"] is False
 
 
 def test_skip_unscheduled_diagnostics_does_not_break_pipeline(monkeypatch) -> None:
@@ -127,7 +147,7 @@ def test_skip_unscheduled_diagnostics_does_not_break_pipeline(monkeypatch) -> No
     monkeypatch.setattr(
         app,
         "export_outputs",
-        lambda assignments, scope: exported.update({"assignments": assignments, "scope": scope}),
+        lambda assignments, scope, **kwargs: exported.update({"assignments": assignments, "scope": scope}),
     )
     monkeypatch.setattr(sys, "argv", ["main.py", "--skip-optimisation", "--skip-unscheduled-diagnostics"])
 
@@ -199,3 +219,56 @@ def test_main_reports_skipped_optimisation(monkeypatch) -> None:
     optimisation_summary = captured["optimisation_summary"]
     assert optimisation_summary["optimisation_enabled"] == "No"
     assert optimisation_summary["status"] == "Skipped"
+
+
+def test_main_passes_optimiser_runtime_controls(monkeypatch) -> None:
+    """main() should pass time-limit and patience settings into the optimiser."""
+    generated = [Assignment(course=make_course(), room=Room("R1", 100, "physical"), timeslot=None)]
+    captured: dict[str, object] = {}
+    _stub_pipeline(monkeypatch, generated)
+    monkeypatch.setattr(app, "generate_schedule", lambda courses, rooms, **kwargs: generated)
+
+    class Result:
+        assignments = generated
+        iterations_completed = 0
+        status = "Time limit reached"
+        stop_reason = "Stopped after 1 seconds"
+
+    def fake_optimise(assignments, rooms, **kwargs):
+        captured.update(kwargs)
+        return Result()
+
+    monkeypatch.setattr(app, "optimise_schedule_with_stats", fake_optimise)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "main.py",
+            "--skip-preflight",
+            "--skip-unscheduled-diagnostics",
+            "--optimisation-time-limit",
+            "1",
+            "--optimisation-patience",
+            "2",
+        ],
+    )
+
+    app.main()
+
+    assert captured["time_limit_seconds"] == 1
+    assert captured["patience"] == 2
+
+
+def test_main_exports_acceptance_workbooks(monkeypatch) -> None:
+    """main() should write stakeholder views and the run manifest."""
+    generated = [Assignment(course=make_course(), room=Room("R1", 100, "physical"), timeslot=None)]
+    exported: dict[str, bool] = {}
+    _stub_pipeline(monkeypatch, generated)
+    monkeypatch.setattr(app, "generate_schedule", lambda courses, rooms, **kwargs: generated)
+    monkeypatch.setattr(app, "export_stakeholder_views", lambda assignments, rooms, output_path, **kwargs: exported.update({"stakeholder": True}))
+    monkeypatch.setattr(app, "export_run_manifest", lambda courses, assignments, output_path, **kwargs: exported.update({"manifest": True}))
+    monkeypatch.setattr(sys, "argv", ["main.py", "--skip-optimisation", "--skip-preflight", "--skip-unscheduled-diagnostics"])
+
+    app.main()
+
+    assert exported == {"stakeholder": True, "manifest": True}

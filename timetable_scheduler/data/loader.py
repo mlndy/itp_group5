@@ -6,6 +6,7 @@ import csv
 import math
 import re
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -20,6 +21,7 @@ from config import (
     VIRTUAL_ROOM_ID,
 )
 from data.models import Course, Room
+from engine.remarks_interpreter import interpret_remarks
 
 
 COMMON_COLUMNS = {
@@ -32,11 +34,54 @@ COMMON_COLUMNS = {
     "staff_1": ["Staff ID 1", "Staff1", "SIS Staff ID"],
     "staff_2": ["Staff ID 2", "Staff2", "SIS Staff ID.1"],
     "staff_3": ["Staff ID 3", "Staff3", "SIS Staff ID.2"],
+    "staff_4": ["Staff ID 4", "Staff4", "SIS Staff ID.3"],
     "staff_name_1": ["Staff 1", "Staff1", "Staff"],
     "staff_name_2": ["Staff 2", "Staff2"],
     "staff_name_3": ["Staff 3", "Staff3"],
+    "staff_name_4": ["Staff 4", "Staff4"],
     "remarks": ["Remarks", "Remark"],
 }
+
+TEMPLATE2_OUTPUT_HEADERS = {
+    "module",
+    "class type",
+    "template",
+    "group",
+    "day",
+    "start",
+    "end",
+    "room1",
+    "staff1",
+    "tri week",
+    "activity hostkey",
+}
+
+TEMPLATE1_LAB_REQUIREMENT_HEADERS = {
+    "prog yr",
+    "module code",
+    "group",
+    "group size",
+    "weeks",
+    "staff 1",
+}
+
+TEMPLATE1_VALIDATION_MESSAGE = (
+    "This workbook does not match the consolidated schedule format. "
+    "Please select the consolidated schedule."
+)
+TEMPLATE2_INPUT_MESSAGE = "This workbook appears to be a generated timetable.\nPlease select the consolidated schedule."
+
+
+class WorkbookRole(Enum):
+    """Known workbook roles for timetabling inputs and outputs."""
+
+    TEMPLATE1_REQUIREMENTS = "template1_requirements"
+    TEMPLATE2_TIMETABLE = "template2_timetable"
+    UNKNOWN = "unknown"
+
+
+class ConsolidatedScheduleValidationError(ValueError):
+    """Raised when a selected workbook is not valid consolidated Template 1 input."""
 
 
 @dataclass(slots=True)
@@ -112,8 +157,109 @@ class LoaderReport:
 
 def _normalise_header(value: object) -> str:
     """Return a case-insensitive, punctuation-tolerant header key."""
-    text = str(value or "").strip().casefold()
+    text = str(value or "").replace("\xa0", " ").strip().casefold()
     return re.sub(r"[^0-9a-z]+", " ", text).strip()
+
+
+def _headers_from_row(values: Iterable[object]) -> set[str]:
+    """Return normalised, non-empty headers from a worksheet row."""
+    return {header for header in (_normalise_header(value) for value in values) if header}
+
+
+def _workbook_header_rows(path: Path, max_rows: int = 10) -> list[tuple[str, set[str]]]:
+    """Return candidate header rows from every worksheet in a workbook."""
+    try:
+        workbook = load_workbook(path, read_only=True, data_only=True)
+    except Exception as exc:
+        raise ConsolidatedScheduleValidationError(f"Unable to open workbook: {exc}") from exc
+
+    rows: list[tuple[str, set[str]]] = []
+    try:
+        for worksheet in workbook.worksheets:
+            for row in worksheet.iter_rows(min_row=1, max_row=max_rows, values_only=True):
+                headers = _headers_from_row(row)
+                if headers:
+                    rows.append((worksheet.title, headers))
+    finally:
+        workbook.close()
+    return rows
+
+
+def _workbook_appears_template2_output(path: str | Path) -> bool:
+    """Return True when workbook headers match proposed Template 2 output."""
+    path = Path(path)
+    for sheet_name, headers in _workbook_header_rows(path):
+        if _normalise_header(sheet_name) == "timetable" and len(headers & TEMPLATE2_OUTPUT_HEADERS) >= 7:
+            return True
+        if len(headers & TEMPLATE2_OUTPUT_HEADERS) >= 9:
+            return True
+    return False
+
+
+def _find_consolidated_schedule_sheet(path: Path) -> str | None:
+    """Return the first worksheet containing required Template 1 fields."""
+    required_fields = set(_required_column_names())
+    for sheet_name, headers in _workbook_header_rows(path):
+        present = {
+            field_name
+            for field_name in required_fields
+            if any(_normalise_header(candidate) in headers for candidate in COMMON_COLUMNS[field_name])
+        }
+        if present == required_fields:
+            return sheet_name
+    return None
+
+
+def _find_template1_like_sheet(path: Path) -> str | None:
+    """Return a worksheet that has Template 1-style requirement headers."""
+    for sheet_name, headers in _workbook_header_rows(path):
+        if _normalise_header(sheet_name) != "module":
+            continue
+        if TEMPLATE1_LAB_REQUIREMENT_HEADERS <= headers:
+            return sheet_name
+    return None
+
+
+def detect_workbook_role(path: str | Path) -> WorkbookRole:
+    """Detect workbook role from worksheet structure and headers."""
+    workbook_path = Path(path)
+    if _workbook_appears_template2_output(workbook_path):
+        return WorkbookRole.TEMPLATE2_TIMETABLE
+    if _find_consolidated_schedule_sheet(workbook_path) is not None or _find_template1_like_sheet(workbook_path) is not None:
+        return WorkbookRole.TEMPLATE1_REQUIREMENTS
+    return WorkbookRole.UNKNOWN
+
+
+def workbook_appears_template2_output(path: str | Path) -> bool:
+    """Return True when workbook headers match proposed Template 2 output."""
+    return detect_workbook_role(path) == WorkbookRole.TEMPLATE2_TIMETABLE
+
+
+def normalise_delivery_mode(value: object) -> str:
+    """Normalise common delivery-mode text while preserving recognisable detail."""
+    text = _clean_text(value, default="f2f")
+    key = text.casefold().strip()
+    if key in {"f2f", "face to face", "face-to-face", "physical", "in person", "in-person", "campus"}:
+        return "f2f"
+    if "async" in key:
+        return "Online - Asynchronous"
+    if "online" in key or "virtual" in key or "e learning" in key or "elearning" in key:
+        return "Online - Synchronous"
+    return text
+
+
+def validate_consolidated_schedule_structure(path: str | Path) -> None:
+    """Validate that a workbook is consolidated Template 1 scheduling input."""
+    workbook_path = Path(path)
+    if not workbook_path.exists() or not workbook_path.is_file():
+        raise ConsolidatedScheduleValidationError("Select a valid Excel workbook")
+    if workbook_path.suffix.lower() not in {".xlsx", ".xlsm"}:
+        raise ConsolidatedScheduleValidationError("Select a valid Excel workbook")
+    role = detect_workbook_role(workbook_path)
+    if role == WorkbookRole.TEMPLATE2_TIMETABLE:
+        raise ConsolidatedScheduleValidationError(TEMPLATE2_INPUT_MESSAGE)
+    if role != WorkbookRole.TEMPLATE1_REQUIREMENTS:
+        raise ConsolidatedScheduleValidationError(TEMPLATE1_VALIDATION_MESSAGE)
 
 
 def _find_header_row(path: Path, sheet_name: str) -> int:
@@ -213,7 +359,7 @@ def infer_duration_hrs(activity: str) -> int:
 def _collect_staff_ids(row: pd.Series, df: pd.DataFrame) -> list[str]:
     """Collect non-empty staff IDs from a row."""
     ids: list[str] = []
-    for key in ["staff_1", "staff_2", "staff_3"]:
+    for key in ["staff_1", "staff_2", "staff_3", "staff_4"]:
         col = _get_column(df, COMMON_COLUMNS[key])
         if not col:
             continue
@@ -226,7 +372,7 @@ def _collect_staff_ids(row: pd.Series, df: pd.DataFrame) -> list[str]:
 def _collect_staff_names(row: pd.Series, df: pd.DataFrame) -> list[str]:
     """Collect non-empty staff names from a row."""
     names: list[str] = []
-    for key in ["staff_name_1", "staff_name_2", "staff_name_3"]:
+    for key in ["staff_name_1", "staff_name_2", "staff_name_3", "staff_name_4"]:
         col = _get_column(df, COMMON_COLUMNS[key])
         if not col:
             continue
@@ -382,11 +528,11 @@ def load_courses_from_requirements(
 
     courses: list[Course] = []
     skipped_rows = 0
-    for _, row in df.iterrows():
+    for row_index, row in df.iterrows():
         module_code = _clean_text(row.get(module_col)).upper()
         activity = _clean_text(row.get(activity_col))
         prog_yr = _clean_text(row.get(prog_col))
-        delivery_mode = _clean_text(row.get(mode_col), default="f2f")
+        delivery_mode = normalise_delivery_mode(row.get(mode_col))
 
         if not module_code or not activity or not prog_yr:
             skipped_rows += 1
@@ -400,6 +546,7 @@ def load_courses_from_requirements(
         staff_ids = _collect_staff_ids(row, df)
         staff_names = _collect_staff_names(row, df)
         remarks = _clean_text(row.get(remarks_col)) if remarks_col else ""
+        source_row = header_row + int(row_index) + 2
 
         courses.append(
             Course(
@@ -417,6 +564,9 @@ def load_courses_from_requirements(
                 remarks=remarks,
                 source_file=path.name,
                 group_ids=[prog_yr],
+                source_sheet=resolved_sheet,
+                source_row=source_row,
+                remark_requirements=interpret_remarks(remarks),
             )
         )
 
@@ -442,6 +592,31 @@ def load_courses_from_requirements(
         rows_skipped=skipped_rows,
     )
     return courses, diagnostic
+
+
+def load_consolidated_schedule_with_report(
+    workbook_path: str | Path,
+    common_modules: Optional[set[str]] = None,
+) -> tuple[list[Course], WorkbookDiagnostic]:
+    """Load one consolidated Template 1 workbook into course requirements."""
+    path = Path(workbook_path)
+    validate_consolidated_schedule_structure(path)
+    sheet_name = _find_consolidated_schedule_sheet(path)
+    if sheet_name is None:
+        raise ConsolidatedScheduleValidationError(TEMPLATE1_VALIDATION_MESSAGE)
+
+    courses, diagnostic = load_courses_from_requirements(path, common_modules=common_modules, sheet_name=sheet_name)
+    if diagnostic.reason == "Missing required columns":
+        raise ConsolidatedScheduleValidationError(TEMPLATE1_VALIDATION_MESSAGE)
+    if not courses:
+        raise ConsolidatedScheduleValidationError("The selected workbook contains no scheduling records")
+    return courses, diagnostic
+
+
+def load_consolidated_schedule(workbook_path: str | Path, common_modules: Optional[set[str]] = None) -> list[Course]:
+    """Load one consolidated Template 1 workbook into existing Course objects."""
+    courses, _diagnostic = load_consolidated_schedule_with_report(workbook_path, common_modules=common_modules)
+    return courses
 
 
 def load_courses_from_folder(folder: str | Path, common_modules: Optional[set[str]] = None) -> tuple[list[Course], LoaderReport]:

@@ -11,9 +11,10 @@ from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-from config import ACTIVITY_TYPE_CODES, DAY_ABBREVIATIONS, DEFAULT_TEMPLATE2_FILE
+from config import ACTIVITY_TYPE_CODES, DAY_ABBREVIATIONS, DEFAULT_TEMPLATE2_FILE, ENABLE_REMARK_INTERPRETATION
 from data.models import Assignment
 from engine.constraint_checker import annotate_schedule_violations, hour_to_time, time_to_hour
+from engine.remarks_interpreter import assignment_room_ids, assignment_rooms
 
 
 def _activity_type_code(activity: str) -> str:
@@ -41,10 +42,16 @@ def _staff_value(assignment: Assignment, index: int) -> str | None:
     return None
 
 
-def _annotated_snapshot(assignments: list[Assignment]) -> list[Assignment]:
+def _annotated_snapshot(
+    assignments: list[Assignment],
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
+) -> list[Assignment]:
     """Return a deep-copied, annotated version of the schedule."""
     snapshot = deepcopy(assignments)
-    annotate_schedule_violations(snapshot)
+    annotate_schedule_violations(
+        snapshot,
+        enable_remark_interpretation=enable_remark_interpretation,
+    )
     return snapshot
 
 
@@ -53,6 +60,10 @@ def _remark_text(assignment: Assignment) -> str | None:
     parts: list[str] = []
     if assignment.course.remarks:
         parts.append(assignment.course.remarks)
+    if assignment.selected_delivery_mode == "hybrid":
+        parts.append("Interpreted as hybrid delivery")
+    if len(assignment_rooms(assignment)) > 1:
+        parts.append(f"Assigned rooms: {assignment_room_ids(assignment)}")
     if assignment.room is None or assignment.timeslot is None:
         parts.append("Unscheduled assignment")
     if assignment.hard_violations:
@@ -67,6 +78,12 @@ def _room_id(assignment: Assignment) -> str | None:
     return assignment.room.room_id if assignment.room else None
 
 
+def _room2_id(assignment: Assignment) -> str | None:
+    """Return the second assigned room ID when available."""
+    rooms = assignment_rooms(assignment)
+    return rooms[1].room_id if len(rooms) > 1 else None
+
+
 def _template_row_values(assignment: Assignment) -> dict[str, object]:
     """Convert one assignment to logical Template 2 values."""
     course = assignment.course
@@ -76,6 +93,7 @@ def _template_row_values(assignment: Assignment) -> dict[str, object]:
         end_time = hour_to_time(time_to_hour(timeslot.start_time) + course.duration_hrs)
 
     room_id = _room_id(assignment)
+    room2_id = _room2_id(assignment)
     return {
         "Module": course.module_code,
         "Class Type": course.activity,
@@ -88,7 +106,7 @@ def _template_row_values(assignment: Assignment) -> dict[str, object]:
         "Sector": "PUNGGOL",
         "RoomGrouping": None,
         "Room1": room_id,
-        "Room2": None,
+        "Room2": room2_id,
         "StaffGrouping": None,
         "Staff1": _staff_value(assignment, 0),
         "Staff2": _staff_value(assignment, 1),
@@ -110,7 +128,7 @@ def _template_row_values(assignment: Assignment) -> dict[str, object]:
         "Location Hostkey": room_id,
         "Location Hostkey.1": room_id,
         "Programme/Year": course.prog_yr,
-        "Delivery Mode": course.delivery_mode,
+        "Delivery Mode": assignment.selected_delivery_mode or course.delivery_mode,
         "Status": assignment.status,
     }
 
@@ -159,9 +177,15 @@ def assignment_to_row(assignment: Assignment) -> dict[str, object]:
     return _template_row_values(assignment)
 
 
-def assignments_to_dataframe(assignments: list[Assignment]) -> pd.DataFrame:
+def assignments_to_dataframe(
+    assignments: list[Assignment],
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
+) -> pd.DataFrame:
     """Convert assignments to a timetable DataFrame."""
-    snapshot = _annotated_snapshot(assignments)
+    snapshot = _annotated_snapshot(
+        assignments,
+        enable_remark_interpretation=enable_remark_interpretation,
+    )
     rows = [assignment_to_row(assignment) for assignment in snapshot]
     return pd.DataFrame(rows)
 
@@ -192,16 +216,22 @@ def violations_to_dataframe(assignments: list[Assignment], violation_type: str) 
                     "Week": assignment.timeslot.week if assignment.timeslot else None,
                     "Day": assignment.timeslot.day if assignment.timeslot else None,
                     "Start": assignment.timeslot.start_time if assignment.timeslot else None,
-                    "Room": assignment.room.room_id if assignment.room else None,
+                    "Room": assignment_room_ids(assignment),
                     "Violation": violation,
                 }
             )
     return pd.DataFrame(rows, columns=columns)
 
 
-def summary_to_dataframe(assignments: list[Assignment]) -> pd.DataFrame:
+def summary_to_dataframe(
+    assignments: list[Assignment],
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
+) -> pd.DataFrame:
     """Create summary metrics for stakeholder reporting."""
-    snapshot = _annotated_snapshot(assignments)
+    snapshot = _annotated_snapshot(
+        assignments,
+        enable_remark_interpretation=enable_remark_interpretation,
+    )
     total = len(snapshot)
     hard = sum(len(item.hard_violations) for item in snapshot)
     soft = sum(len(item.soft_violations) for item in snapshot)
@@ -238,22 +268,37 @@ def _autosize_and_style(path: Path) -> None:
     workbook.save(path)
 
 
-def export_schedule(assignments: list[Assignment], output_path: str | Path) -> None:
+def export_schedule(
+    assignments: list[Assignment],
+    output_path: str | Path,
+    template2_path: str | Path | None = None,
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
+) -> None:
     """Export the final timetable, preferring the provided Template 2 workbook."""
     output_path = Path(output_path)
+    template2_path = Path(template2_path or DEFAULT_TEMPLATE2_FILE)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    snapshot = _annotated_snapshot(assignments)
+    snapshot = _annotated_snapshot(
+        assignments,
+        enable_remark_interpretation=enable_remark_interpretation,
+    )
 
-    if DEFAULT_TEMPLATE2_FILE.exists():
-        workbook = load_workbook(DEFAULT_TEMPLATE2_FILE)
+    if template2_path.exists():
+        workbook = load_workbook(template2_path)
         _write_template_timetable_sheet(workbook, snapshot)
         workbook.save(output_path)
         return
 
-    timetable_df = assignments_to_dataframe(snapshot)
+    timetable_df = assignments_to_dataframe(
+        snapshot,
+        enable_remark_interpretation=enable_remark_interpretation,
+    )
     hard_df = violations_to_dataframe(snapshot, "hard")
     soft_df = violations_to_dataframe(snapshot, "soft")
-    summary_df = summary_to_dataframe(snapshot)
+    summary_df = summary_to_dataframe(
+        snapshot,
+        enable_remark_interpretation=enable_remark_interpretation,
+    )
 
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
         summary_df.to_excel(writer, sheet_name="Summary", index=False)
@@ -263,11 +308,18 @@ def export_schedule(assignments: list[Assignment], output_path: str | Path) -> N
     _autosize_and_style(output_path)
 
 
-def export_violations(assignments: list[Assignment], output_path: str | Path) -> None:
+def export_violations(
+    assignments: list[Assignment],
+    output_path: str | Path,
+    enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
+) -> None:
     """Export only hard and soft violation reports."""
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    snapshot = _annotated_snapshot(assignments)
+    snapshot = _annotated_snapshot(
+        assignments,
+        enable_remark_interpretation=enable_remark_interpretation,
+    )
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
         violations_to_dataframe(snapshot, "hard").to_excel(writer, sheet_name="Hard Violations", index=False)
         violations_to_dataframe(snapshot, "soft").to_excel(writer, sheet_name="Soft Violations", index=False)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from data.models import Course, Room
 from engine.constraint_checker import is_online_course
+from engine.remarks_interpreter import course_remark_requirements
 from engine.resource_audit import audit_resources, resource_audit_issues
 
 VALID_ROOM_TYPES = {"physical", "virtual"}
@@ -80,6 +81,17 @@ def validate_courses(courses: list[Course], rooms: list[Room]) -> list[dict[str,
                     entity_id,
                     "Face-to-face course has no physical room with enough capacity",
                     "Add a larger physical room or reduce the class size.",
+                )
+            )
+        remark_requirements = course_remark_requirements(course)
+        if remark_requirements.needs_manual_review:
+            issues.append(
+                _issue(
+                    "warning",
+                    "course",
+                    entity_id,
+                    "Remark requires manual review",
+                    remark_requirements.review_reason or "Review the free-text scheduling remark.",
                 )
             )
     return issues

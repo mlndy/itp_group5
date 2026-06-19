@@ -12,7 +12,7 @@ Treat this as an operations and supply chain resource-allocation prototype, not 
 
 ## Current Phase
 
-Current phase: **Repository reconciliation and final submission readiness**
+Current phase: **Explainable remarks interpretation innovation**
 
 Main deliverable: generate a usable Engineering cluster timetable, including DSC.
 
@@ -32,23 +32,25 @@ The core prototype is complete through:
 6. Engineering controlled demo safety controls
 7. Preflight validation and run summary reporting
 8. Demand-metric audit, resource audit, online-delivery semantics, optimiser validation, and release validation
+9. Deterministic remarks interpretation, multi-room scheduling support, hybrid/flexible-delivery handling, and special-request review reporting
 
 Current validated result:
 
-- Tests: `112 passed`
+- Tests: `220 passed`
 - Release validator: `PASS`
 - DSC demo: runs successfully with `0` hard violations on scheduled assignments
-- Engineering final demo: runs successfully
-- Final Engineering output:
+- Engineering controlled demo with remarks interpretation enabled: runs successfully
+- Current Engineering output with remarks interpretation enabled:
   - Input course records: `507`
   - Consolidated scheduling requirements: `465`
   - Required teaching occurrences: `2777`
-  - Scheduled teaching occurrences: `2747`
-  - Unscheduled teaching occurrences: `30`
-  - Coverage rate: `98.92%`
+  - Scheduled teaching occurrences: `2715`
+  - Unscheduled teaching occurrences: `62`
+  - Coverage rate: `97.77%`
   - Scheduled hard violations: `0`
-  - Online coverage: `813 / 813`
   - DSC inclusion: `PASS`
+
+The previous release-ready baseline before remarks enforcement had `2747` scheduled teaching occurrences, `30` unscheduled teaching occurrences, and `98.92%` coverage. Do not compare that baseline directly against the remarks-enabled run without explaining that new interpreted requirements are now being enforced and reviewed.
 
 Preflight report and run summary report now exist and should be preserved.
 
@@ -99,6 +101,76 @@ For Engineering scope:
 - Do not claim improvement using scheduled count alone unless the total assignment pool is the same.
 - Preserve `preflight_report.xlsx` and `run_summary.xlsx`.
 - Scenario comparison is still on hold.
+
+## Explainable Remarks Interpretation
+
+- Remarks are free-text scheduling requests from programme submissions.
+- The system should interpret only clear and supported patterns.
+- Every interpretation must preserve the original remark.
+- Every interpreted rule must show what was detected and how it was applied.
+- Explicit requirements may become hard constraints.
+- Words such as `prefer`, `preferred`, or `if possible` should normally become soft preferences.
+- Ambiguous or unsupported remarks must be sent for manual review.
+- The system must never silently guess the meaning of unclear text.
+- Remarks processing must be deterministic and testable.
+- The UI must not use the terms Template 1 or Template 2.
+- User-facing terminology should be:
+  - Consolidated Schedule
+  - Proposed Timetable
+- Internal code and technical documentation may retain the confirmed workbook roles.
+- DSC remains part of Engineering and must not appear as a separate UI option.
+- Existing scheduling rules must not be weakened.
+
+## Remarks Refinement and Coverage Attribution
+
+- Ambiguous remarks must not automatically block otherwise feasible scheduling.
+- Unsupported remarks should normally be scheduled using structured fields and flagged for review.
+- Only explicit, supported, high-confidence requirements may become hard constraints.
+- Preferences must remain soft constraints.
+- Low-confidence interpretations must never become hard constraints.
+- Every additional unscheduled occurrence caused by remarks must be attributed to a specific enforced rule.
+- The system must distinguish:
+  - automatically applied
+  - preference considered
+  - scheduled but needs confirmation
+  - unscheduled because of explicit request
+  - unsupported but non-blocking
+  - no scheduling action required
+- Zero scheduled hard violations must remain the primary safety requirement.
+- Do not change the existing timetable output structure.
+- Do not add Template 1 or Template 2 wording back into the UI.
+
+## Baseline Restoration and Deterministic Remarks Comparison
+
+- Disabling remarks interpretation must restore the original non-remarks scheduling behaviour.
+- Remarks-related dataclass fields must have neutral defaults.
+- Source metadata and audit fields must not change candidate ordering or feasibility.
+- The baseline and enhanced runs must use identical input, consolidation, room data, scheduler limits and optimisation settings.
+- Comparison runs must be deterministic.
+- Search displacement must not be labelled as a remark-caused failure without evidence.
+- Every enhanced-only scheduling difference must be classified precisely.
+- Suspected false positives are not acceptable final classifications.
+- Zero scheduled hard violations remains mandatory.
+- Timetable output structure must remain unchanged.
+- User-facing UI must continue to avoid template-number terminology.
+- Current restored disabled baseline:
+  - Required teaching occurrences: `2777`
+  - Scheduled teaching occurrences: `2747`
+  - Unscheduled teaching occurrences: `30`
+  - Coverage rate: `98.92%`
+  - Scheduled hard violations: `0`
+- Current enhanced remarks run:
+  - Required teaching occurrences: `2777`
+  - Scheduled teaching occurrences: `2715`
+  - Unscheduled teaching occurrences: `62`
+  - Coverage rate: `97.77%`
+  - Scheduled hard violations: `0`
+- Current attribution reconciliation:
+  - Direct explicit remark effects: `13`
+  - Indirect enhanced-run displacements: `19`
+  - Unchanged unscheduled occurrences: `30`
+  - Enhanced recoveries: `0`
+  - Unexplained or suspected categories: `0`
 
 ## Engineering Coverage and Bottleneck Resolution
 
@@ -264,7 +336,7 @@ For Engineering scope:
 ## Report and Presentation Phase
 
 - Prototype feature development is complete.
-- Current tests: `112 passed`.
+- Current tests: `159 passed`.
 - Release validator: `PASS`.
 - Final Engineering result:
   - Input course records: `507`
@@ -309,6 +381,67 @@ Pre-reconciliation findings recorded for this task:
   - Online coverage: `813 / 813`
   - DSC inclusion: `PASS`
 
+## Prototype Requirements Acceptance
+
+- DSC was only the smaller pilot dataset used to test the algorithm before scaling.
+- DSC is part of the Engineering cluster.
+- The final prototype scope is the full Engineering cluster, including DSC.
+- Template 1 is the bulk scheduling input submitted before consolidation.
+- Template 2 is the proposed timetable produced by the timetabling team before submission into SIT's internal system.
+- The prototype operates between consolidated Template 1 input and proposed Template 2 output.
+- Report and presentation work is paused until prototype acceptance is complete.
+- Preserve the existing Template 2 workbook structure.
+- Never weaken hard constraints to increase coverage.
+- Unresolved requirements must remain visible and explained.
+- Do not add scenario comparison, a web application, OR-Tools, machine learning, or unrelated innovation.
+- Update `AGENTS.md` before every future prototype phase.
+
+## Minimal Desktop UI
+
+- DSC was only the small pilot dataset.
+- The final scope is the Engineering cluster, including DSC.
+- Template 1 is the bulk scheduling input before consolidation.
+- Template 2 is the proposed timetable produced before submission to the internal system.
+- The UI is a thin layer over the existing tested pipeline.
+- Scheduling and constraint logic must not be duplicated inside the UI.
+- The UI should be minimal, neat, local, and suitable for Windows.
+- Use only the Python standard library where practical.
+- Do not build a web application.
+- Do not add login, database, cloud hosting, drag-and-drop timetable editing, or real-time collaboration.
+- Command-line operation must continue to work.
+- Existing generated Excel outputs remain the official prototype outputs.
+
+## Simplified Desktop UI and Repository Cleanup
+
+- The final scope is the Engineering cluster.
+- DSC is part of the Engineering cluster and must not be presented as a separate inclusion feature.
+- DSC was previously used only as a smaller pilot dataset.
+- The UI should accept one file labelled `Consolidated Schedule`.
+- Venue information, common-module data, Template 2 and other supporting resources are internal bundled resources and should not be selected by the user.
+- The UI should not expose scheduling configuration.
+- The UI should use fixed validated Engineering defaults.
+- The UI should be dark, minimal and suitable for non-technical timetabling staff.
+- Detailed technical outputs remain available through Excel reports.
+- Do not remove required inputs, tests or deliverable documentation without confirming that they are obsolete.
+- Do not delete `.git` from the working repository.
+- `.git`, virtual environments, caches and generated outputs must be excluded from distributable ZIP files.
+- Report and presentation development remains paused during this task.
+
+## Confirmed Template Roles
+
+- Template 1 is the scheduling-requirements input.
+- Template 1 uses a `Module` worksheet containing programme, module, activity, class size, delivery mode, teaching weeks and staff information.
+- Template 2 is the proposed timetable output used for the internal-system upload process.
+- Template 2 uses a `Timetable` worksheet containing day, start, end, room, staff, group and activity-output fields.
+- The filenames `Template 1.xlsx` and `Template 2.xlsx` are already correct.
+- Workbook roles must be detected from worksheet structure and headers rather than filenames.
+- A workbook renamed to `Template 1.xlsx` must not be accepted if it has Template 2 structure.
+- A workbook renamed to `Template 2.xlsx` must still be accepted as input if it has valid Template 1 structure.
+- Correct pipeline: Template 1 requirements -> validation and loading -> consolidation and normalisation -> schedule generation -> bounded optimisation -> Template 2 proposed timetable.
+- The Engineering timetabling dataset is under `Data/Requirements_ENG`.
+- DSC is one Engineering programme and is not a separate UI option.
+- Do not alter scheduling rules, hard constraints, optimiser logic, demand metrics, virtual-room semantics or Template 2 structure.
+
 ## Important Commands
 
 Run tests from inside the `timetable_scheduler` folder:
@@ -321,7 +454,7 @@ py -m pytest -q
 Expected result:
 
 ```text
-112 passed
+220 passed
 ```
 
 Run DSC demo:
@@ -347,8 +480,8 @@ Expected key result:
 ```text
 Scheduled hard violations: 0
 Required teaching occurrences: 2777
-Scheduled teaching occurrences: 2747
-Unscheduled teaching occurrences: 30
+Scheduled teaching occurrences: 2715
+Unscheduled teaching occurrences: 62
 ```
 
 Scheduled and unscheduled counts may vary after scheduling-readiness changes, but scheduled hard violations must remain `0`.
