@@ -2,7 +2,7 @@
 
 ## Cross-Check Note
 
-This repository has been reconciled with the release-ready prototype state. `FINAL_RESULTS.md`, `RELEASE_CHECKLIST.md`, and the final Engineering demo command are present, and the figures below match the verified release values. Do not change these figures unless a new full release run proves different results.
+This repository has been reconciled with the release-ready prototype state. `FINAL_RESULTS.md`, `RELEASE_CHECKLIST.md`, and the Engineering validation commands are present. Baseline and remarks-aware figures are reported separately because the enhanced run enforces additional interpreted requirements.
 
 ## Problem Definition
 
@@ -14,7 +14,7 @@ Relevant implementation evidence:
 - `timetable_scheduler/data/models.py::Course`, `Room`, `TimeSlot`, and `Assignment` define the planning objects.
 - `timetable_scheduler/engine/constraint_checker.py::check_hard_constraints` defines hard feasibility checks.
 
-The final result does not claim complete Engineering coverage. The verified Engineering result is `2747` scheduled teaching occurrences out of `2777`, leaving `30` unscheduled teaching occurrences visible for review.
+The final result does not claim complete Engineering coverage. The verified core baseline schedules `2747` teaching occurrences out of `2777`, leaving `30` unscheduled teaching occurrences visible for review.
 
 ## Current Manual Process
 
@@ -192,7 +192,7 @@ Key stakeholder sheets include:
 - Unscheduled Reasons
 - Room Utilisation
 
-The verified final artefact set also includes evidence for Resource Audit, Virtual Room Detail, Residual F2F Analysis, and Optimisation Summary. This checkout does not expose those sheet exporters in `output/report_exporter.py`, so this should be checked against the final release branch before submission.
+The verified final artefact set also includes Resource Audit, Virtual Room Detail, Residual F2F Analysis and Optimisation Summary sheets for stakeholder review.
 
 ## Preflight Validation
 
@@ -211,7 +211,7 @@ Preflight checks include missing fields, invalid class size or duration, empty t
 
 The verified final demand denominator is teaching occurrences, not raw `Assignment` rows.
 
-Final validated metrics:
+Core baseline metrics:
 
 - Input course records: `507`
 - Consolidated scheduling requirements: `465`
@@ -220,11 +220,19 @@ Final validated metrics:
 - Unscheduled teaching occurrences: `30`
 - Coverage rate: `98.92%`
 
+Remarks-aware enhanced metrics:
+
+- Required teaching occurrences: `2777`
+- Scheduled teaching occurrences: `2715`
+- Unscheduled teaching occurrences: `62`
+- Coverage rate: `97.77%`
+- Scheduled hard violations: `0`
+
 This distinction is important because one unscheduled placeholder can represent multiple missing teaching weeks, while scheduled assignments are week-level occurrences.
 
 ## Final Engineering Results
 
-Final Engineering result:
+Core baseline Engineering result:
 
 - Required teaching occurrences: `2777`
 - Scheduled teaching occurrences: `2747`
@@ -235,6 +243,13 @@ Final Engineering result:
 - Online coverage: `813 / 813`
 
 This is a feasible partial Engineering timetable. It does not claim 100% coverage.
+
+Remarks-aware attribution:
+
+- Unchanged baseline exceptions: `30`
+- Direct explicit remark effects: `13`
+- Indirect displacements: `19`
+- Unexplained occurrences: `0`
 
 ## Remaining Operational Exceptions
 
@@ -248,7 +263,7 @@ These are operational exceptions, not hidden scheduler successes. The correct re
 - Remaining large F2F common-module demand needs operational review.
 - The optimiser improves soft violations only slightly and takes too long for a live demo.
 - Scenario comparison is out of scope.
-- This checkout is missing some final artefact files referenced by the task prompt.
+- Remarks-aware enforcement can reduce coverage when explicit supported requests add valid restrictions.
 
 ## Recommended Operational Improvements
 

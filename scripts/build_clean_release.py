@@ -21,6 +21,7 @@ EXCLUDED_DIR_NAMES = {
     "output_files",
     "dist",
     ".vscode",
+    ".idea",
 }
 EXCLUDED_FILE_PATTERNS = {
     "*.pyc",
@@ -29,16 +30,23 @@ EXCLUDED_FILE_PATTERNS = {
     "~$*.xlsx",
     "~$*.xlsm",
     "*.tmp",
+    "*.temp",
+    "*.log",
+    "*.zip",
+    ".DS_Store",
+    "Thumbs.db",
 }
 REQUIRED_PATHS = {
     "README.md",
     "DEMO.md",
     "AI_USAGE_LOG.md",
+    "AI_ASSISTANCE_STATEMENT.md",
     "DEMO_SCRIPT.md",
     "FINAL_RESULTS.md",
     "PRESENTATION_EVIDENCE.md",
     "RELEASE_CHECKLIST.md",
     "REPORT_EVIDENCE.md",
+    "requirements.txt",
     "timetable_scheduler/AGENTS.md",
     "timetable_scheduler/main.py",
     "timetable_scheduler/run_ui.py",

@@ -1,155 +1,155 @@
 # Timetabling System Demo
 
-## Project Overview
+## Demo Goal
 
-This repository contains a Python prototype for the DSC2204 Integrative Team Project: a timetabling system for the SIT Engineering Cluster.
+Show a local desktop prototype that generates a hard-feasible Engineering Cluster timetable, including DSC, from one consolidated scheduling workbook. The key message is feasibility and transparency: scheduled classes have zero hard conflicts, and unresolved classes remain visible for review.
 
-The system loads Template 1 scheduling requirements, generates hard-feasible assignments, optionally improves soft-constraint quality, and exports a proposed Template 2 timetable plus stakeholder reports. The prototype prioritises feasibility: if a class cannot be scheduled safely, it remains visible for review instead of being forced into an invalid timetable slot.
+## Preparation
 
-## Local Setup
+Before the live demo:
 
-Run these commands in Windows PowerShell from the repository root:
+- install dependencies using the README instructions;
+- keep a valid consolidated Engineering schedule workbook ready;
+- keep a generated proposed timetable and summary workbook available as fallback evidence;
+- confirm the final generated evidence matches `FINAL_RESULTS.md`;
+- do not commit generated workbooks.
 
-```powershell
-cd C:\Users\Admin\Documents\GitHub\itp_group5
-py -m venv .venv
-.\.venv\Scripts\Activate.ps1
-cd timetable_scheduler
-py -m pip install -r requirements.txt
-```
+## Demo Flow
 
-## Test Command
+1. Launch the dark desktop application.
+2. Select a valid **Consolidated Schedule** workbook.
+3. Show that a generated timetable workbook is rejected as input.
+4. Click **Generate Timetable**.
+5. Show the loading screen while the Engineering pipeline runs.
+6. Show the completion summary.
+7. Open **Proposed Timetable**.
+8. Open **Timetable Views**.
+9. Review **Unscheduled Classes**.
+10. Review **Special Requests**.
+11. Explain baseline versus remarks-aware results.
+12. Explain zero hard conflicts.
 
-Run tests from inside the `timetable_scheduler` folder:
+## What To Say
 
-```powershell
-cd C:\Users\Admin\Documents\GitHub\itp_group5\timetable_scheduler
-py -m pytest -q
-```
+Suggested opening:
 
-## Desktop Demo
+> This prototype schedules the Engineering Cluster, including DSC. It treats hard constraints as non-negotiable. If a class cannot be placed safely, the system reports it for review instead of forcing an invalid timetable.
 
-Launch the local Windows desktop app:
+Suggested feasibility explanation:
 
-```powershell
-cd C:\Users\Admin\Documents\GitHub\itp_group5\timetable_scheduler
-python run_ui.py
-```
+> The main feasibility metric is scheduled hard conflicts. A value of zero means every class that received a room and time satisfies the hard constraints.
 
-Demo flow:
+Suggested transparency explanation:
 
-1. Select **Consolidated Schedule**.
-2. Choose one Template 1 `.xlsx` or `.xlsm` scheduling-requirements workbook.
-3. Click **Generate Timetable**.
-4. Wait for the loading screen to finish.
-5. Review the four headline results:
-   - Coverage
-   - Scheduled classes
-   - Classes needing review
-   - Hard conflicts
-6. Open the generated files with the plain-language output actions.
+> Unscheduled classes are not hidden. They appear in the exception review outputs so timetabling staff can decide whether more rooms, delivery-mode changes, split sessions, or manual handling are needed.
 
-The UI uses fixed validated Engineering defaults. Venue information, common-module data, Template 2 and output locations are loaded internally from the bundled `Data/` resources.
+## Completion Summary
 
-## Output Actions
+Point out:
 
-Use these completion-screen buttons:
+- coverage percentage;
+- scheduled classes;
+- classes needing review;
+- hard conflicts.
 
-- **Open Proposed Timetable**: opens the generated Template 2 workbook prepared for submission to the internal system.
-- **View Timetable Views**: opens programme, tutor and room timetable views.
-- **Review Unscheduled Classes**: opens the workbook containing the Exception Queue sheet for classes needing manual review.
-- **View Scheduling Summary**: opens coverage, validation checks and scheduling findings.
-- **Open All Files**: opens the output folder containing all generated artefacts.
+The completion screen uses plain-language output buttons so non-technical users do not need to know internal workbook names.
 
-Technical reports such as the run manifest and release validation remain available inside the generated output folder.
+## Proposed Timetable
 
-## Workflow
+Show that the timetable contains scheduled teaching activities with room, day, start time, end time, staff, group and remarks information. Explain that the output workbook structure is preserved for the downstream workflow.
 
-1. Programme scheduling requirements use Template 1.
-2. Requirements are consolidated.
-3. The consolidated Template 1 workbook is selected in the UI.
-4. The system validates and loads the requirements.
-5. The generator creates a hard-feasible timetable.
-6. The bounded optimiser improves soft-constraint quality.
-7. The timetable is exported using Template 2.
-8. Timetabling staff review the proposed timetable and unresolved exceptions.
+## Timetable Views
 
-## Advanced Command-Line Fallback
+Open the stakeholder views and show:
 
-Run the verified Engineering command when a command-line run is needed:
+- programme timetable;
+- tutor timetable;
+- room timetable;
+- exception queue;
+- special requests review.
 
-```powershell
-cd C:\Users\Admin\Documents\GitHub\itp_group5\timetable_scheduler
-python main.py --scope eng --skip-optimisation --max-candidate-patterns 300 --max-retry-assignments 50 --skip-unscheduled-diagnostics --progress-interval 25 --audit-demand-metrics
-```
+These views support operational review without changing the generated timetable itself.
 
-Expected Engineering result:
+## Unscheduled Classes
 
-- Required teaching occurrences: `2777`
-- Scheduled teaching occurrences: `2747`
-- Unscheduled teaching occurrences: `30`
-- Coverage rate: `98.92%`
-- Scheduled hard violations: `0`
-- Online coverage: `813 / 813`
+Show the exception queue. Explain that unresolved classes are part of the result, not a hidden failure.
 
-The remaining unscheduled teaching occurrences are intentionally reported, not hidden.
+Key framing:
 
-## Stakeholder Reports
+> The system refuses to reduce the unscheduled count by accepting hard violations.
 
-Running the pipeline creates decision-support workbooks in `timetable_scheduler/generated/`.
+## Special Requests
 
-`preflight_report.xlsx` lists input data issues found before scheduling, such as invalid class sizes, missing teaching weeks, delivery-mode concerns, or room capacity problems. These checks do not block scheduling; they help explain input risks before reviewing the timetable.
+Show the special requests review. Explain that the system interprets only supported, clear free-text remarks. Ambiguous remarks remain visible for staff confirmation instead of being guessed.
 
-`run_summary.xlsx` summarises the completed run with schedule counts, hard and soft violations, unscheduled reasons, room utilisation, programme breakdown and validation checks. This gives stakeholders a compact view of feasibility, unresolved scheduling demand and resource use without changing the Template 2 timetable export.
+Examples to mention:
 
-The unscheduled-analysis sheets keep the scheduler reasons visible so unresolved classes can be reviewed operationally.
+- multiple-room requirements;
+- hybrid-capable room requests;
+- delivery-mode flexibility;
+- room-type preferences;
+- unsupported or ambiguous remarks requiring manual review.
 
-## How to Read the Engineering Result
+## Baseline Versus Remarks-Aware Results
 
-The main feasibility success metric is scheduled hard violations. A value of `0` means every class that received a room and timeslot satisfies the hard constraints.
+Use this distinction carefully:
 
-Unscheduled assignments are not hidden. They remain visible in the summary and exception-review outputs so the project can explain what still needs more search time, better input data, more rooms, or manual review.
+- The core baseline disables remarks enforcement and shows restored structured scheduling behaviour.
+- The remarks-aware enhanced run enables deterministic interpretation of supported remarks.
+- Both runs use the same Engineering teaching-demand denominator of `2777` occurrences.
+- The enhanced run may schedule fewer occurrences because additional explicit requirements are enforced, not because hard constraints were weakened.
 
-All-assignment hard-violation counts may include unscheduled feasibility failures. Do not confuse those with invalid scheduled timetable entries.
-
-The `Validation Checks` sheet is the evidence page for presentation and reporting. It checks total consistency, scheduled hard-constraint safety, cluster data coverage and unscheduled visibility.
-
-## Clean Release ZIP
-
-Build a clean distributable ZIP from the repository root:
-
-```powershell
-cd C:\Users\Admin\Documents\GitHub\itp_group5
-python scripts/build_clean_release.py
-```
-
-The ZIP is written to:
+Core baseline:
 
 ```text
-dist/itp_group5_prototype.zip
+Required occurrences: 2777
+Scheduled occurrences: 2747
+Unscheduled occurrences: 30
+Coverage: 98.92%
+Scheduled hard violations: 0
+Online scheduled: 813 / 813
 ```
 
-The ZIP excludes `.git`, virtual environments, caches, generated outputs, editor folders and temporary files.
+Remarks-aware enhanced run:
+
+```text
+Required occurrences: 2777
+Scheduled occurrences: 2715
+Unscheduled occurrences: 62
+Coverage: 97.77%
+Scheduled hard violations: 0
+```
+
+Attribution:
+
+```text
+30 unchanged baseline exceptions
+13 direct explicit remark effects
+19 indirect displacements
+0 unexplained occurrences
+```
+
+## Zero Hard Conflicts
+
+Show the scheduling summary or validation checks and point out that scheduled hard conflicts are zero.
+
+Suggested wording:
+
+> The system is not claiming a perfect timetable. It is claiming a hard-feasible timetable for the classes it schedules, plus a transparent exception list for the remaining demand.
+
+## Fallback Plan
+
+If the full Engineering run takes too long during presentation:
+
+1. Explain that Engineering scheduling is computationally heavier than the pilot checks.
+2. Open the pre-generated proposed timetable.
+3. Open the pre-generated scheduling summary.
+4. Walk through Summary, Validation Checks, Programme Breakdown, Resource Audit, Residual F2F Analysis and Special Requests Review.
+5. State that generated files are local artefacts and are excluded from Git.
 
 ## Troubleshooting
 
-- Activate the virtual environment before running commands:
-
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
-
-- Run pytest from the `timetable_scheduler` folder:
-
-```powershell
-cd C:\Users\Admin\Documents\GitHub\itp_group5\timetable_scheduler
-py -m pytest -q
-```
-
-- Generated folders should not be committed:
-
-```text
-timetable_scheduler/generated/
-timetable_scheduler/output_files/
-dist/
-```
+- Activate the project virtual environment before running the application.
+- Run tests from the `timetable_scheduler` folder.
+- Generated folders such as `generated/`, `output_files/` and `dist/` should not be committed.
+- If a workbook is rejected, confirm it is a valid consolidated scheduling requirements workbook rather than a generated timetable.

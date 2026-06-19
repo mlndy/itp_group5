@@ -2,7 +2,7 @@
 
 ## Cross-Check Note
 
-This checkout does not contain `FINAL_RESULTS.md` or `RELEASE_CHECKLIST.md`, and `DEMO.md` contains an older Engineering final command. The figures and live-demo command below follow the verified report-phase task prompt.
+This checkout has been reconciled with the release-ready prototype state. `FINAL_RESULTS.md`, `RELEASE_CHECKLIST.md`, and the final demo flow are present. Baseline and remarks-aware figures must be presented separately.
 
 ## Slide 1: Problem and Current Manual Workflow
 
@@ -38,7 +38,7 @@ Talking points:
 
 Proposed screenshot or chart: Demand versus scheduled teaching occurrence bar chart.
 
-Exact verified figure to show: `2777` required, `2747` scheduled, `30` unscheduled.
+Exact verified figure to show: baseline `2777` required, `2747` scheduled, `30` unscheduled.
 
 Source workbook/report sheet: `run_summary.xlsx`, Summary sheet.
 
@@ -122,7 +122,7 @@ Talking points:
 
 Proposed screenshot or chart: Generator flow diagram.
 
-Exact verified figure to show: Coverage rate `98.92%`.
+Exact verified figure to show: baseline coverage rate `98.92%`; remarks-aware coverage rate `97.77%`.
 
 Source workbook/report sheet: Summary sheet.
 
@@ -143,7 +143,7 @@ Talking points:
 
 Proposed screenshot or chart: Unscheduled breakdown or Residual F2F Analysis.
 
-Exact verified figure to show: `30` unscheduled teaching occurrences.
+Exact verified figure to show: baseline `30` unscheduled teaching occurrences; remarks-aware `62` unscheduled teaching occurrences.
 
 Source workbook/report sheet: Unscheduled Breakdown and Residual F2F Analysis.
 
@@ -178,15 +178,24 @@ Slide objective: Present final validated results.
 
 Talking points:
 
+Baseline result:
+
 - Required teaching occurrences: `2777`.
 - Scheduled teaching occurrences: `2747`.
 - Unscheduled teaching occurrences: `30`.
 - Scheduled hard violations: `0`.
 - DSC inclusion: `PASS`.
 
+Remarks-aware result:
+
+- Scheduled teaching occurrences: `2715`.
+- Unscheduled teaching occurrences: `62`.
+- Scheduled hard violations: `0`.
+- Attribution: `13` direct explicit effects, `19` indirect displacements, `30` unchanged baseline exceptions, `0` unexplained.
+
 Proposed screenshot or chart: Summary and Validation Checks.
 
-Exact verified figure to show: `2747 / 2777`, `98.92%`.
+Exact verified figure to show: baseline `2747 / 2777`, `98.92%`; remarks-aware `2715 / 2777`, `97.77%`.
 
 Source workbook/report sheet: Summary and Validation Checks.
 
@@ -250,7 +259,7 @@ Talking points:
 
 Proposed screenshot or chart: Validation Checks PASS rows.
 
-Exact verified figure to show: Release validator `PASS`, tests `112 passed`.
+Exact verified figure to show: Release validator `PASS`, tests `220 passed`.
 
 Source workbook/report sheet: Validation Checks and test output.
 

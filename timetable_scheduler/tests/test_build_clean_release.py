@@ -32,11 +32,13 @@ def create_required_release_tree(root: Path) -> None:
         "README.md",
         "DEMO.md",
         "AI_USAGE_LOG.md",
+        "AI_ASSISTANCE_STATEMENT.md",
         "DEMO_SCRIPT.md",
         "FINAL_RESULTS.md",
         "PRESENTATION_EVIDENCE.md",
         "RELEASE_CHECKLIST.md",
         "REPORT_EVIDENCE.md",
+        "requirements.txt",
         "timetable_scheduler/AGENTS.md",
         "timetable_scheduler/main.py",
         "timetable_scheduler/run_ui.py",
@@ -69,8 +71,14 @@ def test_clean_release_zip_excludes_runtime_and_development_folders(tmp_path: Pa
         "timetable_scheduler/output_files/template2.xlsx",
         "dist/old.zip",
         ".vscode/settings.json",
+        ".idea/workspace.xml",
+        ".DS_Store",
+        "Thumbs.db",
         "~$Template.xlsx",
         "scratch.tmp",
+        "notes.temp",
+        "run.log",
+        "old_release.zip",
     ]:
         write_file(tmp_path / path)
 
@@ -87,8 +95,13 @@ def test_clean_release_zip_excludes_runtime_and_development_folders(tmp_path: Pa
     assert not any("__pycache__/" in name or ".pytest_cache/" in name for name in names)
     assert not any("generated/" in name or "output_files/" in name for name in names)
     assert not any(name.startswith("dist/") for name in names)
-    assert not any(name.startswith(".vscode/") for name in names)
-    assert not any(name.endswith(".pyc") or name.startswith("~$") or name.endswith(".tmp") for name in names)
+    assert not any(name.startswith(".vscode/") or name.startswith(".idea/") for name in names)
+    assert ".DS_Store" not in names
+    assert "Thumbs.db" not in names
+    assert not any(
+        name.endswith((".pyc", ".tmp", ".temp", ".log", ".zip")) or name.startswith("~$")
+        for name in names
+    )
     assert result.file_count == len(names)
     assert result.size_bytes > 0
 

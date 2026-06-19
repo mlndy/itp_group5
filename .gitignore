@@ -15,5 +15,11 @@ dist/
 
 # Editor and temporary files
 .vscode/
+.idea/
+.DS_Store
+Thumbs.db
 ~$*.xlsx
 *.tmp
+*.temp
+*.log
+*.zip
