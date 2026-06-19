@@ -25,10 +25,14 @@ from engine.constraint_checker import (
 from engine.demand_metrics import DemandMetrics, build_demand_metrics, requirement_demand_lookup, requirement_key
 from engine.remarks_interpreter import (
     RemarkEnforcement,
+    RemarkHandlingStatus,
+    RemarkRequirements,
     assignment_room_ids,
     assignment_rooms,
     assignment_satisfies_interpretation,
     course_remark_requirements,
+    hard_enforceable_interpretations,
+    is_hard_enforceable,
 )
 from engine.resource_audit import ResourceAudit, audit_resources
 from generator.scheduler import get_candidate_rooms, schedulable_weeks
@@ -52,6 +56,8 @@ UNSCHEDULED_ANALYSIS_COLUMNS = [
     "Required Week Count",
     "Scheduled Week Count",
     "Unscheduled Week Count",
+    "Base Unscheduled Reason",
+    "Remark Unscheduled Reason",
 ]
 UNSCHEDULED_BREAKDOWN_COLUMNS = ["Breakdown", "Value", "Count"]
 RESIDUAL_F2F_COLUMNS = [
@@ -142,6 +148,7 @@ REMARKS_INTERPRETATION_COLUMNS = [
     "Extracted Parameters",
     "Enforcement",
     "Confidence",
+    "Hard Enforceable",
     "Applied Status",
     "Assigned Rooms",
     "Selected Delivery Mode",
@@ -152,13 +159,22 @@ SPECIAL_REQUEST_REVIEW_COLUMNS = [
     "Programme",
     "Module",
     "Activity",
+    "Teaching Weeks",
     "Special Request",
     "What the System Understood",
+    "Confidence",
+    "Requirement Type",
     "How It Was Handled",
-    "Timetable Result",
+    "Scheduled?",
+    "Assigned Day",
+    "Assigned Time",
+    "Assigned Room(s)",
+    "Selected Delivery Mode",
     "Needs Manual Review",
-    "Review Notes",
+    "Why Review Is Needed",
+    "Recommended Action",
     "Review Status",
+    "Review Notes",
 ]
 TEMPLATE2_REQUIRED_COLUMNS = [
     "Module",
@@ -385,6 +401,8 @@ def _unscheduled_analysis_df(assignments: list[Assignment], demand_courses: list
                     "Required Week Count": demand.required_week_count if demand else None,
                     "Scheduled Week Count": demand.scheduled_week_count if demand else None,
                     "Unscheduled Week Count": demand.unscheduled_week_count if demand else None,
+                    "Base Unscheduled Reason": assignment.base_unscheduled_reason,
+                    "Remark Unscheduled Reason": assignment.remark_unscheduled_reason,
                 }
             )
     return pd.DataFrame(rows, columns=UNSCHEDULED_ANALYSIS_COLUMNS)
@@ -1035,6 +1053,206 @@ def _remarks_result_text(assignment: Assignment) -> str:
     return f"Scheduled {assignment.timeslot.day} {assignment.timeslot.start_time}, rooms {assignment_room_ids(assignment)}"
 
 
+HANDLING_STATUS_LABELS = {
+    RemarkHandlingStatus.AUTOMATICALLY_APPLIED: "Applied automatically",
+    RemarkHandlingStatus.PREFERENCE_CONSIDERED: "Considered as a preference",
+    RemarkHandlingStatus.SCHEDULED_NEEDS_CONFIRMATION: "Scheduled, confirmation required",
+    RemarkHandlingStatus.UNSCHEDULED_DUE_TO_REQUEST: "Could not schedule because of explicit request",
+    RemarkHandlingStatus.UNSUPPORTED_NON_BLOCKING: "Not automatically interpreted",
+    RemarkHandlingStatus.NO_SCHEDULING_ACTION: "No timetable action needed",
+}
+
+
+def _course_review_key(course: Course) -> tuple[object, ...]:
+    """Return a stable course-level key for special-request review."""
+    return (
+        course.source_file,
+        course.source_row,
+        course.module_code,
+        course.activity,
+        course.prog_yr,
+        tuple(course.group_ids),
+        tuple(course.teaching_weeks),
+    )
+
+
+def _group_remark_assignments(assignments: list[Assignment]) -> list[list[Assignment]]:
+    """Group assignment rows by remarked course requirement."""
+    grouped: dict[tuple[object, ...], list[Assignment]] = {}
+    for assignment in assignments:
+        if not str(assignment.course.remarks or "").strip():
+            continue
+        grouped.setdefault(_course_review_key(assignment.course), []).append(assignment)
+    return list(grouped.values())
+
+
+def _interpretation_confidence_text(requirements: RemarkRequirements) -> str:
+    """Return a compact confidence summary for one remark."""
+    order = {value: index for index, value in enumerate(["high", "medium", "low"])}
+    values = sorted({item.confidence.value for item in requirements.interpretations}, key=lambda value: order.get(value, 99))
+    return "; ".join(values)
+
+
+def _interpretation_type_text(requirements: RemarkRequirements) -> str:
+    """Return plain requirement-type labels for one remark."""
+    labels: list[str] = []
+    hard_items = hard_enforceable_interpretations(requirements)
+    if hard_items:
+        labels.append("Explicit hard requirement")
+    if any(item.enforcement == RemarkEnforcement.SOFT for item in requirements.interpretations):
+        labels.append("Preference")
+    if any(item.enforcement == RemarkEnforcement.FALLBACK for item in requirements.interpretations):
+        labels.append("Fallback option")
+    if any(item.enforcement == RemarkEnforcement.REVIEW for item in requirements.interpretations):
+        labels.append("Manual review")
+    return "; ".join(labels) or "No scheduling action"
+
+
+def _has_informational_remark(requirements: RemarkRequirements) -> bool:
+    """Return True when a remark is explicitly informational."""
+    return any(bool(item.parameters.get("informational")) for item in requirements.interpretations)
+
+
+def _has_unsupported_only(requirements: RemarkRequirements) -> bool:
+    """Return True when no supported scheduling pattern was detected."""
+    return bool(requirements.interpretations) and all(
+        item.rule_name == "unsupported_remark" for item in requirements.interpretations
+    )
+
+
+def _has_explicit_remark_failure(assignments: list[Assignment]) -> bool:
+    """Return True when an unscheduled row carries remark-specific failure evidence."""
+    for assignment in assignments:
+        if _is_scheduled_assignment(assignment):
+            continue
+        if assignment.remark_unscheduled_reason:
+            return True
+        if any("explicit" in reason.casefold() for reason in assignment.hard_violations):
+            return True
+    return False
+
+
+def _hard_items_satisfied(assignments: list[Assignment], requirements: RemarkRequirements) -> bool:
+    """Return True when all scheduled rows satisfy every hard-enforceable interpretation."""
+    hard_items = hard_enforceable_interpretations(requirements)
+    scheduled = [assignment for assignment in assignments if _is_scheduled_assignment(assignment)]
+    if not hard_items or not scheduled:
+        return False
+    return all(
+        all(assignment_satisfies_interpretation(assignment, interpretation) for interpretation in hard_items)
+        for assignment in scheduled
+    )
+
+
+def _remark_handling_status(assignments: list[Assignment]) -> RemarkHandlingStatus:
+    """Return one primary handling status for a remarked course."""
+    course = assignments[0].course
+    requirements = course_remark_requirements(course)
+    scheduled = any(_is_scheduled_assignment(assignment) for assignment in assignments)
+    if _has_informational_remark(requirements) and not requirements.needs_manual_review:
+        return RemarkHandlingStatus.NO_SCHEDULING_ACTION
+    if _has_explicit_remark_failure(assignments):
+        return RemarkHandlingStatus.UNSCHEDULED_DUE_TO_REQUEST
+    if requirements.needs_manual_review:
+        if _has_unsupported_only(requirements):
+            return RemarkHandlingStatus.UNSUPPORTED_NON_BLOCKING
+        if scheduled:
+            return RemarkHandlingStatus.SCHEDULED_NEEDS_CONFIRMATION
+        return RemarkHandlingStatus.UNSUPPORTED_NON_BLOCKING
+    if any(item.enforcement == RemarkEnforcement.SOFT for item in requirements.interpretations):
+        return RemarkHandlingStatus.PREFERENCE_CONSIDERED
+    if _hard_items_satisfied(assignments, requirements):
+        return RemarkHandlingStatus.AUTOMATICALLY_APPLIED
+    if _has_unsupported_only(requirements):
+        return RemarkHandlingStatus.UNSUPPORTED_NON_BLOCKING
+    return RemarkHandlingStatus.NO_SCHEDULING_ACTION
+
+
+def _scheduled_text(course: Course, assignments: list[Assignment]) -> str:
+    """Return Yes, Partial, or No for course-level scheduled coverage."""
+    scheduled_weeks = {assignment.timeslot.week for assignment in assignments if assignment.timeslot is not None}
+    if not scheduled_weeks:
+        return "No"
+    required_weeks = set(schedulable_weeks(course.teaching_weeks))
+    if required_weeks and required_weeks <= scheduled_weeks:
+        return "Yes"
+    return "Partial"
+
+
+def _assigned_values(assignments: list[Assignment], attribute: str) -> str:
+    """Return unique scheduled values for day or start time."""
+    values: list[str] = []
+    for assignment in assignments:
+        if assignment.timeslot is None:
+            continue
+        value = str(getattr(assignment.timeslot, attribute))
+        if value not in values:
+            values.append(value)
+    return ", ".join(values)
+
+
+def _assigned_rooms_text(assignments: list[Assignment]) -> str:
+    """Return unique room groups across scheduled rows."""
+    values: list[str] = []
+    for assignment in assignments:
+        if not _is_scheduled_assignment(assignment):
+            continue
+        value = assignment_room_ids(assignment)
+        if value and value not in values:
+            values.append(value)
+    return "; ".join(values)
+
+
+def _selected_delivery_text(assignments: list[Assignment]) -> str:
+    """Return unique selected delivery modes for scheduled rows."""
+    values: list[str] = []
+    for assignment in assignments:
+        if not _is_scheduled_assignment(assignment):
+            continue
+        value = assignment.selected_delivery_mode or assignment.course.delivery_mode
+        if value and value not in values:
+            values.append(value)
+    return "; ".join(values)
+
+
+def _review_needed(status: RemarkHandlingStatus, requirements: RemarkRequirements) -> bool:
+    """Return True when staff review remains useful."""
+    return status in {
+        RemarkHandlingStatus.SCHEDULED_NEEDS_CONFIRMATION,
+        RemarkHandlingStatus.UNSCHEDULED_DUE_TO_REQUEST,
+        RemarkHandlingStatus.UNSUPPORTED_NON_BLOCKING,
+    } or bool(requirements.needs_manual_review)
+
+
+def _why_review_needed(assignments: list[Assignment], requirements: RemarkRequirements) -> str:
+    """Return concise review evidence for a special request."""
+    remark_reasons = [
+        assignment.remark_unscheduled_reason
+        for assignment in assignments
+        if assignment.remark_unscheduled_reason
+    ]
+    if remark_reasons:
+        return "; ".join(dict.fromkeys(remark_reasons))
+    if requirements.review_reason:
+        return requirements.review_reason
+    return ""
+
+
+def _recommended_special_request_action(status: RemarkHandlingStatus) -> str:
+    """Return the next stakeholder action for one handling status."""
+    if status == RemarkHandlingStatus.AUTOMATICALLY_APPLIED:
+        return "No action required unless operational context changes."
+    if status == RemarkHandlingStatus.PREFERENCE_CONSIDERED:
+        return "Review only if the preference is operationally critical."
+    if status == RemarkHandlingStatus.SCHEDULED_NEEDS_CONFIRMATION:
+        return "Confirm the special-request details with programme staff."
+    if status == RemarkHandlingStatus.UNSCHEDULED_DUE_TO_REQUEST:
+        return "Review the explicit request, room supply, or approved exception."
+    if status == RemarkHandlingStatus.UNSUPPORTED_NON_BLOCKING:
+        return "Review the raw remark and decide whether manual timetabling action is needed."
+    return "No timetable action required."
+
+
 def _remarks_interpretation_df(assignments: list[Assignment]) -> pd.DataFrame:
     """Return row-level explainability for interpreted scheduling remarks."""
     rows: list[dict[str, object]] = []
@@ -1078,6 +1296,7 @@ def _remarks_interpretation_df(assignments: list[Assignment]) -> pd.DataFrame:
                     "Extracted Parameters": str(interpretation.parameters),
                     "Enforcement": interpretation.enforcement.value,
                     "Confidence": interpretation.confidence.value,
+                    "Hard Enforceable": "Yes" if is_hard_enforceable(interpretation) else "No",
                     "Applied Status": applied_status,
                     "Assigned Rooms": assignment_room_ids(assignment),
                     "Selected Delivery Mode": assignment.selected_delivery_mode or assignment.course.delivery_mode,
@@ -1091,45 +1310,34 @@ def _remarks_interpretation_df(assignments: list[Assignment]) -> pd.DataFrame:
 def _special_requests_review_df(assignments: list[Assignment]) -> pd.DataFrame:
     """Return plain-language special-request review rows."""
     rows: list[dict[str, object]] = []
-    seen: set[tuple[object, ...]] = set()
-    for assignment in assignments:
-        requirements = course_remark_requirements(assignment.course)
-        if not assignment.course.remarks:
-            continue
+    for grouped_assignments in _group_remark_assignments(assignments):
+        assignment = grouped_assignments[0]
+        course = assignment.course
+        requirements = course_remark_requirements(course)
+        status = _remark_handling_status(grouped_assignments)
+        needs_review = _review_needed(status, requirements)
         understood = "; ".join(item.explanation for item in requirements.interpretations)
-        handled_parts: list[str] = []
-        if requirements.interpretations:
-            for interpretation in requirements.interpretations:
-                if interpretation.enforcement == RemarkEnforcement.REVIEW:
-                    handled_parts.append("Sent for manual review")
-                elif assignment_satisfies_interpretation(assignment, interpretation):
-                    handled_parts.append(f"Applied {interpretation.rule_name}")
-                elif _is_scheduled_assignment(assignment):
-                    handled_parts.append(f"Not applied: {interpretation.rule_name}")
-                else:
-                    handled_parts.append(f"Could not schedule: {interpretation.rule_name}")
-        key = (
-            assignment.course.source_file,
-            assignment.course.source_row,
-            assignment.course.module_code,
-            assignment.course.activity,
-            assignment.timeslot.week if assignment.timeslot else None,
-        )
-        if key in seen:
-            continue
-        seen.add(key)
         rows.append(
             {
-                "Programme": assignment.course.prog_yr,
-                "Module": assignment.course.module_code,
-                "Activity": assignment.course.activity,
-                "Special Request": assignment.course.remarks,
+                "Programme": course.prog_yr,
+                "Module": course.module_code,
+                "Activity": course.activity,
+                "Teaching Weeks": _format_weeks(course.teaching_weeks),
+                "Special Request": course.remarks,
                 "What the System Understood": understood or "No supported pattern detected.",
-                "How It Was Handled": "; ".join(dict.fromkeys(handled_parts)) or "Sent for manual review",
-                "Timetable Result": _remarks_result_text(assignment),
-                "Needs Manual Review": "Yes" if requirements.needs_manual_review else "No",
-                "Review Notes": requirements.review_reason,
-                "Review Status": "Open" if requirements.needs_manual_review else "For review",
+                "Confidence": _interpretation_confidence_text(requirements),
+                "Requirement Type": _interpretation_type_text(requirements),
+                "How It Was Handled": HANDLING_STATUS_LABELS[status],
+                "Scheduled?": _scheduled_text(course, grouped_assignments),
+                "Assigned Day": _assigned_values(grouped_assignments, "day"),
+                "Assigned Time": _assigned_values(grouped_assignments, "start_time"),
+                "Assigned Room(s)": _assigned_rooms_text(grouped_assignments),
+                "Selected Delivery Mode": _selected_delivery_text(grouped_assignments),
+                "Needs Manual Review": "Yes" if needs_review else "No",
+                "Why Review Is Needed": _why_review_needed(grouped_assignments, requirements),
+                "Recommended Action": _recommended_special_request_action(status),
+                "Review Status": "Open" if needs_review else "Closed",
+                "Review Notes": "",
             }
         )
     return pd.DataFrame(rows, columns=SPECIAL_REQUEST_REVIEW_COLUMNS)
@@ -1138,28 +1346,28 @@ def _special_requests_review_df(assignments: list[Assignment]) -> pd.DataFrame:
 def _special_requests_summary_df(assignments: list[Assignment]) -> pd.DataFrame:
     """Return headline counts for special-request handling."""
     review_df = _special_requests_review_df(assignments)
-    interpretation_df = _remarks_interpretation_df(assignments)
     if review_df.empty:
         return _metric_rows(
             {
-                "Remarks found": 0,
-                "Automatically applied": 0,
-                "Partially applied": 0,
-                "Needs manual review": 0,
-                "Unsupported": 0,
+                "Total non-empty remarks": 0,
+                "Applied automatically": 0,
+                "Preferences considered": 0,
+                "Scheduled needing confirmation": 0,
+                "Unscheduled due to explicit request": 0,
+                "Unsupported non-blocking": 0,
+                "No scheduling action required": 0,
             }
         )
-    applied = int((interpretation_df["Applied Status"] == "Applied").sum()) if not interpretation_df.empty else 0
-    review = int((review_df["Needs Manual Review"] == "Yes").sum())
-    unsupported = int((interpretation_df["Detected Rule"] == "unsupported_remark").sum()) if not interpretation_df.empty else 0
-    partial = int((interpretation_df["Applied Status"] == "Not applied").sum()) if not interpretation_df.empty else 0
+    handling_counts = review_df["How It Was Handled"].value_counts()
     return _metric_rows(
         {
-            "Remarks found": len(review_df),
-            "Automatically applied": applied,
-            "Partially applied": partial,
-            "Needs manual review": review,
-            "Unsupported": unsupported,
+            "Total non-empty remarks": len(review_df),
+            "Applied automatically": int(handling_counts.get(HANDLING_STATUS_LABELS[RemarkHandlingStatus.AUTOMATICALLY_APPLIED], 0)),
+            "Preferences considered": int(handling_counts.get(HANDLING_STATUS_LABELS[RemarkHandlingStatus.PREFERENCE_CONSIDERED], 0)),
+            "Scheduled needing confirmation": int(handling_counts.get(HANDLING_STATUS_LABELS[RemarkHandlingStatus.SCHEDULED_NEEDS_CONFIRMATION], 0)),
+            "Unscheduled due to explicit request": int(handling_counts.get(HANDLING_STATUS_LABELS[RemarkHandlingStatus.UNSCHEDULED_DUE_TO_REQUEST], 0)),
+            "Unsupported non-blocking": int(handling_counts.get(HANDLING_STATUS_LABELS[RemarkHandlingStatus.UNSUPPORTED_NON_BLOCKING], 0)),
+            "No scheduling action required": int(handling_counts.get(HANDLING_STATUS_LABELS[RemarkHandlingStatus.NO_SCHEDULING_ACTION], 0)),
         }
     )
 

@@ -60,6 +60,8 @@ class Assignment:
     soft_violations: list[str] = field(default_factory=list)
     additional_rooms: tuple[Room, ...] = ()
     selected_delivery_mode: str = ""
+    base_unscheduled_reason: str = ""
+    remark_unscheduled_reason: str = ""
 
     @property
     def status(self) -> str:

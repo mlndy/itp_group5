@@ -504,8 +504,76 @@ def test_stakeholder_views_include_special_requests_review(tmp_path: Path) -> No
     workbook = load_workbook(output)
     headers = [cell.value for cell in workbook["Special Requests Review"][1]]
     values = dict(zip(headers, [cell.value for cell in workbook["Special Requests Review"][2]], strict=False))
+    assert "Teaching Weeks" in headers
+    assert "How It Was Handled" in headers
+    assert "Recommended Action" in headers
     assert values["Special Request"] == "Additional rooms for quizzes"
     assert values["Needs Manual Review"] == "Yes"
+    assert values["How It Was Handled"] == "Scheduled, confirmation required"
+    assert values["Scheduled?"] == "Yes"
+
+
+def test_special_requests_summary_reconciles_to_remarked_courses(tmp_path: Path) -> None:
+    """Course-level special-request counts should reconcile to remarked courses."""
+    output = tmp_path / "stakeholder_views.xlsx"
+    assignments = [
+        Assignment(
+            make_course(module_code="ENG1001", remarks="Need 2 rooms"),
+            Room("R1", 20, "physical"),
+            TimeSlot("Monday", "09:00", 1),
+            additional_rooms=(Room("R2", 20, "physical"),),
+        ),
+        Assignment(
+            make_course(module_code="ENG1002", remarks="Computer room preferred"),
+            Room("SEM1", 100, "physical"),
+            TimeSlot("Monday", "09:00", 1),
+        ),
+        Assignment(
+            make_course(module_code="ENG1003", remarks="Assessment details to follow"),
+            Room("R3", 100, "physical"),
+            TimeSlot("Monday", "09:00", 1),
+        ),
+    ]
+
+    export_stakeholder_views(assignments, [Room("R1", 100, "physical")], output)
+
+    workbook = load_workbook(output)
+    summary = {row[0]: row[1] for row in _sheet_rows(workbook, "Special Requests Summary")[1:]}
+    assert summary["Total non-empty remarks"] == 3
+    assert (
+        summary["Applied automatically"]
+        + summary["Preferences considered"]
+        + summary["Scheduled needing confirmation"]
+        + summary["Unscheduled due to explicit request"]
+        + summary["Unsupported non-blocking"]
+        + summary["No scheduling action required"]
+    ) == 3
+    review_rows = _sheet_rows(workbook, "Special Requests Review")
+    assert len(review_rows) == 4
+
+
+def test_special_requests_review_reports_explicit_unscheduled_reason(tmp_path: Path) -> None:
+    """Explicit remark failures should show both review status and reason text."""
+    output = tmp_path / "stakeholder_views.xlsx"
+    assignment = Assignment(
+        make_course(remarks="Need 2 rooms"),
+        None,
+        None,
+        hard_violations=[
+            "Could not find feasible weekly room/day/start pattern",
+            "Explicit two-room requirement could not be satisfied simultaneously.",
+        ],
+        base_unscheduled_reason="Could not find feasible weekly room/day/start pattern",
+        remark_unscheduled_reason="Explicit two-room requirement could not be satisfied simultaneously.",
+    )
+
+    export_stakeholder_views([assignment], [Room("R1", 20, "physical")], output)
+
+    workbook = load_workbook(output)
+    headers = [cell.value for cell in workbook["Special Requests Review"][1]]
+    values = dict(zip(headers, [cell.value for cell in workbook["Special Requests Review"][2]], strict=False))
+    assert values["How It Was Handled"] == "Could not schedule because of explicit request"
+    assert values["Why Review Is Needed"] == "Explicit two-room requirement could not be satisfied simultaneously."
 
 
 def test_remarks_interpretation_handles_room_type_application(tmp_path: Path) -> None:

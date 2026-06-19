@@ -16,6 +16,7 @@ from config import (
     DEFAULT_ROOM_FILE,
     DEFAULT_RUN_MANIFEST_FILE,
     DEFAULT_RUN_SUMMARY_FILE,
+    DEFAULT_REMARKS_COMPARISON_FILE,
     DEFAULT_STAKEHOLDER_VIEWS_FILE,
     DEFAULT_TEMPLATE2_FILE,
     OUTPUT_DIR,
@@ -32,6 +33,7 @@ from data.models import Course
 from engine.constraint_checker import annotate_schedule_violations, count_soft_violations, soft_violation_breakdown, weighted_soft_score
 from engine.demand_metrics import build_demand_metrics
 from engine.preflight_validator import run_preflight_checks
+from engine.remarks_comparison import export_remarks_coverage_comparison
 from engine.remarks_interpreter import export_remarks_audit
 from engine.resource_audit import audit_resources
 from engine.unscheduled_diagnostics import (
@@ -448,6 +450,38 @@ def main() -> None:
     if args.audit_demand_metrics:
         _print_demand_audit(courses, final_schedule)
 
+    remarks_comparison_path = None
+    if args.scope == "eng" and not args.disable_remark_interpretation:
+        print("\nGenerating remarks baseline comparison...")
+        baseline_schedule = generate_schedule(
+            courses,
+            rooms,
+            progress_callback=None,
+            progress_interval=args.progress_interval,
+            max_retry_assignments=args.max_retry_assignments,
+            max_candidate_patterns=args.max_candidate_patterns,
+            enable_remark_interpretation=False,
+        )
+        if not args.skip_optimisation:
+            baseline_result = optimise_schedule_with_stats(
+                baseline_schedule,
+                rooms,
+                max_iterations=args.max_iterations,
+                time_limit_seconds=args.optimisation_time_limit,
+                patience=args.optimisation_patience,
+            )
+            baseline_schedule = baseline_result.assignments
+        comparison = export_remarks_coverage_comparison(
+            courses,
+            baseline_schedule,
+            final_schedule,
+            DEFAULT_REMARKS_COMPARISON_FILE,
+            input_course_records=len(courses),
+        )
+        remarks_comparison_path = DEFAULT_REMARKS_COMPARISON_FILE
+        print(f"Saved: {DEFAULT_REMARKS_COMPARISON_FILE}")
+        print(f"Remarks attribution reconciliation: {'PASS' if comparison.attribution_reconciles else 'FAIL'}")
+
     if args.skip_unscheduled_diagnostics:
         print("Skipped unscheduled diagnostics.")
     else:
@@ -470,6 +504,8 @@ def main() -> None:
             "remarks_audit": DEFAULT_REMARKS_AUDIT_FILE,
         }
     )
+    if remarks_comparison_path is not None:
+        output_paths["remarks_coverage_comparison"] = remarks_comparison_path
     if not args.skip_preflight:
         output_paths["preflight_report"] = DEFAULT_PREFLIGHT_REPORT_FILE
     if not args.skip_unscheduled_diagnostics:

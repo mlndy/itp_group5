@@ -121,6 +121,25 @@ For Engineering scope:
 - DSC remains part of Engineering and must not appear as a separate UI option.
 - Existing scheduling rules must not be weakened.
 
+## Remarks Refinement and Coverage Attribution
+
+- Ambiguous remarks must not automatically block otherwise feasible scheduling.
+- Unsupported remarks should normally be scheduled using structured fields and flagged for review.
+- Only explicit, supported, high-confidence requirements may become hard constraints.
+- Preferences must remain soft constraints.
+- Low-confidence interpretations must never become hard constraints.
+- Every additional unscheduled occurrence caused by remarks must be attributed to a specific enforced rule.
+- The system must distinguish:
+  - automatically applied
+  - preference considered
+  - scheduled but needs confirmation
+  - unscheduled because of explicit request
+  - unsupported but non-blocking
+  - no scheduling action required
+- Zero scheduled hard violations must remain the primary safety requirement.
+- Do not change the existing timetable output structure.
+- Do not add Template 1 or Template 2 wording back into the UI.
+
 ## Engineering Coverage and Bottleneck Resolution
 
 - Current validated Engineering result:

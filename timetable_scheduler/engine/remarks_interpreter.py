@@ -31,6 +31,17 @@ class RemarkConfidence(str, Enum):
     LOW = "low"
 
 
+class RemarkHandlingStatus(str, Enum):
+    """Primary operational outcome for one remarked course."""
+
+    AUTOMATICALLY_APPLIED = "automatically_applied"
+    PREFERENCE_CONSIDERED = "preference_considered"
+    SCHEDULED_NEEDS_CONFIRMATION = "scheduled_needs_confirmation"
+    UNSCHEDULED_DUE_TO_REQUEST = "unscheduled_due_to_request"
+    UNSUPPORTED_NON_BLOCKING = "unsupported_non_blocking"
+    NO_SCHEDULING_ACTION = "no_scheduling_action"
+
+
 @dataclass(frozen=True, slots=True)
 class RemarkInterpretation:
     """One explainable interpretation from a raw scheduling remark."""
@@ -98,6 +109,23 @@ DAY_NAMES = {
 
 SOFT_WORDS = ("prefer", "preferred", "if possible", "ideally")
 HARD_WORDS = ("must", "required", "require", "requires", "need", "needs", "only", "fixed")
+UNCERTAIN_WORDS = ("may", "might", "possibly", "can consider", "to be confirmed", "tbc")
+SUPPORTED_HARD_RULES = {
+    "multiple_room_requirement",
+    "concurrent_parallel_groups",
+    "hybrid_delivery",
+    "recording_capable_room",
+    "room_type",
+    "fixed_day_time",
+}
+REPRESENTED_HARD_RULES = {
+    "multiple_room_requirement",
+    "concurrent_parallel_groups",
+    "hybrid_delivery",
+    "recording_capable_room",
+    "room_type",
+    "fixed_day_time",
+}
 
 
 def normalise_remark(raw_text: str | None) -> str:
@@ -142,6 +170,24 @@ def _has_hard_word(text: str) -> bool:
     return any(word in text for word in HARD_WORDS)
 
 
+def _has_uncertain_word(text: str) -> bool:
+    """Return True when the remark wording is uncertain or pending confirmation."""
+    return any(word in text for word in UNCERTAIN_WORDS)
+
+
+def _is_informational(text: str) -> bool:
+    """Return True for remarks that do not request timetable action."""
+    patterns = [
+        r"\bassessment details? to follow\b",
+        r"\bfor programme information\b",
+        r"\bpending lecturer confirmation\b",
+        r"\btiming to be confirmed\b",
+        r"\bto be confirmed\b",
+        r"\btbc\b",
+    ]
+    return any(re.search(pattern, text) for pattern in patterns)
+
+
 def _number(value: str) -> int:
     """Parse a digit or already-normalised number word."""
     return int(value)
@@ -163,15 +209,18 @@ def _detect_multiple_rooms(raw: str, text: str, req: RemarkRequirements, items: 
         if _looks_like_non_room_count(text, match.start(), match.end()):
             continue
         count = _number(match.group(1))
-        if count > req.required_room_count:
+        if count <= 2 and count > req.required_room_count:
             req.required_room_count = count
+        if count > 2:
+            req.needs_manual_review = True
+            req.review_reason = req.review_reason or "More rooms are requested than the output workbook can represent."
         items.append(
             _interpretation(
                 raw,
                 text,
                 "multiple_room_requirement",
-                {"required_room_count": count},
-                RemarkEnforcement.HARD,
+                {"required_room_count": count, "explicit": True, "complete": True, "representable": count <= 2},
+                RemarkEnforcement.HARD if count <= 2 else RemarkEnforcement.REVIEW,
                 RemarkConfidence.HIGH,
                 f"Detected an explicit request for {count} rooms.",
             )
@@ -185,7 +234,7 @@ def _detect_multiple_rooms(raw: str, text: str, req: RemarkRequirements, items: 
                 raw,
                 text,
                 "additional_rooms_unspecified",
-                {},
+                {"explicit": False, "complete": False, "representable": False},
                 RemarkEnforcement.REVIEW,
                 RemarkConfidence.MEDIUM,
                 "Detected additional-room wording, but no exact room count was supplied.",
@@ -196,17 +245,18 @@ def _detect_multiple_rooms(raw: str, text: str, req: RemarkRequirements, items: 
     if parallel:
         count = _number(parallel.group(1))
         req.concurrent_groups = count
-        req.required_room_count = max(req.required_room_count, count)
         if count > 2:
             req.needs_manual_review = True
             req.review_reason = req.review_reason or "More rooms are requested than the output workbook can represent."
+        elif count > req.required_room_count:
+            req.required_room_count = count
         items.append(
             _interpretation(
                 raw,
                 text,
                 "concurrent_parallel_groups",
-                {"concurrent_groups": count, "required_room_count": count},
-                RemarkEnforcement.HARD,
+                {"concurrent_groups": count, "required_room_count": count, "explicit": True, "complete": True, "representable": count <= 2},
+                RemarkEnforcement.HARD if count <= 2 else RemarkEnforcement.REVIEW,
                 RemarkConfidence.HIGH,
                 f"Detected {count} concurrent parallel groups.",
             )
@@ -227,28 +277,55 @@ def _detect_hybrid_delivery(raw: str, text: str, req: RemarkRequirements, items:
         r"\boverseas\b.*\bonline\b",
     ]
     if any(re.search(pattern, text) for pattern in hybrid_patterns):
-        req.requires_hybrid_delivery = True
-        req.requires_recording_room = True
+        explicit = _has_hard_word(text) or "simultaneous" in text or "physical and online" in text or "physical and virtual" in text or text.strip() == "hybrid"
+        uncertain = _has_soft_word(text) or _has_uncertain_word(text) or "can support" in text or "to support" in text
+        if explicit and not uncertain:
+            req.requires_hybrid_delivery = True
+            req.requires_recording_room = True
+            enforcement = RemarkEnforcement.HARD
+            confidence = RemarkConfidence.HIGH
+            explanation = "Detected explicit simultaneous physical and online delivery wording."
+        elif _has_soft_word(text):
+            enforcement = RemarkEnforcement.SOFT
+            confidence = RemarkConfidence.HIGH
+            req.needs_manual_review = True
+            req.review_reason = req.review_reason or "Hybrid support is requested as a preference and needs confirmation."
+            explanation = "Detected a hybrid-delivery preference; it will not block scheduling."
+        else:
+            enforcement = RemarkEnforcement.REVIEW
+            confidence = RemarkConfidence.MEDIUM
+            req.needs_manual_review = True
+            req.review_reason = req.review_reason or "Hybrid wording is not explicit enough to enforce automatically."
+            explanation = "Detected possible hybrid delivery wording that needs confirmation."
         items.append(
             _interpretation(
                 raw,
                 text,
                 "hybrid_delivery",
-                {"requires_hybrid_delivery": True, "requires_recording_room": True},
-                RemarkEnforcement.HARD,
-                RemarkConfidence.HIGH,
-                "Detected simultaneous physical and online delivery wording.",
+                {
+                    "requires_hybrid_delivery": explicit and not uncertain,
+                    "requires_recording_room": explicit and not uncertain,
+                    "explicit": explicit,
+                    "complete": explicit and not uncertain,
+                    "representable": True,
+                    "proxy_note": "Recording capability used as the available dataset proxy for hybrid support.",
+                },
+                enforcement,
+                confidence,
+                explanation,
             )
         )
     if re.search(r"\brecording\b|\brecorded\b|\brecord\b", text):
-        req.requires_recording_room = True
+        explicit = _has_hard_word(text)
+        if explicit:
+            req.requires_recording_room = True
         items.append(
             _interpretation(
                 raw,
                 text,
                 "recording_capable_room",
-                {"requires_recording_room": True},
-                RemarkEnforcement.HARD if _has_hard_word(text) or req.requires_hybrid_delivery else RemarkEnforcement.SOFT,
+                {"requires_recording_room": explicit, "explicit": explicit, "complete": explicit, "representable": True},
+                RemarkEnforcement.HARD if explicit else RemarkEnforcement.SOFT,
                 RemarkConfidence.HIGH,
                 "Detected a recording-capable room request.",
             )
@@ -275,7 +352,7 @@ def _detect_flexible_delivery(
                 raw,
                 text,
                 "flexible_delivery_mode",
-                {"allowed_delivery_modes": ["f2f", "online"]},
+                {"allowed_delivery_modes": ["f2f", "online"], "explicit": True, "complete": True, "representable": True},
                 RemarkEnforcement.FALLBACK,
                 RemarkConfidence.HIGH,
                 "Detected wording that allows either online or physical delivery.",
@@ -322,18 +399,19 @@ def _detect_room_type(raw: str, text: str, req: RemarkRequirements, items: list[
             text,
             "room_type",
             {parameter_key: [room_type]},
+            # Keep explicitness visible for hard-rule eligibility checks.
             enforcement,
             RemarkConfidence.HIGH if enforcement != RemarkEnforcement.REVIEW else RemarkConfidence.MEDIUM,
             explanation,
         )
     )
+    items[-1].parameters.update({"explicit": enforcement == RemarkEnforcement.HARD, "complete": True, "representable": True})
 
 
 def _detect_fixed_time(raw: str, text: str, req: RemarkRequirements, items: list[RemarkInterpretation]) -> None:
     """Detect explicit fixed day and start-time requests."""
-    if not (_has_hard_word(text) or "fixed" in text):
-        return
     days = tuple(day for key, day in DAY_NAMES.items() if re.search(rf"\b{key}\b", text))
+    has_day = bool(days)
     times: list[str] = []
     for match in re.finditer(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b", text):
         if match.group(2) is None and match.group(3) is None:
@@ -347,6 +425,23 @@ def _detect_fixed_time(raw: str, text: str, req: RemarkRequirements, items: list
             hour = 0
         if 0 <= hour <= 23 and minute in {0, 30}:
             times.append(f"{hour:02d}:{minute:02d}")
+
+    explicit_request = _has_hard_word(text) or "fixed" in text or "only available" in text
+    if _has_soft_word(text) and has_day:
+        items.append(
+            _interpretation(
+                raw,
+                text,
+                "fixed_day_time",
+                {"fixed_days": list(days), "fixed_start_times": [], "explicit": False, "complete": True, "representable": True},
+                RemarkEnforcement.SOFT,
+                RemarkConfidence.HIGH,
+                "Detected a day/time preference; it will not block scheduling.",
+            )
+        )
+        return
+    if not explicit_request:
+        return
     if days:
         req.fixed_days = tuple(dict.fromkeys([*req.fixed_days, *days]))
     if times:
@@ -357,9 +452,9 @@ def _detect_fixed_time(raw: str, text: str, req: RemarkRequirements, items: list
                 raw,
                 text,
                 "fixed_day_time",
-                {"fixed_days": list(days), "fixed_start_times": times[:1]},
+                {"fixed_days": list(days), "fixed_start_times": times[:1], "explicit": True, "complete": bool(days or times), "representable": True},
                 RemarkEnforcement.HARD,
-                RemarkConfidence.MEDIUM,
+                RemarkConfidence.HIGH,
                 "Detected fixed day or start-time wording.",
             )
         )
@@ -378,8 +473,8 @@ def _detect_duration(raw: str, text: str, req: RemarkRequirements, items: list[R
             raw,
             text,
             "duration_override",
-            {"duration_override_hours": req.duration_override_hours},
-            RemarkEnforcement.HARD if _has_hard_word(text) else RemarkEnforcement.REVIEW,
+            {"duration_override_hours": req.duration_override_hours, "explicit": _has_hard_word(text), "complete": True, "representable": False},
+            RemarkEnforcement.REVIEW,
             RemarkConfidence.MEDIUM,
             "Detected a possible duration override.",
         )
@@ -416,7 +511,7 @@ def _detect_sequence(raw: str, text: str, req: RemarkRequirements, items: list[R
             raw,
             text,
             "activity_sequence",
-            {"must_follow_activity": activity},
+            {"must_follow_activity": activity, "explicit": enforcement == RemarkEnforcement.HARD, "complete": True, "representable": False},
             enforcement,
             RemarkConfidence.HIGH,
             f"Detected that this activity should occur after {activity}.",
@@ -439,7 +534,7 @@ def _detect_travel_buffer(raw: str, text: str, req: RemarkRequirements, items: l
             raw,
             text,
             "travel_buffer",
-            {"minimum_travel_buffer_minutes": req.minimum_travel_buffer_minutes},
+            {"minimum_travel_buffer_minutes": req.minimum_travel_buffer_minutes, "explicit": False, "complete": False, "representable": False},
             RemarkEnforcement.REVIEW,
             RemarkConfidence.MEDIUM,
             "Detected travel-buffer wording requiring review.",
@@ -456,6 +551,20 @@ def interpret_remarks(raw_text: str | None) -> RemarkRequirements:
         return requirements
 
     interpretations: list[RemarkInterpretation] = []
+    if _is_informational(text):
+        requirements.interpretations = (
+            _interpretation(
+                raw,
+                text,
+                "unsupported_remark",
+                {"informational": True, "explicit": False, "complete": True, "representable": True},
+                RemarkEnforcement.REVIEW,
+                RemarkConfidence.LOW,
+                "Informational remark detected; no timetable action is required.",
+            ),
+        )
+        return requirements
+
     _detect_multiple_rooms(raw, text, requirements, interpretations)
     _detect_hybrid_delivery(raw, text, requirements, interpretations)
     _detect_room_type(raw, text, requirements, interpretations)
@@ -486,6 +595,94 @@ def interpret_remarks(raw_text: str | None) -> RemarkRequirements:
 
     requirements.interpretations = tuple(interpretations)
     return requirements
+
+
+def is_hard_enforceable(interpretation: RemarkInterpretation) -> bool:
+    """Return True only for explicit supported rules that can be safely enforced."""
+    if interpretation.enforcement != RemarkEnforcement.HARD:
+        return False
+    if interpretation.confidence != RemarkConfidence.HIGH:
+        return False
+    if interpretation.rule_name not in SUPPORTED_HARD_RULES:
+        return False
+    if interpretation.rule_name not in REPRESENTED_HARD_RULES:
+        return False
+    if not bool(interpretation.parameters.get("explicit")):
+        return False
+    if not bool(interpretation.parameters.get("complete")):
+        return False
+    if not bool(interpretation.parameters.get("representable")):
+        return False
+    if bool(interpretation.parameters.get("conflicting")):
+        return False
+    return True
+
+
+def hard_enforceable_interpretations(requirements: RemarkRequirements) -> tuple[RemarkInterpretation, ...]:
+    """Return all interpretations that may affect hard scheduling feasibility."""
+    return tuple(item for item in requirements.interpretations if is_hard_enforceable(item))
+
+
+def scheduling_requirements(requirements: RemarkRequirements) -> RemarkRequirements:
+    """Return only remark requirements the scheduler may enforce as hard rules."""
+    filtered = RemarkRequirements(
+        preferred_room_types=requirements.preferred_room_types,
+        allowed_delivery_modes=requirements.allowed_delivery_modes,
+        interpretations=requirements.interpretations,
+        needs_manual_review=requirements.needs_manual_review,
+        review_reason=requirements.review_reason,
+    )
+    for interpretation in hard_enforceable_interpretations(requirements):
+        if interpretation.rule_name in {"multiple_room_requirement", "concurrent_parallel_groups"}:
+            filtered.required_room_count = max(
+                filtered.required_room_count,
+                int(interpretation.parameters.get("required_room_count", 1)),
+            )
+        elif interpretation.rule_name == "hybrid_delivery":
+            filtered.requires_hybrid_delivery = True
+            filtered.requires_recording_room = True
+        elif interpretation.rule_name == "recording_capable_room":
+            filtered.requires_recording_room = True
+        elif interpretation.rule_name == "room_type":
+            values = interpretation.parameters.get("required_room_types", [])
+            filtered.required_room_types = tuple(dict.fromkeys([*filtered.required_room_types, *[str(value) for value in values]]))
+        elif interpretation.rule_name == "fixed_day_time":
+            days = [str(value) for value in interpretation.parameters.get("fixed_days", [])]
+            times = [str(value) for value in interpretation.parameters.get("fixed_start_times", [])]
+            filtered.fixed_days = tuple(dict.fromkeys([*filtered.fixed_days, *days]))
+            filtered.fixed_start_times = tuple(dict.fromkeys([*filtered.fixed_start_times, *times]))
+    return filtered
+
+
+def course_scheduling_requirements(course: "Course") -> RemarkRequirements:
+    """Return the hard-enforceable scheduling requirements for a course."""
+    return scheduling_requirements(course_remark_requirements(course))
+
+
+def has_hard_enforceable_remark(course: "Course") -> bool:
+    """Return True when a course has at least one hard-enforceable remark."""
+    return bool(hard_enforceable_interpretations(course_remark_requirements(course)))
+
+
+def remark_unscheduled_reason(course: "Course") -> str:
+    """Return a specific reason when explicit remark rules block scheduling."""
+    requirements = course_scheduling_requirements(course)
+    if requirements.required_room_count > 1:
+        return "Explicit two-room requirement could not be satisfied simultaneously."
+    if requirements.requires_hybrid_delivery:
+        return "Explicit hybrid-capable room requirement could not be satisfied."
+    if requirements.requires_recording_room:
+        return "Explicit recording-capable room requirement could not be satisfied."
+    if requirements.required_room_types:
+        return f"Explicit required room type could not be satisfied: {', '.join(requirements.required_room_types)}."
+    if requirements.fixed_days or requirements.fixed_start_times:
+        parts = []
+        if requirements.fixed_days:
+            parts.append(f"day {', '.join(requirements.fixed_days)}")
+        if requirements.fixed_start_times:
+            parts.append(f"start {', '.join(requirements.fixed_start_times)}")
+        return f"Explicit fixed {' and '.join(parts)} request could not be satisfied."
+    return ""
 
 
 def course_remark_requirements(course: "Course") -> RemarkRequirements:
@@ -540,8 +737,12 @@ def assignment_satisfies_interpretation(assignment: "Assignment", interpretation
         target_types = req.required_room_types or req.preferred_room_types
         return bool(target_types) and all(any(room_matches_type(room, room_type) for room in rooms) for room_type in target_types)
     if interpretation.rule_name == "fixed_day_time":
-        day_ok = not req.fixed_days or assignment.timeslot.day in req.fixed_days
-        time_ok = not req.fixed_start_times or assignment.timeslot.start_time in req.fixed_start_times
+        fixed_days = tuple(str(value) for value in interpretation.parameters.get("fixed_days", req.fixed_days))
+        fixed_start_times = tuple(str(value) for value in interpretation.parameters.get("fixed_start_times", req.fixed_start_times))
+        if not fixed_days and not fixed_start_times:
+            return False
+        day_ok = not fixed_days or assignment.timeslot.day in fixed_days
+        time_ok = not fixed_start_times or assignment.timeslot.start_time in fixed_start_times
         return day_ok and time_ok
     if interpretation.enforcement == RemarkEnforcement.REVIEW:
         return False

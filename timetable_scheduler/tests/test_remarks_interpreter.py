@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
-from engine.remarks_interpreter import RemarkEnforcement, RemarkConfidence, interpret_remarks, normalise_remark
+from engine.remarks_interpreter import (
+    RemarkConfidence,
+    RemarkEnforcement,
+    hard_enforceable_interpretations,
+    interpret_remarks,
+    is_hard_enforceable,
+    normalise_remark,
+)
 
 
 def test_empty_remark_produces_no_requirements() -> None:
@@ -61,8 +68,9 @@ def test_parallel_tracks_are_detected_for_review_when_over_output_limit() -> Non
     requirements = interpret_remarks("Split into 3 parallel tracks at one go")
 
     assert requirements.concurrent_groups == 3
-    assert requirements.required_room_count == 3
+    assert requirements.required_room_count == 1
     assert requirements.needs_manual_review is True
+    assert not hard_enforceable_interpretations(requirements)
 
 
 def test_unspecified_additional_rooms_go_to_review() -> None:
@@ -74,12 +82,14 @@ def test_unspecified_additional_rooms_go_to_review() -> None:
 
 
 def test_hybrid_keywords_create_simultaneous_hybrid_delivery() -> None:
-    """Hybrid wording should not become an either-or delivery choice."""
+    """Ambiguous hybrid support wording should require confirmation only."""
     requirements = interpret_remarks("Room to support hybrid due to overseas IWSP students")
 
-    assert requirements.requires_hybrid_delivery is True
-    assert requirements.requires_recording_room is True
+    assert requirements.requires_hybrid_delivery is False
+    assert requirements.requires_recording_room is False
     assert requirements.allowed_delivery_modes == ()
+    assert requirements.needs_manual_review is True
+    assert not hard_enforceable_interpretations(requirements)
 
 
 def test_physical_and_online_create_hybrid_delivery() -> None:
@@ -87,6 +97,7 @@ def test_physical_and_online_create_hybrid_delivery() -> None:
     requirements = interpret_remarks("physical and online")
 
     assert requirements.requires_hybrid_delivery is True
+    assert hard_enforceable_interpretations(requirements)
 
 
 def test_online_or_physical_creates_flexible_delivery() -> None:
@@ -143,3 +154,85 @@ def test_low_confidence_text_never_becomes_hard_rule() -> None:
     requirements = interpret_remarks("Maybe something special")
 
     assert all(item.enforcement != RemarkEnforcement.HARD for item in requirements.interpretations)
+
+
+def test_high_confidence_explicit_supported_rule_is_hard_enforceable() -> None:
+    """A complete explicit supported rule may be enforced as hard."""
+    requirements = interpret_remarks("Need 2 rooms")
+
+    assert is_hard_enforceable(requirements.interpretations[0]) is True
+
+
+def test_medium_confidence_rule_cannot_be_hard_enforceable() -> None:
+    """Medium-confidence interpretations should stay out of hard scheduling."""
+    requirements = interpret_remarks("May need hybrid")
+
+    assert requirements.interpretations[0].confidence == RemarkConfidence.MEDIUM
+    assert not hard_enforceable_interpretations(requirements)
+
+
+def test_unsupported_rule_cannot_be_hard_enforceable() -> None:
+    """Unsupported text should be retained without becoming hard."""
+    requirements = interpret_remarks("Special arrangement required")
+
+    assert requirements.interpretations[0].rule_name == "unsupported_remark"
+    assert not hard_enforceable_interpretations(requirements)
+
+
+def test_preference_wording_cannot_be_hard_enforceable() -> None:
+    """Preference wording should not create a hard room requirement."""
+    requirements = interpret_remarks("Computer room preferred")
+
+    assert requirements.interpretations[0].enforcement == RemarkEnforcement.SOFT
+    assert not hard_enforceable_interpretations(requirements)
+
+
+def test_incomplete_room_count_cannot_be_hard_enforceable() -> None:
+    """Missing room counts should require confirmation, not hard filtering."""
+    requirements = interpret_remarks("Additional rooms for quizzes")
+
+    assert requirements.interpretations[0].rule_name == "additional_rooms_unspecified"
+    assert not hard_enforceable_interpretations(requirements)
+
+
+def test_hybrid_preferred_is_soft() -> None:
+    """Preferred hybrid wording should not block scheduling."""
+    requirements = interpret_remarks("Hybrid preferred")
+
+    assert requirements.interpretations[0].enforcement == RemarkEnforcement.SOFT
+    assert not hard_enforceable_interpretations(requirements)
+
+
+def test_recording_proxy_note_is_visible_for_explicit_hybrid() -> None:
+    """Explicit hybrid rules should document the recording-capability proxy."""
+    requirements = interpret_remarks("Hybrid delivery required")
+
+    assert "Recording capability" in str(requirements.interpretations[0].parameters["proxy_note"])
+    assert hard_enforceable_interpretations(requirements)
+
+
+def test_monday_preferred_is_soft_fixed_day() -> None:
+    """Preferred days should be visible but non-blocking."""
+    requirements = interpret_remarks("Monday preferred")
+
+    assert requirements.interpretations[0].enforcement == RemarkEnforcement.SOFT
+    assert requirements.interpretations[0].parameters["fixed_days"] == ["Monday"]
+    assert not hard_enforceable_interpretations(requirements)
+
+
+def test_timing_to_be_confirmed_is_non_blocking_information() -> None:
+    """Timing confirmation notes should not become scheduling failures."""
+    requirements = interpret_remarks("Timing to be confirmed")
+
+    assert requirements.needs_manual_review is False
+    assert requirements.interpretations[0].rule_name == "unsupported_remark"
+    assert requirements.interpretations[0].parameters["informational"] is True
+
+
+def test_explicit_fixed_day_time_request_is_hard_enforceable() -> None:
+    """Mandatory day/time wording should be an explicit fixed-placement request."""
+    requirements = interpret_remarks("Must be Thursday at 2 pm")
+
+    assert requirements.fixed_days == ("Thursday",)
+    assert requirements.fixed_start_times == ("14:00",)
+    assert hard_enforceable_interpretations(requirements)

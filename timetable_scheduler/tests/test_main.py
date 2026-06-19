@@ -44,6 +44,11 @@ def _stub_pipeline(monkeypatch, generated: list[Assignment]) -> None:
     monkeypatch.setattr(app, "export_run_summary", lambda assignments, output_path, **kwargs: None)
     monkeypatch.setattr(app, "export_stakeholder_views", lambda assignments, rooms_arg, output_path: None)
     monkeypatch.setattr(app, "export_remarks_audit", lambda courses, output_path: None)
+    monkeypatch.setattr(
+        app,
+        "export_remarks_coverage_comparison",
+        lambda courses, baseline, enhanced, output_path, **kwargs: type("Comparison", (), {"attribution_reconciles": True})(),
+    )
     monkeypatch.setattr(app, "export_run_manifest", lambda courses, assignments, output_path, **kwargs: None)
     monkeypatch.setattr(app, "export_outputs", lambda assignments, scope: {})
 
@@ -89,11 +94,11 @@ def test_parse_args_accepts_demo_safety_controls() -> None:
 def test_main_passes_demo_safety_controls_to_generate_schedule(monkeypatch) -> None:
     """main() should pass demo safety controls into generate_schedule()."""
     generated = [Assignment(course=make_course(), room=None, timeslot=None)]
-    captured: dict[str, object] = {}
+    captured: list[dict[str, object]] = []
     _stub_pipeline(monkeypatch, generated)
 
     def fake_generate_schedule(courses, rooms, **kwargs):
-        captured.update(kwargs)
+        captured.append(kwargs)
         return generated
 
     monkeypatch.setattr(app, "generate_schedule", fake_generate_schedule)
@@ -119,10 +124,13 @@ def test_main_passes_demo_safety_controls_to_generate_schedule(monkeypatch) -> N
 
     app.main()
 
-    assert captured["progress_interval"] == 25
-    assert captured["max_retry_assignments"] == 20
-    assert captured["max_candidate_patterns"] == 150
-    assert captured["enable_remark_interpretation"] is True
+    enhanced_call = captured[0]
+    baseline_call = captured[1]
+    assert enhanced_call["progress_interval"] == 25
+    assert enhanced_call["max_retry_assignments"] == 20
+    assert enhanced_call["max_candidate_patterns"] == 150
+    assert enhanced_call["enable_remark_interpretation"] is True
+    assert baseline_call["enable_remark_interpretation"] is False
 
 
 def test_skip_unscheduled_diagnostics_does_not_break_pipeline(monkeypatch) -> None:

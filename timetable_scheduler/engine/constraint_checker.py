@@ -38,8 +38,8 @@ from config import (
 )
 from data.models import Assignment, Course, Room
 from engine.remarks_interpreter import (
-    RemarkEnforcement,
     assignment_rooms,
+    course_scheduling_requirements,
     course_remark_requirements,
     room_matches_type,
     room_supports_recording,
@@ -230,12 +230,17 @@ def check_room_clash(assignment: Assignment, existing: list[Assignment]) -> list
 
 def check_remark_requirements(assignment: Assignment) -> list[str]:
     """Check hard constraints created from supported remark interpretations."""
-    requirements = course_remark_requirements(assignment.course)
+    requirements = course_scheduling_requirements(assignment.course)
     violations: list[str] = []
-    hard_interpretations = [
-        item for item in requirements.interpretations if item.enforcement == RemarkEnforcement.HARD
-    ]
-    if not hard_interpretations:
+    if (
+        requirements.required_room_count == 1
+        and not requirements.required_room_types
+        and not requirements.requires_hybrid_delivery
+        and not requirements.requires_recording_room
+        and not requirements.fixed_days
+        and not requirements.fixed_start_times
+        and not requirements.fixed_venues
+    ):
         return []
 
     rooms = assignment_rooms(assignment)

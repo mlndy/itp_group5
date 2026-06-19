@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from data.models import Assignment, Course, Room, TimeSlot
 from engine.constraint_checker import check_hard_constraints, count_hard_violations
-from engine.remarks_interpreter import assignment_rooms, interpret_remarks
+from engine.remarks_interpreter import assignment_rooms, course_remark_requirements, interpret_remarks
 from generator import scheduler
 
 
@@ -139,23 +139,24 @@ def test_required_room_type_applies_to_both_rooms(monkeypatch) -> None:
 
 
 def test_more_rooms_than_output_supports_remains_unscheduled(monkeypatch) -> None:
-    """Requests needing more than Room1/Room2 should go to review instead of being truncated."""
+    """Over-limit parallel-track requests should be visible but non-blocking."""
     monkeypatch.setattr(scheduler, "VALID_DAYS", ["Monday"])
     monkeypatch.setattr(scheduler, "VALID_START_TIMES", ["09:00"])
     course = make_course(class_size=30, remarks="Split into 3 parallel tracks at one go")
-    rooms = [Room("R1", 20, "physical"), Room("R2", 20, "physical"), Room("R3", 20, "physical")]
+    rooms = [Room("R1", 40, "physical"), Room("R2", 40, "physical"), Room("R3", 40, "physical")]
 
     schedule = scheduler.generate_schedule([course], rooms, allow_weekly_fallback=False)
 
-    assert schedule[0].room is None
-    assert "Room1 and Room2" in schedule[0].hard_violations[0]
+    assert schedule[0].room is not None
+    assert schedule[0].hard_violations == []
+    assert course_remark_requirements(course).needs_manual_review is True
 
 
 def test_hybrid_class_uses_recording_capable_physical_room(monkeypatch) -> None:
     """Hybrid remarks should select a physical recording-capable room."""
     monkeypatch.setattr(scheduler, "VALID_DAYS", ["Monday"])
     monkeypatch.setattr(scheduler, "VALID_START_TIMES", ["09:00"])
-    course = make_course(remarks="Room to support hybrid due to overseas IWSP students")
+    course = make_course(remarks="Hybrid delivery required")
     rooms = [
         Room("NORMAL", 100, "physical", recording="No"),
         Room("REC", 100, "physical", recording="Yes"),
@@ -173,13 +174,15 @@ def test_missing_hybrid_capable_room_remains_unscheduled(monkeypatch) -> None:
     """Hybrid-capable room scarcity should leave the class unscheduled."""
     monkeypatch.setattr(scheduler, "VALID_DAYS", ["Monday"])
     monkeypatch.setattr(scheduler, "VALID_START_TIMES", ["09:00"])
-    course = make_course(remarks="hybrid")
+    course = make_course(remarks="Hybrid delivery required")
     rooms = [Room("NORMAL", 100, "physical", recording="No")]
 
     schedule = scheduler.generate_schedule([course], rooms, allow_weekly_fallback=False)
 
     assert schedule[0].room is None
     assert schedule[0].hard_violations
+    assert schedule[0].base_unscheduled_reason
+    assert schedule[0].remark_unscheduled_reason == "Explicit hybrid-capable room requirement could not be satisfied."
 
 
 def test_flexible_delivery_can_choose_virtual_room(monkeypatch) -> None:
@@ -194,3 +197,88 @@ def test_flexible_delivery_can_choose_virtual_room(monkeypatch) -> None:
     assert schedule[0].room.room_id == "ONLINE_ROOM"
     assert schedule[0].selected_delivery_mode == "Online - Synchronous"
     assert count_hard_violations(schedule) == 0
+
+
+def test_unsupported_remark_does_not_prevent_scheduling(monkeypatch) -> None:
+    """Unsupported remarks should remain visible without blocking structured scheduling."""
+    monkeypatch.setattr(scheduler, "VALID_DAYS", ["Monday"])
+    monkeypatch.setattr(scheduler, "VALID_START_TIMES", ["09:00"])
+    course = make_course(remarks="Discuss with programme lead nearer to term")
+
+    schedule = scheduler.generate_schedule([course], [Room("R1", 100, "physical")], allow_weekly_fallback=False)
+
+    assert schedule[0].room.room_id == "R1"
+    assert schedule[0].hard_violations == []
+    assert course_remark_requirements(course).needs_manual_review is True
+
+
+def test_additional_rooms_for_quizzes_is_non_blocking(monkeypatch) -> None:
+    """Incomplete extra-room requests should not unschedule the normal class."""
+    monkeypatch.setattr(scheduler, "VALID_DAYS", ["Monday"])
+    monkeypatch.setattr(scheduler, "VALID_START_TIMES", ["09:00"])
+    course = make_course(remarks="Additional rooms for quizzes")
+
+    schedule = scheduler.generate_schedule([course], [Room("R1", 100, "physical")], allow_weekly_fallback=False)
+
+    assert schedule[0].room.room_id == "R1"
+    assert schedule[0].hard_violations == []
+    assert course_remark_requirements(course).needs_manual_review is True
+
+
+def test_room_preference_does_not_prevent_scheduling(monkeypatch) -> None:
+    """Soft room preferences should not be hard filters."""
+    monkeypatch.setattr(scheduler, "VALID_DAYS", ["Monday"])
+    monkeypatch.setattr(scheduler, "VALID_START_TIMES", ["09:00"])
+    course = make_course(remarks="Computer room preferred")
+
+    schedule = scheduler.generate_schedule([course], [Room("SEM1", 100, "physical", resource_type="Seminar Room")], allow_weekly_fallback=False)
+
+    assert schedule[0].room.room_id == "SEM1"
+    assert schedule[0].hard_violations == []
+
+
+def test_may_need_hybrid_does_not_require_recording_room(monkeypatch) -> None:
+    """Uncertain hybrid wording should schedule in a normal physical room."""
+    monkeypatch.setattr(scheduler, "VALID_DAYS", ["Monday"])
+    monkeypatch.setattr(scheduler, "VALID_START_TIMES", ["09:00"])
+    course = make_course(remarks="May need hybrid")
+
+    schedule = scheduler.generate_schedule([course], [Room("NORMAL", 100, "physical", recording="No")], allow_weekly_fallback=False)
+
+    assert schedule[0].room.room_id == "NORMAL"
+    assert schedule[0].selected_delivery_mode != "hybrid"
+    assert schedule[0].hard_violations == []
+
+
+def test_explicit_two_room_failure_preserves_base_and_remark_reasons(monkeypatch) -> None:
+    """Two-room failures should keep both normal and special-request reasons."""
+    monkeypatch.setattr(scheduler, "VALID_DAYS", ["Monday"])
+    monkeypatch.setattr(scheduler, "VALID_START_TIMES", ["09:00"])
+    course = make_course(class_size=30, remarks="Need 2 rooms")
+
+    schedule = scheduler.generate_schedule([course], [Room("R1", 20, "physical")], allow_weekly_fallback=False)
+
+    assert schedule[0].room is None
+    assert schedule[0].base_unscheduled_reason == "Could not find feasible weekly room/day/start pattern"
+    assert schedule[0].remark_unscheduled_reason == "Explicit two-room requirement could not be satisfied simultaneously."
+    assert schedule[0].base_unscheduled_reason in schedule[0].hard_violations
+    assert schedule[0].remark_unscheduled_reason in schedule[0].hard_violations
+
+
+def test_fixed_day_time_filters_candidate_patterns_before_demo_cap(monkeypatch) -> None:
+    """Fixed day/time remarks should not waste the candidate cap on impossible slots."""
+    monkeypatch.setattr(scheduler, "VALID_DAYS", ["Monday", "Thursday"])
+    monkeypatch.setattr(scheduler, "VALID_START_TIMES", ["09:00", "14:00"])
+    course = make_course(remarks="Must be Thursday at 2 pm")
+
+    schedule = scheduler.generate_schedule(
+        [course],
+        [Room("SR1", 100, "physical", resource_type="Seminar Room")],
+        allow_weekly_fallback=False,
+        max_candidate_patterns=1,
+    )
+
+    assert schedule[0].room is not None
+    assert schedule[0].timeslot.day == "Thursday"
+    assert schedule[0].timeslot.start_time == "14:00"
+    assert schedule[0].hard_violations == []

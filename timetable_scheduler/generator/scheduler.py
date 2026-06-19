@@ -22,8 +22,9 @@ from engine.constraint_checker import check_hard_constraints, course_groups, is_
 from engine.remarks_interpreter import (
     RemarkRequirements,
     assignment_rooms,
-    course_remark_requirements,
+    course_scheduling_requirements,
     interpret_remarks,
+    remark_unscheduled_reason,
     room_matches_type,
     room_supports_recording,
 )
@@ -136,7 +137,7 @@ def _remarks_for_course(course: Course, enabled: bool = ENABLE_REMARK_INTERPRETA
     """Return remark requirements when the feature flag is enabled."""
     if not enabled:
         return RemarkRequirements()
-    return course_remark_requirements(course)
+    return course_scheduling_requirements(course)
 
 
 def _room_suitability_score(course: Course, room: Room) -> tuple[int, int]:
@@ -172,10 +173,9 @@ def _room_matches_preferred_types(room: Room, requirements: RemarkRequirements) 
 
 
 def _remark_room_sort_key(course: Course, room: Room, requirements: RemarkRequirements) -> tuple[int, int, int, int, int]:
-    """Rank rooms while taking remark preferences into account."""
-    preferred = 0 if _room_matches_preferred_types(room, requirements) else 1
+    """Rank rooms using hard remark needs without letting preferences reduce coverage."""
     recording = 0 if not requirements.requires_recording_room or room_supports_recording(room) else 1
-    return (preferred, recording, *_room_preference_score(course, room))
+    return (recording, *_room_preference_score(course, room))
 
 
 def get_candidate_rooms(
@@ -323,6 +323,20 @@ def _selected_delivery_mode(course: Course, room_group: tuple[Room, ...], requir
     return course.delivery_mode
 
 
+def _candidate_days(requirements: RemarkRequirements) -> list[str]:
+    """Return valid days after applying hard fixed-day requirements."""
+    if not requirements.fixed_days:
+        return VALID_DAYS
+    return [day for day in VALID_DAYS if day in requirements.fixed_days]
+
+
+def _candidate_start_times(requirements: RemarkRequirements) -> list[str]:
+    """Return valid starts after applying hard fixed-start requirements."""
+    if not requirements.fixed_start_times:
+        return VALID_START_TIMES
+    return [start_time for start_time in VALID_START_TIMES if start_time in requirements.fixed_start_times]
+
+
 def make_weekly_assignments(
     course: Course,
     room: Room,
@@ -415,12 +429,32 @@ def _reached_candidate_limit(checked: int, max_candidate_patterns: int | None) -
 
 def _candidate_limit_assignment(course: Course) -> Assignment:
     """Return an unscheduled placeholder for a demo candidate-pattern cap."""
-    return Assignment(course=course, room=None, timeslot=None, hard_violations=[MAX_CANDIDATE_PATTERN_LIMIT_REASON])
+    return _unscheduled_assignment(course, MAX_CANDIDATE_PATTERN_LIMIT_REASON, include_remark_reason=False)
 
 
 def _manual_review_assignment(course: Course, reason: str) -> Assignment:
     """Return an unscheduled placeholder for an unsupported applied remark."""
-    return Assignment(course=course, room=None, timeslot=None, hard_violations=[reason])
+    return _unscheduled_assignment(course, reason)
+
+
+def _unscheduled_assignment(
+    course: Course,
+    base_reason: str,
+    include_remark_reason: bool = True,
+) -> Assignment:
+    """Return an unscheduled placeholder with base and remark-specific reasons."""
+    remark_reason = remark_unscheduled_reason(course) if include_remark_reason else ""
+    violations = [base_reason]
+    if remark_reason and remark_reason not in violations:
+        violations.append(remark_reason)
+    return Assignment(
+        course=course,
+        room=None,
+        timeslot=None,
+        hard_violations=violations,
+        base_unscheduled_reason=base_reason,
+        remark_unscheduled_reason=remark_reason,
+    )
 
 
 def schedule_course(
@@ -434,11 +468,10 @@ def schedule_course(
     """Schedule one course using a consistent weekly room/day/start pattern."""
     if not schedulable_weeks(course.teaching_weeks):
         return [
-            Assignment(
-                course=course,
-                room=None,
-                timeslot=None,
-                hard_violations=["No schedulable teaching weeks after academic calendar blocks"],
+            _unscheduled_assignment(
+                course,
+                "No schedulable teaching weeks after academic calendar blocks",
+                include_remark_reason=False,
             )
         ]
     requirements = _remarks_for_course(course, enable_remark_interpretation)
@@ -454,8 +487,8 @@ def schedule_course(
         room = room_group[0]
         additional_rooms = tuple(room_group[1:])
         selected_delivery_mode = _selected_delivery_mode(course, room_group, requirements)
-        for day in VALID_DAYS:
-            for start_time in VALID_START_TIMES:
+        for day in _candidate_days(requirements):
+            for start_time in _candidate_start_times(requirements):
                 if _reached_candidate_limit(checked_patterns, max_candidate_patterns):
                     return [_candidate_limit_assignment(course)]
                 checked_patterns += 1
@@ -469,7 +502,7 @@ def schedule_course(
                 )
                 if can_place_assignments(candidates, index) and _validate_candidate_pattern(candidates, existing):
                     return candidates
-    return [Assignment(course=course, room=None, timeslot=None, hard_violations=["Could not find feasible weekly room/day/start pattern"])]
+    return [_unscheduled_assignment(course, "Could not find feasible weekly room/day/start pattern")]
 
 
 def schedule_course_for_weeks(
@@ -485,11 +518,10 @@ def schedule_course_for_weeks(
     weeks_to_schedule = schedulable_weeks(weeks)
     if not weeks_to_schedule:
         return [
-            Assignment(
-                course=course,
-                room=None,
-                timeslot=None,
-                hard_violations=["No schedulable teaching weeks after academic calendar blocks"],
+            _unscheduled_assignment(
+                course,
+                "No schedulable teaching weeks after academic calendar blocks",
+                include_remark_reason=False,
             )
         ]
     requirements = _remarks_for_course(course, enable_remark_interpretation)
@@ -511,8 +543,8 @@ def schedule_course_for_weeks(
             room = room_group[0]
             additional_rooms = tuple(room_group[1:])
             selected_delivery_mode = _selected_delivery_mode(course, room_group, requirements)
-            for day in VALID_DAYS:
-                for start_time in VALID_START_TIMES:
+            for day in _candidate_days(requirements):
+                for start_time in _candidate_start_times(requirements):
                     if _reached_candidate_limit(checked_patterns, max_candidate_patterns):
                         placed.append(_candidate_limit_assignment(course))
                         return placed
@@ -539,7 +571,7 @@ def schedule_course_for_weeks(
             staged.append(found)
             staged_index.add(found)
         else:
-            placed.append(Assignment(course=course, room=None, timeslot=None, hard_violations=[f"Could not find feasible slot for week {week}"]))
+            placed.append(_unscheduled_assignment(course, f"Could not find feasible slot for week {week}"))
     return placed
 
 

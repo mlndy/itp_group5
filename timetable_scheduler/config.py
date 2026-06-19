@@ -27,6 +27,7 @@ DEFAULT_RUN_SUMMARY_FILE = GENERATED_DIR / "run_summary.xlsx"
 DEFAULT_STAKEHOLDER_VIEWS_FILE = GENERATED_DIR / "stakeholder_views.xlsx"
 DEFAULT_RUN_MANIFEST_FILE = GENERATED_DIR / "run_manifest.xlsx"
 DEFAULT_REMARKS_AUDIT_FILE = GENERATED_DIR / "remarks_audit.xlsx"
+DEFAULT_REMARKS_COMPARISON_FILE = GENERATED_DIR / "remarks_coverage_comparison.xlsx"
 
 VALID_DAYS: list[str] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
 DAY_ABBREVIATIONS: dict[str, str] = {
