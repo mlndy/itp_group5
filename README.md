@@ -1,85 +1,156 @@
 # Engineering Timetable Scheduler
 
-Local prototype for generating a proposed SIT Engineering Cluster timetable from a consolidated Template 1 scheduling-requirements workbook.
+## Overview
 
-The desktop application is the recommended route for non-technical users. It asks for one input workbook, runs the validated Engineering pipeline with fixed settings, and opens the generated timetable and supporting Excel reports.
+This repository contains a local Python prototype for generating a proposed SIT Engineering Cluster timetable, including DSC.
 
-## 1. Install Requirements
+The system:
 
-Run from Windows PowerShell:
+- reads one consolidated scheduling-requirements workbook;
+- validates the selected workbook structure;
+- loads Engineering teaching requirements, venue data, common modules and institutional constraints;
+- generates a timetable that accepts only hard-feasible scheduled assignments;
+- applies bounded soft-constraint optimisation when requested;
+- interprets supported free-text scheduling remarks in a deterministic and explainable way;
+- exports a proposed timetable, stakeholder views, exception reports and run evidence.
+
+The prototype is intentionally transparent. If a class cannot be placed safely, it remains visible for review instead of being forced into an invalid timetable.
+
+## User Workflow
+
+1. Open the desktop application.
+2. Select the **Consolidated Schedule**.
+3. Click **Generate Timetable**.
+4. Wait for processing to complete.
+5. Review the **Proposed Timetable**.
+6. Review unscheduled classes and special requests.
+7. Approve or manually resolve exceptions.
+
+## Installation
+
+Run from Windows PowerShell at the repository root:
 
 ```powershell
 cd C:\Users\Admin\Documents\GitHub\itp_group5
 py -m venv .venv
-.\.venv\Scripts\Activate.ps1
-cd timetable_scheduler
-py -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-## 2. Run the Desktop Application
+## Run The Desktop Application
 
 ```powershell
 cd C:\Users\Admin\Documents\GitHub\itp_group5\timetable_scheduler
-python run_ui.py
+..\.venv\Scripts\python.exe run_ui.py
 ```
 
-## 3. Generate a Timetable
+## Outputs
 
-1. Select **Consolidated Schedule**.
-2. Choose one Template 1 `.xlsx` or `.xlsm` scheduling-requirements workbook.
-3. Click **Generate Timetable**.
-4. Wait for the loading screen to complete.
-5. Use **Open Proposed Timetable** for the Template 2 workbook.
-6. Use the supporting output buttons for timetable views, unscheduled-class review, and scheduling summary.
+The desktop application opens or creates these main outputs:
 
-The UI does not expose scheduler settings. Venue information, common-module data, Template 2 and output locations are loaded from the bundled `Data/` resources.
+- **Proposed Timetable**: generated timetable workbook for review.
+- **Timetable Views**: programme, tutor and room views.
+- **Unscheduled Classes**: exception queue for unresolved demand.
+- **Special Requests Review**: how supported free-text remarks were interpreted and handled.
+- **Scheduling Summary**: coverage, validation checks, resource audit, residual analysis and optimisation summary.
+- **Run Manifest**: traceability and release-validation evidence.
 
-## Workflow
+Generated outputs are written under `timetable_scheduler/generated/` and `timetable_scheduler/output_files/`. These folders are intentionally ignored by Git.
 
-1. Programme scheduling requirements use Template 1.
-2. Requirements are consolidated.
-3. The consolidated Template 1 workbook is selected in the UI.
-4. The system validates and loads the requirements.
-5. The generator creates a hard-feasible timetable.
-6. The bounded optimiser improves soft-constraint quality.
-7. The timetable is exported using Template 2.
-8. Timetabling staff review the proposed timetable and unresolved exceptions.
+## Command-Line Use
 
-## Advanced Command-Line Fallback
-
-Run tests:
+The desktop UI is recommended for demonstrations. The full Engineering command remains available for technical validation:
 
 ```powershell
 cd C:\Users\Admin\Documents\GitHub\itp_group5\timetable_scheduler
-py -m pytest -q
+..\.venv\Scripts\python.exe main.py --scope eng --skip-optimisation --max-candidate-patterns 300 --max-retry-assignments 50 --skip-unscheduled-diagnostics --progress-interval 25 --audit-demand-metrics
 ```
 
-Run the verified Engineering command:
+For a restored structured-data baseline without remarks enforcement, add:
+
+```powershell
+--disable-remark-interpretation
+```
+
+## Final Verified Results
+
+### Core Baseline
+
+The core baseline uses the same Engineering input data with remarks interpretation disabled. It proves the restored structured scheduling behaviour.
+
+```text
+Required occurrences: 2777
+Scheduled occurrences: 2747
+Unscheduled occurrences: 30
+Coverage: 98.92%
+Scheduled hard violations: 0
+Online scheduled: 813 / 813
+```
+
+### Remarks-Aware Enhanced Run
+
+The remarks-aware enhanced run enables deterministic interpretation of supported free-text scheduling requests.
+
+```text
+Required occurrences: 2777
+Scheduled occurrences: 2715
+Unscheduled occurrences: 62
+Coverage: 97.77%
+Scheduled hard violations: 0
+```
+
+Enhanced-run attribution:
+
+```text
+30 unchanged baseline exceptions
+13 direct explicit remark effects
+19 indirect displacements
+0 unexplained occurrences
+```
+
+The two runs use the same teaching-demand denominator. The enhanced run schedules fewer occurrences because it enforces additional explicit requirements from supported remarks rather than weakening constraints.
+
+## Implementation Notes
+
+Technical workbook-role detection is structure-based. The requirements input is validated from its worksheet structure and headers, while the final proposed timetable preserves the required output workbook structure.
+
+The Engineering dataset is stored under `Data/`, including Engineering requirement workbooks, common-module data, venue data, timetable constraints, university-wide modules and the output workbook template.
+
+## Limitations
+
+- The heuristic generator does not prove global optimality.
+- The optimiser improves soft-constraint quality but the verified improvement is modest.
+- Recording capability is used as the available proxy for hybrid-room support.
+- Ambiguous or unsupported remarks require staff review.
+- Upload to any internal university system is outside this prototype.
+- Remaining unscheduled demand requires operational decisions such as venue review, delivery-mode approval, splitting very large sessions, or manual exception handling.
+
+## Testing
+
+Run from inside `timetable_scheduler`:
 
 ```powershell
 cd C:\Users\Admin\Documents\GitHub\itp_group5\timetable_scheduler
-python main.py --scope eng --skip-optimisation --max-candidate-patterns 300 --max-retry-assignments 50 --skip-unscheduled-diagnostics --progress-interval 25 --audit-demand-metrics
+..\.venv\Scripts\python.exe -m pytest -q
 ```
 
-The final validated Engineering evidence is:
+Current expected release result:
 
-- Required teaching occurrences: `2777`
-- Scheduled teaching occurrences: `2747`
-- Unscheduled teaching occurrences: `30`
-- Coverage rate: `98.92%`
-- Scheduled hard violations: `0`
-- Online coverage: `813 / 813`
+```text
+220 passed
+```
 
 ## Release ZIP
 
 Build a clean distributable ZIP from the repository root:
 
 ```powershell
-python scripts/build_clean_release.py
+cd C:\Users\Admin\Documents\GitHub\itp_group5
+.\.venv\Scripts\python.exe scripts\build_clean_release.py
 ```
 
-The ZIP is written to `dist/itp_group5_prototype.zip` and excludes `.git`, virtual environments, caches, generated outputs, editor folders and temporary files.
+The ZIP is written to `dist/itp_group5_prototype.zip` and excludes Git metadata, virtual environments, caches, generated outputs, editor folders, temporary files and old ZIP archives.
 
-## Dataset
+## AI Collaboration
 
-The bundled Engineering dataset is stored under `Data/`. Full Engineering runs use `Data/Requirements_ENG`, and the desktop UI uses the configured `Data/Upload template_System (Template 2).xlsx` only as the internal output template.
+AI-assisted development is documented transparently in [AI_USAGE_LOG.md](AI_USAGE_LOG.md) and [AI_ASSISTANCE_STATEMENT.md](AI_ASSISTANCE_STATEMENT.md). The user remained the project architect and final decision-maker; ChatGPT and Codex were used as support tools for implementation, debugging, testing and documentation.

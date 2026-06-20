@@ -1,120 +1,167 @@
 # Final Results
 
-## 1. Final Engineering Result
+## Dataset
 
-The final deliverable is the Engineering cluster timetable, including DSC.
+The final validated scope is the SIT Engineering Cluster, including DSC.
 
+- Engineering requirements workbooks recognised: `35`
 - Input course records: `507`
-- Consolidated requirements: `465`
+- Consolidated scheduling requirements: `465`
 - Required teaching occurrences: `2777`
-- Scheduled teaching occurrences: `2747`
-- Unscheduled teaching occurrences: `30`
-- Coverage rate: `98.92%`
-- Scheduled hard violations: `0`
+- Supporting data: common modules, venue information, timetable constraints, university-wide modules and the proposed-timetable output template
 
-The prototype does not claim that all classes were scheduled. It schedules only hard-feasible assignments and leaves unresolved demand visible.
+Teaching occurrences are the stable reporting denominator. They are used instead of raw assignment-object counts because one unscheduled placeholder can represent several missing weeks, while scheduled assignments are week-level occurrences.
 
-## 2. Stable Teaching-Demand Denominator
+## Core Baseline Result
 
-The stable denominator is `2777` required teaching occurrences. This is calculated from consolidated course requirements, not from raw output row counts.
-
-This matters because scheduled rows and unscheduled placeholders can represent different units. Final comparisons should use teaching occurrences:
+The core baseline disables remarks enforcement and confirms the restored structured scheduling behaviour.
 
 ```text
-required teaching occurrences = scheduled teaching occurrences + unscheduled teaching occurrences
-2777 = 2747 + 30
+Required teaching occurrences: 2777
+Scheduled teaching occurrences: 2747
+Unscheduled teaching occurrences: 30
+Coverage: 98.92%
+Scheduled hard violations: 0
+Online scheduled: 813 / 813
 ```
 
-## 3. DSC Inclusion Evidence
+The baseline does not claim that every Engineering occurrence is scheduled. It schedules only hard-feasible occurrences and leaves remaining demand visible.
 
-Engineering scope includes DSC input data. The `Programme Breakdown` sheet in `generated/run_summary.xlsx` contains DSC rows and a `DSC Indicator` column.
+## Remarks-Aware Result
 
-The `Validation Checks` sheet reports DSC inclusion as `PASS`.
-
-## 4. Shared Online Delivery-Resource Policy
-
-`ONLINE_ROOM` is a synthetic delivery-mode placeholder created by the loader. It is not one of the raw physical venue rows.
-
-Fully online teaching does not require physical venue allocation. Multiple unrelated online classes may share `ONLINE_ROOM` concurrently, while tutor clashes, student-group clashes, calendar rules, duration rules, teaching-week rules, and physical room clashes remain hard constraints.
-
-Online result:
-
-- Online required: `813`
-- Online scheduled: `813`
-- Online unscheduled: `0`
-
-## 5. Remaining F2F Operational Exceptions
-
-The remaining `30` unscheduled teaching occurrences are F2F. They are primarily caused by physical-room capacity pressure for very large `ENG1001` common-module requirements with enrolments of approximately `1035` and `1110`.
-
-These should be treated as operational exceptions unless the source requirements support another delivery arrangement.
-
-Possible operational responses:
-
-- Additional large physical-room availability
-- Approved online or hybrid delivery for very large common-module sessions
-- Programme-level timetable review
-- Revised common-module grouping or enrolment assumptions
-- Manual exception handling for affected weeks
-
-## 6. Optimiser Result
-
-The controlled optimiser run preserved teaching demand, coverage, online coverage, and hard feasibility.
-
-- Baseline soft violations: `3030`
-- Optimised soft violations: `3019`
-- Optimiser improvement: `11`
-- Optimiser runtime: approximately `1047` seconds
-
-The optimiser is useful as pre-generated evidence. The non-optimised Engineering command is recommended for the live presentation because the optimiser runtime is too long for a live demo.
-
-## 7. Test Result
-
-Final test result:
+The remarks-aware enhanced run enables deterministic interpretation of supported free-text scheduling remarks.
 
 ```text
-159 passed
+Required teaching occurrences: 2777
+Scheduled teaching occurrences: 2715
+Unscheduled teaching occurrences: 62
+Coverage: 97.77%
+Scheduled hard violations: 0
 ```
 
-## 8. Exact Commands Used
+The enhanced run has lower coverage because it enforces additional explicit supported requirements from remarks. It does not reduce unscheduled demand by accepting hard violations.
+
+## Attribution
+
+Occurrence-level attribution for the remarks-aware comparison:
+
+```text
+30 unchanged unscheduled
+13 direct explicit remark effects
+19 indirect displacements
+0 recoveries
+0 unexplained
+```
+
+This reconciles the enhanced result against the baseline. No enhanced-only unscheduled occurrence is left unexplained.
+
+## Remarks Handling
+
+Course-level handling counts:
+
+```text
+Total non-empty remarks: 226
+Applied automatically: 5
+Preferences considered: 4
+Scheduled needing confirmation: 95
+Unscheduled due to explicit request: 5
+Unsupported non-blocking: 105
+No scheduling action required: 12
+```
+
+These course-level handling counts are different from occurrence-level scheduling attribution. A single course-level remark can affect multiple teaching occurrences, and some remarks are review notes rather than scheduling blockers.
+
+## Shared Online Delivery-Resource Policy
+
+`ONLINE_ROOM` is a synthetic delivery-mode placeholder, not a scarce physical venue. Fully online classes may share it when they do not share tutors or student groups.
+
+This policy does not weaken hard constraints. Tutor clashes, student-group clashes, calendar rules, duration rules, teaching-week rules and physical room clashes remain enforced.
+
+Validated online baseline result:
+
+```text
+Online required: 813
+Online scheduled: 813
+Online unscheduled: 0
+```
+
+## Remaining Operational Exceptions
+
+The baseline leaves `30` F2F teaching occurrences unscheduled. The remaining demand is mainly associated with very large common-module F2F requirements affected by physical-room capacity.
+
+These are operational exceptions. Appropriate next actions include:
+
+- reviewing large-room availability;
+- approving an alternate delivery mode where policy allows;
+- splitting very large sessions where academically valid;
+- manually reviewing affected programme timetables;
+- confirming any source-data assumptions with stakeholders.
+
+## Optimiser Evidence
+
+The controlled optimiser run preserved teaching demand, coverage, online coverage and hard feasibility.
+
+```text
+Baseline soft violations: 3030
+Optimised soft violations: 3019
+Improvement: 11
+Runtime: approximately 1047 seconds
+```
+
+The optimiser is useful as evidence, but it should not be overstated and is too slow for a live presentation run.
+
+## Testing
+
+Final expected test result:
+
+```text
+220 passed
+```
+
+If this count changes after final cleanup tests are added, the newer full-suite result should be recorded before submission.
+
+## Release Validation
+
+Expected final validation result after generating the final remarks-aware Engineering evidence:
+
+```text
+FINAL RELEASE VALIDATION: PASS
+```
+
+Release validation checks the generated evidence workbooks without regenerating the timetable.
+
+## Exact Validation Commands
 
 Run tests:
 
 ```powershell
 cd C:\Users\Admin\Documents\GitHub\itp_group5\timetable_scheduler
-py -m pytest -q
+..\.venv\Scripts\python.exe -m pytest -q
 ```
 
-Recommended live Engineering demo:
+Core baseline command:
 
 ```powershell
-py main.py --scope eng --skip-optimisation --max-candidate-patterns 300 --max-retry-assignments 50 --skip-unscheduled-diagnostics --progress-interval 25 --audit-demand-metrics
+..\.venv\Scripts\python.exe main.py --scope eng --skip-optimisation --max-candidate-patterns 300 --max-retry-assignments 50 --skip-unscheduled-diagnostics --progress-interval 25 --audit-demand-metrics --disable-remark-interpretation
 ```
 
-Controlled optimiser evidence run:
+Remarks-aware final command:
 
 ```powershell
-py main.py --scope eng --max-iterations 5 --max-candidate-patterns 300 --max-retry-assignments 50 --skip-unscheduled-diagnostics --progress-interval 25 --audit-demand-metrics
+..\.venv\Scripts\python.exe main.py --scope eng --skip-optimisation --max-candidate-patterns 300 --max-retry-assignments 50 --skip-unscheduled-diagnostics --progress-interval 25 --audit-demand-metrics
 ```
 
 Release validation:
 
 ```powershell
-py validate_release.py
+..\.venv\Scripts\python.exe validate_release.py
 ```
 
-## 9. Known Limitations
+## Known Limitations
 
-- The prototype does not schedule every F2F occurrence because hard constraints are not weakened.
-- Very large common-module F2F sessions exceed available physical-room capacity in the loaded room data.
-- The optimiser run is intentionally controlled and can take approximately 17 minutes for five iterations.
-- The system does not perform scenario comparison or what-if analysis.
+- The scheduler is heuristic and does not prove global optimality.
+- Remaining F2F demand needs operational review.
+- Recording capability is used as the available proxy for hybrid support.
+- Ambiguous free-text remarks are not guessed; they remain visible for review.
+- Scenario comparison and internal-system upload are outside the prototype scope.
 - Generated Excel workbooks are local artefacts and remain ignored by Git.
-
-## 10. Suggested Operational Improvements
-
-- Review large common-module delivery policies.
-- Confirm whether very large common-module sessions should be online, hybrid, split, or assigned to external venues.
-- Add or identify suitable large physical venues if F2F delivery is mandatory.
-- Review source data rows skipped by the loader report.
-- Use `preflight_report.xlsx`, `run_summary.xlsx`, and `Residual F2F Analysis` as the decision trail for final stakeholder review.

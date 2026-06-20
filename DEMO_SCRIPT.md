@@ -51,19 +51,26 @@ If `python` is unavailable in the local shell, use the installed Python executab
 
 ## 4. Console Metrics to Point Out
 
-Point out these expected figures:
+The live command is remarks-aware. Point out these expected figures:
 
 - Input course records: `507`
 - Consolidated scheduling requirements: `465`
 - Required teaching occurrences: `2777`
-- Scheduled teaching occurrences: `2747`
-- Unscheduled teaching occurrences: `30`
-- Coverage rate: `98.92%`
+- Scheduled teaching occurrences: `2715`
+- Unscheduled teaching occurrences: `62`
+- Coverage rate: `97.77%`
 - Scheduled hard violations: `0`
 
 Suggested wording:
 
-> The main feasibility result is not raw scheduled row count. We use teaching occurrences as the stable denominator. The system schedules 2747 of 2777 occurrences and keeps scheduled hard violations at zero.
+> The main feasibility result is not raw scheduled row count. We use teaching occurrences as the stable denominator. In the remarks-aware run, the system schedules 2715 of 2777 occurrences and keeps scheduled hard violations at zero.
+
+If asked about the core baseline, explain:
+
+- Baseline scheduled teaching occurrences: `2747`
+- Baseline unscheduled teaching occurrences: `30`
+- Baseline coverage rate: `98.92%`
+- Baseline online coverage: `813 / 813`
 
 ## 5. Generated Timetable Output
 
@@ -93,14 +100,14 @@ Show the Summary sheet.
 Point out:
 
 - Required teaching occurrences: `2777`
-- Scheduled teaching occurrences: `2747`
-- Unscheduled teaching occurrences: `30`
-- Coverage rate: `98.92%`
+- Scheduled teaching occurrences: `2715`
+- Unscheduled teaching occurrences: `62`
+- Coverage rate: `97.77%`
 - Hard violations on scheduled assignments: `0`
 
 Suggested wording:
 
-> This is the headline evidence page. It shows that the system is feasible where it schedules classes, and transparent about the 30 teaching occurrences that remain unresolved.
+> This is the headline evidence page for the remarks-aware run. It shows that the system is feasible where it schedules classes, and transparent about the teaching occurrences that remain unresolved.
 
 ## 7. Validation Checks
 
@@ -161,7 +168,7 @@ Point out:
 
 Exact wording:
 
-> The 30 remaining teaching occurrences are not hidden. They are F2F operational exceptions, mainly very large ENG1001 common-module sessions. The correct next step is an operational decision: add suitable venue capacity, approve another delivery mode, split sessions if policy allows, or manually review the programme timetable.
+> The remaining teaching occurrences are not hidden. In the restored baseline there are 30 F2F operational exceptions, mainly very large ENG1001 common-module sessions. In the remarks-aware run, additional unresolved occurrences are explained through the special-request attribution. The correct next step is an operational decision: add suitable venue capacity, approve another delivery mode, split sessions if policy allows, or manually review the programme timetable.
 
 ## 11. Release Validation
 
@@ -219,4 +226,4 @@ Suggested wording:
 
 Suggested wording:
 
-> The prototype provides a hard-constraint-safe Engineering timetable including DSC. It schedules 2747 of 2777 required teaching occurrences, fully schedules online demand, keeps scheduled hard violations at zero, and transparently reports the remaining 30 F2F occurrences for operational decision-making.
+> The prototype provides a hard-constraint-safe Engineering timetable including DSC. The restored core baseline schedules 2747 of 2777 required teaching occurrences, while the remarks-aware run schedules 2715 of 2777 after enforcing supported free-text requests. Both keep scheduled hard violations at zero and transparently report unresolved occurrences for operational decision-making.

@@ -309,7 +309,7 @@ For Engineering scope:
 
 ## Final Artefact Freeze and Submission Readiness
 
-- Current tests: `104 passed`.
+- Historical phase test count has been superseded by the final release test count recorded above.
 - Final Engineering demand:
   - Required teaching occurrences: `2777`
   - Scheduled teaching occurrences: `2747`
@@ -336,7 +336,7 @@ For Engineering scope:
 ## Report and Presentation Phase
 
 - Prototype feature development is complete.
-- Current tests: `159 passed`.
+- Historical phase test count has been superseded by the final release test count recorded above.
 - Release validator: `PASS`.
 - Final Engineering result:
   - Input course records: `507`
@@ -363,13 +363,13 @@ For Engineering scope:
 
 ## Repository Reconciliation Before Final Submission
 
-Pre-reconciliation findings recorded for this task:
+Initial pre-reconciliation findings recorded for that task:
 
-- Current checkout contains report and presentation evidence documents.
-- Current checkout reports only `61` passing tests.
+- The checkout contained report and presentation evidence documents.
+- The checkout reported only `61` passing tests.
 - The previously validated release-ready state had `112` passing tests.
-- `FINAL_RESULTS.md` and `RELEASE_CHECKLIST.md` are currently missing.
-- `DEMO.md` contains an older Engineering command.
+- `FINAL_RESULTS.md` and `RELEASE_CHECKLIST.md` were missing before reconciliation.
+- `DEMO.md` contained a superseded Engineering command before reconciliation.
 - Final report and presentation work must not proceed until the repository is reconciled.
 - Do not invent or manually alter verified metrics.
 - Preserve the verified final Engineering figures:
@@ -442,6 +442,27 @@ Pre-reconciliation findings recorded for this task:
 - DSC is one Engineering programme and is not a separate UI option.
 - Do not alter scheduling rules, hard constraints, optimiser logic, demand metrics, virtual-room semantics or Template 2 structure.
 
+## Final Release and AI Collaboration
+
+- The user is the project architect and final decision-maker.
+- AI tools supported implementation, testing, debugging and documentation.
+- AI-generated suggestions were reviewed, corrected and validated by the user.
+- The repository must not claim that AI independently designed the system.
+- The repository must not hide or minimise AI involvement.
+- Final claims must be supported by tests, deterministic runs and generated evidence.
+- The final UI uses:
+  - `Consolidated Schedule`
+  - `Proposed Timetable`
+- The UI must not display Template 1 or Template 2 terminology.
+- The final scope is the Engineering cluster.
+- DSC is part of Engineering.
+- The final innovative feature is deterministic and explainable remarks interpretation.
+- Existing hard constraints must not be weakened.
+- The timetable output structure must not be changed.
+- Generated outputs, virtual environments, caches and temporary files must not be committed.
+- The final release must come from `main`.
+- The final release tag should be `v1.0.0` unless that tag already exists.
+
 ## Important Commands
 
 Run tests from inside the `timetable_scheduler` folder:
@@ -469,13 +490,13 @@ Expected key result:
 Final hard violations on scheduled assignments: 0
 ```
 
-Run Engineering final test:
+Run Engineering remarks-aware final test:
 
 ```powershell
 python main.py --scope eng --skip-optimisation --max-candidate-patterns 300 --max-retry-assignments 50 --skip-unscheduled-diagnostics --progress-interval 25 --audit-demand-metrics
 ```
 
-Expected key result:
+Expected key result for the remarks-aware run:
 
 ```text
 Scheduled hard violations: 0
