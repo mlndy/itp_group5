@@ -10,6 +10,7 @@ import pandas as pd
 from data.fixed_sessions import FixedSessionLoaderReport
 from data.loader import LoaderReport
 from engine.fixed_reconciliation import FixedReconciliationReport
+from engine.guarded_generation import QuarantinedRequirement, build_quarantined_requirements, quarantine_to_row
 
 ISSUE_COLUMNS = ["severity", "workbook", "sheet", "row", "field", "entered value", "problem", "how to correct it"]
 SUMMARY_COLUMNS = ["Metric", "Value"]
@@ -21,6 +22,8 @@ class InputReadinessResult:
 
     status: str
     critical_errors: list[dict[str, object]] = field(default_factory=list)
+    global_errors: list[dict[str, object]] = field(default_factory=list)
+    quarantined_requirements: list[QuarantinedRequirement] = field(default_factory=list)
     warnings: list[dict[str, object]] = field(default_factory=list)
     info: list[dict[str, object]] = field(default_factory=list)
     fixed_loader_report: FixedSessionLoaderReport | None = None
@@ -30,16 +33,19 @@ class InputReadinessResult:
 
     @property
     def ready(self) -> bool:
-        """Return True when no critical errors were found."""
-        return not self.critical_errors
+        """Return True when no global blocking errors were found."""
+        return not self.global_errors
 
     @property
     def message(self) -> str:
         """Return a concise user-facing readiness message."""
-        critical_count = len(self.critical_errors)
+        global_count = len(self.global_errors)
+        quarantine_count = len(self.quarantined_requirements)
         warning_count = len(self.warnings)
-        if critical_count:
-            return f"Input not ready: {critical_count} critical error(s) and {warning_count} warning(s)"
+        if global_count:
+            return f"Input blocked: {global_count} global blocking error(s), {quarantine_count} quarantined requirement(s), and {warning_count} warning(s)"
+        if quarantine_count:
+            return f"Ready with exclusions: {quarantine_count} requirement(s) will be quarantined and {warning_count} warning(s) reported"
         if warning_count:
             return f"Input ready with {warning_count} warning(s)"
         return "Input ready"
@@ -65,38 +71,47 @@ def build_input_readiness_result(
     reconciliation_report: FixedReconciliationReport,
     fixed_assignment_issues: list[dict[str, object]],
     loader_report: LoaderReport | None = None,
+    global_errors: list[dict[str, object]] | None = None,
+    quarantined_requirements: list[QuarantinedRequirement] | None = None,
 ) -> InputReadinessResult:
     """Build a generation gate from loader, reconciliation and fixed-placement checks."""
     critical: list[dict[str, object]] = []
+    global_blocking = list(global_errors or [])
     warnings: list[dict[str, object]] = []
     info: list[dict[str, object]] = []
+    quarantine = quarantined_requirements or build_quarantined_requirements(
+        fixed_sessions=[],
+        loader_report=fixed_loader_report,
+        reconciliation_report=reconciliation_report,
+        fixed_assignment_issues=fixed_assignment_issues,
+    )
 
     for issue in fixed_loader_report.issues:
         row = _normalise_issue(issue, fixed_loader_report.workbook_path)
-        if row["severity"] == "critical":
-            critical.append(row)
-        elif row["severity"] == "warning":
+        if row["severity"] == "warning":
             warnings.append(row)
+        elif row["severity"] == "critical":
+            info.append({**row, "severity": "quarantined"})
         else:
             info.append(row)
 
     for row in reconciliation_report.ambiguous_matches:
-        critical.append(
+        info.append(
             _normalise_issue(
                 {
                     **row,
-                    "severity": "critical",
+                    "severity": "quarantined",
                     "problem": "Ambiguous fixed/non-fixed reconciliation could duplicate demand.",
                     "how to correct it": row.get("manual-review reason", "Review the matching source rows."),
                 }
             )
         )
     for row in reconciliation_report.partial_matches:
-        critical.append(
+        info.append(
             _normalise_issue(
                 {
                     **row,
-                    "severity": "critical",
+                    "severity": "quarantined",
                     "problem": "Partial fixed/non-fixed reconciliation requires a reviewed split to avoid duplicate demand.",
                     "how to correct it": row.get("manual-review reason", "Review and confirm the fixed portion before generation."),
                 }
@@ -104,12 +119,12 @@ def build_input_readiness_result(
         )
     for row in reconciliation_report.invalid_fixed_rows:
         severity = str(row.get("severity") or "critical")
-        target = critical if severity == "critical" else warnings
+        target = info if severity == "critical" else warnings
         target.append(
             _normalise_issue(
                 {
                     **row,
-                    "severity": severity,
+                    "severity": "quarantined" if severity == "critical" else severity,
                     "problem": row.get("manual-review reason", "Invalid fixed source row."),
                     "how to correct it": "Correct the fixed-session source workbook or mark the row as non-fixed.",
                 }
@@ -120,14 +135,16 @@ def build_input_readiness_result(
         if row["severity"] == "warning":
             warnings.append(row)
         elif row["severity"] == "critical":
-            critical.append(row)
+            info.append({**row, "severity": "quarantined"})
         else:
             info.append(row)
 
-    status = "PASS" if not critical else "FAIL"
+    status = "PASS" if not global_blocking else "FAIL"
     return InputReadinessResult(
         status=status,
         critical_errors=critical,
+        global_errors=global_blocking,
+        quarantined_requirements=quarantine,
         warnings=warnings,
         info=info,
         fixed_loader_report=fixed_loader_report,
@@ -144,6 +161,8 @@ def _summary_rows(result: InputReadinessResult) -> pd.DataFrame:
     rows = [
         {"Metric": "Readiness status", "Value": result.status},
         {"Metric": "Readiness message", "Value": result.message},
+        {"Metric": "Global blocking errors", "Value": len(result.global_errors)},
+        {"Metric": "Quarantined requirements", "Value": len(result.quarantined_requirements)},
         {"Metric": "Critical errors", "Value": len(result.critical_errors)},
         {"Metric": "Warnings", "Value": len(result.warnings)},
         {"Metric": "Information", "Value": len(result.info)},
@@ -179,8 +198,15 @@ def export_input_readiness_report(result: InputReadinessResult, output_path: Pat
         ]
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
         _summary_rows(result).to_excel(writer, sheet_name="Summary", index=False)
-        pd.DataFrame(result.critical_errors, columns=ISSUE_COLUMNS).to_excel(writer, sheet_name="Critical Errors", index=False)
+        pd.DataFrame(result.global_errors, columns=ISSUE_COLUMNS).to_excel(writer, sheet_name="Global Errors", index=False)
+        pd.DataFrame(result.global_errors, columns=ISSUE_COLUMNS).to_excel(writer, sheet_name="Critical Errors", index=False)
+        pd.DataFrame([quarantine_to_row(item) for item in result.quarantined_requirements]).to_excel(
+            writer,
+            sheet_name="Quarantined Requirements",
+            index=False,
+        )
         pd.DataFrame(result.warnings, columns=ISSUE_COLUMNS).to_excel(writer, sheet_name="Warnings", index=False)
+        pd.DataFrame(result.info, columns=ISSUE_COLUMNS).to_excel(writer, sheet_name="Information", index=False)
         pd.DataFrame(fixed_issues, columns=ISSUE_COLUMNS).to_excel(writer, sheet_name="Fixed Session Issues", index=False)
         pd.DataFrame(result.reconciliation_report.ambiguous_matches if result.reconciliation_report else []).to_excel(
             writer,

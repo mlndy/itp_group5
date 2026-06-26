@@ -458,11 +458,14 @@ def test_stakeholder_views_export_expected_sheets(tmp_path: Path) -> None:
         "Exception Queue",
         "Special Requests Review",
         "Special Requests Summary",
+        "Visualisation Data",
     ]
     queue_headers = [cell.value for cell in workbook["Exception Queue"][1]]
     assert "Recommended Operational Action" in queue_headers
     assert "Review Status" in queue_headers
     assert workbook["Exception Queue"]["J2"].value
+    visual_headers = [cell.value for cell in workbook["Visualisation Data"][1]]
+    assert "Source Assignment ID" in visual_headers
 
 
 def test_run_summary_includes_remarks_interpretation_sheet(tmp_path: Path) -> None:

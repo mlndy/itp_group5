@@ -317,15 +317,41 @@ def _demand_df(report: FixedReconciliationReport) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=DEMAND_COLUMNS)
 
 
+def _demand_ledger_df(report: FixedReconciliationReport) -> pd.DataFrame:
+    """Return status-labelled fixed/non-fixed demand ledger rows."""
+    rows: list[dict[str, object]] = []
+    for row in report.exact_matches:
+        rows.append({**row, "ledger status": "FIXED_ANCHORED"})
+    for row in report.standalone_fixed:
+        rows.append({**row, "ledger status": "FIXED_STANDALONE"})
+    for row in report.partial_matches:
+        rows.append({**row, "ledger status": "QUARANTINED_AMBIGUOUS"})
+    for row in report.ambiguous_matches:
+        rows.append({**row, "ledger status": "QUARANTINED_AMBIGUOUS"})
+    for row in report.invalid_fixed_rows:
+        rows.append({**row, "ledger status": "QUARANTINED_INCOMPLETE"})
+    return pd.DataFrame(rows)
+
+
 def export_fixed_reconciliation_report(report: FixedReconciliationReport, output_path: Path) -> None:
     """Export fixed/non-fixed reconciliation evidence."""
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
         _summary_df(report).to_excel(writer, sheet_name="Summary", index=False)
+        _demand_ledger_df(report).to_excel(writer, sheet_name="Demand Ledger", index=False)
+        pd.DataFrame(report.exact_matches, columns=MATCH_COLUMNS).to_excel(writer, sheet_name="Anchored Fixed", index=False)
+        pd.DataFrame([], columns=MATCH_COLUMNS).to_excel(writer, sheet_name="Shared Fixed", index=False)
+        pd.DataFrame(report.standalone_fixed, columns=MATCH_COLUMNS).to_excel(writer, sheet_name="Standalone Fixed", index=False)
+        pd.DataFrame(
+            [*report.partial_matches, *report.ambiguous_matches, *report.invalid_fixed_rows],
+            columns=MATCH_COLUMNS,
+        ).to_excel(writer, sheet_name="Quarantined Requirements", index=False)
+        pd.DataFrame(report.exact_matches, columns=MATCH_COLUMNS).to_excel(writer, sheet_name="Duplicate Suppression", index=False)
+        pd.DataFrame([*report.partial_matches, *report.ambiguous_matches], columns=MATCH_COLUMNS).to_excel(writer, sheet_name="Ambiguous Mappings", index=False)
+        _demand_df(report).to_excel(writer, sheet_name="Occurrence Reconciliation", index=False)
         pd.DataFrame(report.exact_matches, columns=MATCH_COLUMNS).to_excel(writer, sheet_name="Exact Matches", index=False)
         pd.DataFrame(report.partial_matches, columns=MATCH_COLUMNS).to_excel(writer, sheet_name="Partial Matches", index=False)
-        pd.DataFrame(report.standalone_fixed, columns=MATCH_COLUMNS).to_excel(writer, sheet_name="Standalone Fixed", index=False)
         pd.DataFrame(report.ambiguous_matches, columns=MATCH_COLUMNS).to_excel(writer, sheet_name="Ambiguous Matches", index=False)
         pd.DataFrame(report.invalid_fixed_rows, columns=MATCH_COLUMNS).to_excel(writer, sheet_name="Invalid Fixed Rows", index=False)
         _demand_df(report).to_excel(writer, sheet_name="Demand Reconciliation", index=False)

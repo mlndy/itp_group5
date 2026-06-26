@@ -33,6 +33,7 @@ from data.loader import (
 )
 from engine.fixed_reconciliation import export_fixed_reconciliation_report, reconcile_fixed_sessions
 from engine.fixed_issue_analysis import export_fixed_issue_workbooks
+from engine.guarded_generation import build_guarded_generation_state
 from engine.input_readiness import build_input_readiness_result, export_input_readiness_report
 from generator.fixed_scheduler import create_fixed_assignments, validate_fixed_assignments
 from pipeline import PipelineCancelled, PipelineOptions, PipelineResult, run_timetable_pipeline
@@ -175,11 +176,22 @@ class TimetableUIController:
             fixed_assignments, mapping_issues = create_fixed_assignments(fixed_sessions, rooms)
             conflict_issues = validate_fixed_assignments(fixed_assignments)
             empty_report = LoaderReport()
+            guarded_state = build_guarded_generation_state(
+                courses=courses,
+                rooms_loaded=len(rooms),
+                fixed_sessions=fixed_sessions,
+                fixed_loader_report=fixed_loader_report,
+                reconciliation_report=reconciliation_report,
+                fixed_assignments=fixed_assignments,
+                fixed_assignment_issues=mapping_issues + conflict_issues,
+            )
             readiness = build_input_readiness_result(
                 fixed_loader_report=fixed_loader_report,
                 reconciliation_report=reconciliation_report,
                 fixed_assignment_issues=mapping_issues + conflict_issues,
                 loader_report=empty_report,
+                global_errors=guarded_state.global_errors,
+                quarantined_requirements=guarded_state.quarantined_requirements,
             )
             export_input_readiness_report(readiness, DEFAULT_INPUT_READINESS_REPORT_FILE)
             export_fixed_issue_workbooks(

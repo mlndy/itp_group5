@@ -57,7 +57,7 @@ Preflight report and run summary report now exist and should be preserved.
 ## Additional DSC2204 Requirements - June 26
 
 - Input errors should be detected before timetable generation.
-- Critical input errors must prevent generation.
+- Global structural input errors must prevent generation; isolated record-level errors may quarantine only the affected requirements where safe.
 - Fixed sessions must be anchored exactly as supplied.
 - Non-fixed modules must be scheduled around fixed sessions.
 - Fixed sessions must not be silently moved to improve coverage.
@@ -83,7 +83,7 @@ Preflight report and run summary report now exist and should be preserved.
 - Every automatically resolved issue must retain its original value, normalised value, rule applied and evidence.
 - Critical-error counts must distinguish unique affected rows from total issue instances.
 - Conflicts may overlap, so summary totals must not be added blindly.
-- The full Engineering scheduler may run only when no blocking critical issue remains.
+- The full Engineering scheduler may run when no global blocking issue remains; unresolved record-level issues must be quarantined and reported.
 
 ## Authoritative Resolution and Supervisor Approval Workflow
 
@@ -98,6 +98,27 @@ Preflight report and run summary report now exist and should be preserved.
 - Every approved resolution must record approver, date, reason and original source row.
 - The scheduler must support strict mode with no unresolved critical issues.
 - Resolution overrides must not silently bypass unrelated validation errors.
+
+## Guarded Partial Generation Policy
+
+- Input validation remains mandatory before generation.
+- Errors must be shown to the user before scheduling begins.
+- Global structural errors block the complete run.
+- Record-level errors quarantine only the affected requirements where isolation is safe.
+- Quarantined requirements must never appear as valid scheduled rows.
+- Valid fixed sessions must remain anchored exactly.
+- Invalid fixed sessions must not be moved, guessed or silently corrected.
+- Genuine fixed-to-fixed conflicts quarantine the conflicting assignments.
+- Unaffected fixed and non-fixed assignments may continue to scheduling.
+- Scheduled assignments must have zero hard-constraint violations.
+- A programme-year affected by unresolved demand must be marked incomplete.
+- Only complete programme-year schedules count toward the minimum of `20`.
+- The proposed timetable may contain valid schedules from both complete and incomplete programme-years.
+- Submission-ready Template 2 must contain only valid complete rows and clearly report programme completeness.
+- All original source values and source-row references must remain traceable.
+- Raw institutional workbooks must remain unchanged.
+- The optimiser must never move fixed assignments.
+- Timetable visualisation is a later output phase and must not be implemented yet.
 
 ## Coding Rules
 

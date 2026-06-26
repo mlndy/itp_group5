@@ -10,6 +10,7 @@ import pandas as pd
 from openpyxl import load_workbook
 
 from data.models import Assignment, Course, FixedSession, Room
+from engine.demand_metrics import build_demand_metrics
 from engine.fixed_reconciliation import normalise_programme_year
 from output.exporter import export_schedule
 
@@ -49,9 +50,24 @@ def _is_submission_assignment(assignment: Assignment) -> bool:
     return assignment.room is not None and assignment.timeslot is not None and not assignment.hard_violations
 
 
-def submission_assignments(assignments: list[Assignment]) -> list[Assignment]:
+def submission_assignments(
+    assignments: list[Assignment],
+    complete_programmes: set[str] | None = None,
+    rooms: list[Room] | None = None,
+) -> list[Assignment]:
     """Return scheduled assignments only, excluding unresolved placeholders."""
-    return [assignment for assignment in assignments if _is_submission_assignment(assignment)]
+    valid_room_ids = _valid_rooms(rooms or []) if rooms is not None else None
+    rows: list[Assignment] = []
+    for assignment in assignments:
+        if not _is_submission_assignment(assignment):
+            continue
+        programme = normalise_programme_year(assignment.course.prog_yr)
+        if complete_programmes is not None and programme not in complete_programmes:
+            continue
+        if valid_room_ids is not None and assignment.room is not None and assignment.room.room_id not in valid_room_ids:
+            continue
+        rows.append(assignment)
+    return rows
 
 
 def export_submission_ready_schedule(
@@ -59,10 +75,12 @@ def export_submission_ready_schedule(
     output_path: Path,
     template2_path: Path,
     enable_remark_interpretation: bool = True,
+    complete_programmes: set[str] | None = None,
+    rooms: list[Room] | None = None,
 ) -> None:
     """Export a Template 2 workbook containing only complete scheduled rows."""
     export_schedule(
-        submission_assignments(assignments),
+        submission_assignments(assignments, complete_programmes=complete_programmes, rooms=rooms),
         output_path,
         template2_path=template2_path,
         enable_remark_interpretation=enable_remark_interpretation,
@@ -164,6 +182,7 @@ def _duplicate_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
 
 
 def _programme_coverage(
+    source_requirements: list[Course],
     assignments: list[Assignment],
     submission_rows: list[dict[str, object]],
 ) -> list[dict[str, object]]:
@@ -171,11 +190,13 @@ def _programme_coverage(
     required: dict[str, set[tuple[str, str, int]]] = defaultdict(set)
     scheduled: dict[str, set[tuple[str, str, int]]] = defaultdict(set)
     fixed_counts: Counter[str] = Counter()
+    for course in source_requirements:
+        programme = normalise_programme_year(course.prog_yr)
+        weeks = course.teaching_weeks
+        for week in weeks:
+            required[programme].add((course.module_code, course.activity, week))
     for assignment in assignments:
         programme = normalise_programme_year(assignment.course.prog_yr)
-        weeks = assignment.course.teaching_weeks
-        for week in weeks:
-            required[programme].add((assignment.course.module_code, assignment.course.activity, week))
         if assignment.is_fixed:
             fixed_counts[programme] += 1
         if _is_submission_assignment(assignment) and assignment.timeslot is not None:
@@ -243,7 +264,8 @@ def validate_template2_submission(
     rows = _row_dicts(workbook_path)
     field_rows, invalid_rows = _required_field_validation(rows, rooms)
     duplicates = _duplicate_rows(rows)
-    programme_rows = _programme_coverage(assignments, rows)
+    programme_rows = _programme_coverage(source_requirements, assignments, rows)
+    demand = build_demand_metrics(source_requirements, assignments, input_course_records=len(source_requirements))
     complete_programmes = sum(1 for row in programme_rows if row["Complete Schedule Status"] == "PASS")
     submission_ready_programmes = sum(
         1 for row in programme_rows if row["Complete Schedule Status"] == "PASS" and row["Included In Submission"] == "Yes"
@@ -259,9 +281,9 @@ def validate_template2_submission(
         "fixed-source conflicts": sum(1 for item in assignments if item.is_fixed and item.hard_violations),
         "non-fixed assignments": sum(1 for item in assignments if not item.is_fixed),
         "total required assignments": len(source_requirements),
-        "total required teaching occurrences": sum(len(course.teaching_weeks) for course in source_requirements),
-        "total scheduled occurrences": len(rows),
-        "total unscheduled occurrences": sum(1 for item in assignments if not _is_submission_assignment(item)),
+        "total required teaching occurrences": demand.required_teaching_occurrences,
+        "total scheduled occurrences": demand.scheduled_teaching_occurrences,
+        "total unscheduled occurrences": demand.unscheduled_teaching_occurrences,
         "Template 2 output rows": len(rows),
         "rows with missing required fields": sum(1 for row in invalid_rows if "Missing" in row["Issues"]),
         "rows with mapping errors": len(invalid_rows),

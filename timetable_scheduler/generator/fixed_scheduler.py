@@ -70,6 +70,11 @@ def _find_room_by_code(code: str, rooms: list[Room]) -> Room | None:
     return None
 
 
+def _capacity_unverified_room(code: str) -> Room:
+    """Return an exact fixed-location token without inventing usable capacity."""
+    return Room(code, 0, "physical", "Recognised Venue (capacity unavailable)")
+
+
 def _codes_from_location(location: str) -> list[str]:
     """Extract exact venue codes such as E6-07-10 from a location string."""
     text = str(location or "").upper()
@@ -132,6 +137,18 @@ def _resolve_fixed_rooms(session: FixedSession, rooms: list[Room]) -> tuple[tupl
             for code in codes:
                 room = lookup.get(code.casefold()) or _find_room_by_code(code, rooms)
                 if room is None:
+                    if code.upper().startswith("W3-"):
+                        issues.append(
+                            _issue(
+                                session,
+                                severity="warning",
+                                field="location",
+                                problem=f"Exact W3 fixed room '{code}' is retained with capacity unverified.",
+                                recommendation="Retain the official fixed location token and confirm host-key/capacity before submission-ready export.",
+                            )
+                        )
+                        resolved.append(_capacity_unverified_room(code))
+                        continue
                     evidence = classify_location(code, rooms)
                     evidence_room = room_from_location_evidence(evidence)
                     if evidence_room is None:
@@ -345,12 +362,15 @@ def validate_fixed_assignments(assignments: list[Assignment]) -> list[dict[str, 
         if violations:
             assignment.hard_violations = violations
             source = assignment.fixed_source or ""
+            related = _related_conflict_sources(assignment, accepted)
             source_file, sheet, row = _split_fixed_source(source)
             issues.append(
                 {
                     "severity": "critical",
                     "source": source_file,
                     "source refs": source,
+                    "related source refs": " | ".join(related),
+                    "conflict group id": _conflict_group_id((source, *related), violations),
                     "sheet": sheet,
                     "row": row,
                     "field": "fixed placement",
@@ -360,6 +380,28 @@ def validate_fixed_assignments(assignments: list[Assignment]) -> list[dict[str, 
             )
         accepted.append(assignment)
     return issues
+
+
+def _related_conflict_sources(assignment: Assignment, accepted: list[Assignment]) -> list[str]:
+    """Return accepted fixed sources that clash with this assignment."""
+    related: list[str] = []
+    for existing in accepted:
+        violations = check_hard_constraints(assignment, [existing], enable_remark_interpretation=False)
+        if any("clash" in violation.casefold() or "lunch block" in violation.casefold() for violation in violations):
+            if existing.fixed_source:
+                related.append(existing.fixed_source)
+    return related
+
+
+def _conflict_group_id(sources: tuple[str, ...], violations: list[str]) -> str:
+    """Return a stable conflict-group label for unresolved fixed conflicts."""
+    import hashlib
+
+    values = [source for source in sources if source]
+    if len(values) < 2:
+        return ""
+    raw = "|".join(sorted(values)) + "|" + "; ".join(sorted(violations))
+    return "CFG-" + hashlib.sha1(raw.encode("utf-8")).hexdigest()[:10].upper()
 
 
 def _split_fixed_source(source: str) -> tuple[str, str, int | str]:

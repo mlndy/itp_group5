@@ -8,8 +8,16 @@ from openpyxl import Workbook, load_workbook
 
 from data.fixed_sessions import FixedSessionLoaderReport, load_fixed_sessions
 from data.models import Assignment, Course, FixedSession, Room, TimeSlot
+from engine.constraint_checker import check_hard_constraints
 from engine.fixed_issue_analysis import export_fixed_issue_workbooks
 from engine.fixed_reconciliation import FixedReconciliationReport, normalise_programme_year, reconcile_fixed_sessions
+from engine.guarded_generation import (
+    build_guarded_generation_state,
+    build_programme_completeness_rows,
+    complete_programme_set,
+    export_guarded_generation_report,
+    quarantined_requirement_courses,
+)
 from engine.fixed_resolution import export_resolution_template, load_resolution_workbook
 from engine.input_readiness import build_input_readiness_result
 from engine.location_mapping import classify_location
@@ -185,6 +193,21 @@ def test_unknown_w3_venue_remains_blocking(tmp_path: Path) -> None:
     assert evidence.treatment == "unknown venue"
 
 
+def test_exact_w3_fixed_room_is_retained_as_capacity_unverified() -> None:
+    """Exact official W3 fixed codes should anchor without inventing capacity."""
+    session = make_fixed_session(locations=("W3-01-03",))
+
+    assignments, issues = create_fixed_assignments([session], [])
+
+    assert len(assignments) == 1
+    assert assignments[0].room is not None
+    assert assignments[0].room.room_id == "W3-01-03"
+    assert assignments[0].room.capacity == 0
+    assert "capacity unavailable" in assignments[0].room.resource_type.casefold()
+    assert all(issue["severity"] == "warning" for issue in issues)
+    assert check_hard_constraints(assignments[0], [], enable_remark_interpretation=False) == []
+
+
 def test_external_venue_does_not_reserve_internal_room() -> None:
     """Recognised external venues should anchor the row without consuming an internal room."""
     session = make_fixed_session(locations=("ENG External Venue",), source_row=12)
@@ -216,6 +239,38 @@ def test_unknown_location_remains_critical() -> None:
 
     assert assignments == []
     assert any(issue["severity"] == "critical" for issue in issues)
+
+
+def test_guarded_readiness_quarantines_incomplete_row_without_blocking(tmp_path: Path) -> None:
+    """Record-level fixed errors should produce ready-with-exclusions rather than a global block."""
+    workbook_path = tmp_path / "fixed.xlsx"
+    write_fixed_workbook(
+        workbook_path,
+        [["RSE/Y1", "RSE1001", "P1", 30, "Mon", "09:00", 1, "", "R1", "Tutor A"]],
+    )
+    fixed_sessions, loader_report = load_fixed_sessions(workbook_path)
+    reconciliation = reconcile_fixed_sessions(fixed_sessions, [], loader_report)
+    guarded = build_guarded_generation_state(
+        courses=[make_course()],
+        rooms_loaded=1,
+        fixed_sessions=fixed_sessions,
+        fixed_loader_report=loader_report,
+        reconciliation_report=reconciliation,
+        fixed_assignments=[],
+        fixed_assignment_issues=[],
+    )
+    readiness = build_input_readiness_result(
+        fixed_loader_report=loader_report,
+        reconciliation_report=reconciliation,
+        fixed_assignment_issues=[],
+        global_errors=guarded.global_errors,
+        quarantined_requirements=guarded.quarantined_requirements,
+    )
+
+    assert readiness.ready
+    assert "Ready with exclusions" in readiness.message
+    assert len(readiness.quarantined_requirements) == 1
+    assert readiness.quarantined_requirements[0].module_code == "RSE1001"
 
 
 def test_programme_and_staff_alias_normalisation_is_conservative() -> None:
@@ -261,6 +316,47 @@ def test_genuine_fixed_overlap_still_conflicts() -> None:
     assert any("Room clash" in issue["problem"] for issue in conflicts)
 
 
+def test_guarded_conflict_quarantines_both_linked_fixed_assignments() -> None:
+    """Unresolved fixed conflicts should exclude every linked fixed assignment."""
+    rooms = [Room("R1", 100, "physical", "Laboratory")]
+    sessions = [
+        make_fixed_session(module_code="ENG1001", locations=("R1",), staff_names=("Tutor A",), staff_ids=("Tutor A",), source_row=2),
+        make_fixed_session(module_code="ENG1002", locations=("R1",), staff_names=("Tutor B",), staff_ids=("Tutor B",), source_row=3),
+        make_fixed_session(module_code="ENG1003", locations=("R1",), day="Tuesday", source_row=4),
+    ]
+    assignments, mapping_issues = create_fixed_assignments(sessions, rooms)
+    conflicts = validate_fixed_assignments(assignments)
+    report = FixedSessionLoaderReport(workbook_path="fixed.xlsx")
+    report.audit_rows = [
+        {
+            "source workbook": "fixed.xlsx",
+            "source sheet": "ENG",
+            "source row": session.source_row,
+            "programme/year": session.programme_year,
+            "module code": session.module_code,
+            "group": session.group_id,
+            "teaching weeks": "1",
+            "loader status": "loaded",
+            "severity": "info",
+        }
+        for session in sessions
+    ]
+    guarded = build_guarded_generation_state(
+        courses=[make_course(module_code="ENG1001"), make_course(module_code="ENG1002"), make_course(module_code="ENG1003")],
+        rooms_loaded=len(rooms),
+        fixed_sessions=sessions,
+        fixed_loader_report=report,
+        reconciliation_report=FixedReconciliationReport(),
+        fixed_assignments=assignments,
+        fixed_assignment_issues=mapping_issues + conflicts,
+    )
+
+    anchored_sources = {assignment.fixed_source for assignment in guarded.anchored_fixed_assignments}
+    assert len(guarded.quarantined_requirements) == 2
+    assert len(guarded.quarantined_fixed_assignments) == 2
+    assert any("ENG1003" in (source or "") or source == "fixed.xlsx:ENG:4" for source in anchored_sources)
+
+
 def test_generate_schedule_reserves_initial_fixed_assignments() -> None:
     """Non-fixed scheduling should avoid room/time occupied by anchored sessions."""
     room = Room("R1", 100, "physical", "Lectorial")
@@ -284,6 +380,35 @@ def test_generate_schedule_reserves_initial_fixed_assignments() -> None:
     assert result[0].is_fixed
     assert movable.room == room
     assert movable.timeslot != TimeSlot("Monday", "09:00", 1)
+
+
+def test_quarantined_rows_do_not_block_unaffected_scheduling() -> None:
+    """Guarded scheduling should continue with quarantined rows excluded from candidates."""
+    room = Room("R1", 100, "physical", "Lectorial")
+    session = make_fixed_session(locations=("UNKNOWN ROOM",), source_row=9)
+    fixed_assignments, mapping_issues = create_fixed_assignments([session], [room])
+    report = FixedSessionLoaderReport(workbook_path="fixed.xlsx")
+    guarded = build_guarded_generation_state(
+        courses=[make_course(module_code="ENG2001")],
+        rooms_loaded=1,
+        fixed_sessions=[session],
+        fixed_loader_report=report,
+        reconciliation_report=FixedReconciliationReport(),
+        fixed_assignments=fixed_assignments,
+        fixed_assignment_issues=mapping_issues,
+    )
+
+    result = generate_schedule(
+        [make_course(module_code="ENG2001", staff_ids=["S002"], group_ids=["ENG/Y2"])],
+        [room],
+        initial_assignments=guarded.anchored_fixed_assignments,
+        allow_weekly_fallback=False,
+        max_retry_assignments=0,
+    )
+
+    assert guarded.quarantined_requirements
+    assert all(assignment.course.module_code != session.module_code for assignment in result)
+    assert any(assignment.room is not None for assignment in result)
 
 
 def test_optimiser_preserves_fixed_assignment_on_early_return() -> None:
@@ -317,6 +442,21 @@ def test_submission_assignments_excludes_unresolved_or_invalid_rows() -> None:
     )
 
     assert submission_assignments([scheduled, unscheduled, invalid]) == [scheduled]
+
+
+def test_submission_assignments_respects_complete_programme_and_room_mapping() -> None:
+    """Submission-ready rows should be stricter than proposed timetable rows."""
+    complete = Assignment(make_course(prog_yr="ENG/Y1"), Room("R1", 100, "physical"), TimeSlot("Monday", "09:00", 1))
+    incomplete_programme = Assignment(make_course(module_code="ENG2002", prog_yr="ENG/Y2"), Room("R1", 100, "physical"), TimeSlot("Monday", "10:00", 1))
+    missing_host_key = Assignment(make_course(module_code="ENG2003", prog_yr="ENG/Y1"), Room("W3-01-03", 0, "physical", "Recognised Venue (capacity unavailable)"), TimeSlot("Tuesday", "09:00", 1))
+
+    rows = submission_assignments(
+        [complete, incomplete_programme, missing_host_key],
+        complete_programmes={"ENG/Y1"},
+        rooms=[Room("R1", 100, "physical")],
+    )
+
+    assert rows == [complete]
 
 
 def test_template2_validation_report_exports_required_sheets(tmp_path: Path) -> None:
@@ -492,5 +632,57 @@ def test_resolution_template_lists_query_ids(tmp_path: Path) -> None:
     try:
         assert workbook["Resolution Decisions"]["A2"].value == "Q001"
         assert workbook["Resolution Decisions"]["A3"].value == "Q002"
+    finally:
+        workbook.close()
+
+
+def test_guarded_generation_report_exports_required_sheets(tmp_path: Path) -> None:
+    """Guarded report should keep quarantine and search-failure buckets separate."""
+    scheduled = Assignment(make_course(prog_yr="ENG/Y1"), Room("R1", 100, "physical"), TimeSlot("Monday", "09:00", 1))
+    quarantined = [
+        build_guarded_generation_state(
+            courses=[make_course()],
+            rooms_loaded=1,
+            fixed_sessions=[make_fixed_session(source_row=9)],
+            fixed_loader_report=FixedSessionLoaderReport(workbook_path="fixed.xlsx"),
+            reconciliation_report=FixedReconciliationReport(),
+            fixed_assignments=[],
+            fixed_assignment_issues=[
+                {
+                    "severity": "critical",
+                    "source": "fixed.xlsx",
+                    "sheet": "ENG",
+                    "row": 9,
+                    "problem": "Invalid or missing fixed-session weeks.",
+                }
+            ],
+        ).quarantined_requirements[0]
+    ]
+    demand_courses = [make_course(prog_yr="ENG/Y1"), *quarantined_requirement_courses(quarantined)]
+    programme_rows = build_programme_completeness_rows(demand_courses, [scheduled], quarantined)
+    output = tmp_path / "guarded.xlsx"
+
+    export_guarded_generation_report(
+        output_path=output,
+        global_errors=[],
+        quarantined=quarantined,
+        fixed_conflict_issues=[],
+        warnings=[],
+        assignments=[scheduled],
+        demand_courses=demand_courses,
+        programme_rows=programme_rows,
+        template2_summary={"Template 2 readiness status": "FAIL"},
+    )
+
+    workbook = load_workbook(output, read_only=True)
+    try:
+        assert {
+            "Summary",
+            "Global Errors",
+            "Quarantined Requirements",
+            "Programme Completeness",
+            "Submission Exclusions",
+            "Resolution Guidance",
+        } <= set(workbook.sheetnames)
     finally:
         workbook.close()

@@ -31,6 +31,7 @@ from engine.constraint_checker import (
     weighted_soft_score,
 )
 from engine.demand_metrics import DemandMetrics, build_demand_metrics, requirement_demand_lookup, requirement_key
+from engine.fixed_reconciliation import normalise_programme_year
 from engine.remarks_interpreter import (
     RemarkEnforcement,
     RemarkHandlingStatus,
@@ -183,6 +184,25 @@ SPECIAL_REQUEST_REVIEW_COLUMNS = [
     "Recommended Action",
     "Review Status",
     "Review Notes",
+]
+VISUALISATION_COLUMNS = [
+    "Normalised Programme",
+    "Academic Year",
+    "Module Code",
+    "Activity",
+    "Group",
+    "Lecturer",
+    "Room",
+    "Location Type",
+    "Day",
+    "Start Time",
+    "End Time",
+    "Duration",
+    "Teaching Week",
+    "Fixed/Generated",
+    "Online/Physical/External",
+    "Shared Session",
+    "Source Assignment ID",
 ]
 TEMPLATE2_REQUIRED_COLUMNS = [
     "Module",
@@ -1425,6 +1445,38 @@ def _special_requests_summary_df(assignments: list[Assignment]) -> pd.DataFrame:
     )
 
 
+def _visualisation_data_df(assignments: list[Assignment]) -> pd.DataFrame:
+    """Return normalised scheduled rows for later timetable visualisation."""
+    rows: list[dict[str, object]] = []
+    for assignment in assignments:
+        if not _is_scheduled_assignment(assignment):
+            continue
+        room = assignment.room
+        programme = normalise_programme_year(assignment.course.prog_yr)
+        rows.append(
+            {
+                "Normalised Programme": programme,
+                "Academic Year": _year_from_programme(assignment.course.prog_yr),
+                "Module Code": assignment.course.module_code,
+                "Activity": assignment.course.activity,
+                "Group": " / ".join(assignment.course.group_ids or [assignment.course.prog_yr]),
+                "Lecturer": ", ".join(_assignment_tutors(assignment)),
+                "Room": assignment_room_ids(assignment),
+                "Location Type": room.resource_type if room else "",
+                "Day": assignment.timeslot.day,
+                "Start Time": assignment.timeslot.start_time,
+                "End Time": _end_time_text(assignment),
+                "Duration": assignment.course.duration_hrs,
+                "Teaching Week": assignment.timeslot.week,
+                "Fixed/Generated": "Fixed" if assignment.is_fixed else "Generated",
+                "Online/Physical/External": room.room_type if room else "",
+                "Shared Session": "Yes" if "|" in str(assignment.fixed_source or "") else "No",
+                "Source Assignment ID": assignment.fixed_source or f"{assignment.course.source_file}:{assignment.course.source_sheet}:{assignment.course.source_row}",
+            }
+        )
+    return pd.DataFrame(rows, columns=VISUALISATION_COLUMNS)
+
+
 def export_stakeholder_views(
     assignments: list[Assignment],
     rooms: list[Room],
@@ -1448,6 +1500,7 @@ def export_stakeholder_views(
         ).to_excel(writer, sheet_name="Exception Queue", index=False)
         _special_requests_review_df(snapshot).to_excel(writer, sheet_name="Special Requests Review", index=False)
         _special_requests_summary_df(snapshot).to_excel(writer, sheet_name="Special Requests Summary", index=False)
+        _visualisation_data_df(snapshot).to_excel(writer, sheet_name="Visualisation Data", index=False)
 
 
 def _soft_weights_df() -> pd.DataFrame:

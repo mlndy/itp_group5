@@ -16,6 +16,7 @@ from config import (
     DEFAULT_FIXED_ROOT_CAUSE_FILE,
     DEFAULT_FIXED_SESSION_FILE,
     DEFAULT_FIXED_SESSIONS_AUDIT_FILE,
+    DEFAULT_GUARDED_GENERATION_REPORT_FILE,
     DEFAULT_INPUT_READINESS_REPORT_FILE,
     DEFAULT_LOCATION_MAPPING_EVIDENCE_FILE,
     DEFAULT_LOADER_REPORT_FILE,
@@ -52,6 +53,13 @@ from engine.fixed_reconciliation import (
     reconcile_fixed_sessions,
 )
 from engine.fixed_issue_analysis import export_fixed_issue_workbooks
+from engine.guarded_generation import (
+    build_guarded_generation_state,
+    build_programme_completeness_rows,
+    complete_programme_set,
+    export_guarded_generation_report,
+    quarantined_requirement_courses,
+)
 from engine.input_readiness import build_input_readiness_result, export_input_readiness_report
 from engine.preflight_validator import run_preflight_checks
 from engine.remarks_comparison import export_remarks_coverage_comparison
@@ -70,6 +78,7 @@ from output.report_exporter import export_preflight_report, export_run_manifest,
 from output.submission_validator import (
     export_submission_ready_schedule,
     export_template2_validation_report,
+    submission_assignments,
     validate_template2_submission,
 )
 
@@ -411,7 +420,7 @@ def export_outputs(
     timetable_path = OUTPUT_DIR / f"final_timetable_{suffix}.xlsx"
     violation_path = OUTPUT_DIR / f"violation_report_{suffix}.xlsx"
     export_schedule(
-        assignments,
+        submission_assignments(assignments),
         timetable_path,
         template2_path=template2_path,
         enable_remark_interpretation=enable_remark_interpretation,
@@ -424,7 +433,7 @@ def export_outputs(
     # Keep the original filenames for demo convenience when running DSC mode.
     if scope == "dsc":
         export_schedule(
-            assignments,
+            submission_assignments(assignments),
             OUTPUT_DIR / "final_timetable.xlsx",
             template2_path=template2_path,
             enable_remark_interpretation=enable_remark_interpretation,
@@ -472,8 +481,11 @@ def main() -> None:
 
     fixed_sessions = []
     fixed_assignments: list = []
+    fixed_conflict_issues: list[dict[str, object]] = []
+    guarded_state = None
     schedule_courses = courses
     demand_courses = courses
+    programme_completeness_rows: list[dict[str, object]] = []
     if args.scope == "eng" and DEFAULT_FIXED_SESSION_FILE.exists():
         print("\nValidating fixed-session requirements...")
         fixed_sessions, fixed_loader_report = load_fixed_sessions(DEFAULT_FIXED_SESSION_FILE)
@@ -482,11 +494,22 @@ def main() -> None:
         export_fixed_reconciliation_report(reconciliation_report, DEFAULT_FIXED_RECONCILIATION_FILE)
         fixed_assignments, fixed_mapping_issues = create_fixed_assignments(fixed_sessions, rooms)
         fixed_conflict_issues = validate_fixed_assignments(fixed_assignments)
+        guarded_state = build_guarded_generation_state(
+            courses=courses,
+            rooms_loaded=len(rooms),
+            fixed_sessions=fixed_sessions,
+            fixed_loader_report=fixed_loader_report,
+            reconciliation_report=reconciliation_report,
+            fixed_assignments=fixed_assignments,
+            fixed_assignment_issues=fixed_mapping_issues + fixed_conflict_issues,
+        )
         readiness = build_input_readiness_result(
             fixed_loader_report=fixed_loader_report,
             reconciliation_report=reconciliation_report,
             fixed_assignment_issues=fixed_mapping_issues + fixed_conflict_issues,
             loader_report=loader_report,
+            global_errors=guarded_state.global_errors,
+            quarantined_requirements=guarded_state.quarantined_requirements,
         )
         export_input_readiness_report(readiness, DEFAULT_INPUT_READINESS_REPORT_FILE)
         fixed_analysis = export_fixed_issue_workbooks(
@@ -511,6 +534,10 @@ def main() -> None:
         print(f"Fixed teaching occurrences: {sum(len(session.teaching_weeks) for session in fixed_sessions)}")
         print(f"Fixed mapping issues: {len(fixed_mapping_issues)}")
         print(f"Fixed-source conflicts: {len(fixed_conflict_issues)}")
+        print(f"Quarantined fixed requirements: {len(guarded_state.quarantined_requirements)}")
+        print(f"Quarantined teaching occurrences: {sum(item.affected_occurrences for item in guarded_state.quarantined_requirements)}")
+        print(f"Anchored fixed assignments: {len(guarded_state.anchored_fixed_assignments)}")
+        print(f"Fixed assignments excluded by quarantine: {len(guarded_state.quarantined_fixed_assignments)}")
         print(f"Unique affected fixed rows: {fixed_analysis['unique_affected_rows']}")
         print(f"Confirmed shared sessions: {fixed_analysis['shared_sessions']}")
         print(f"Supervisor queries: {fixed_analysis['supervisor_queries']}")
@@ -527,10 +554,11 @@ def main() -> None:
         print(f"Saved: {DEFAULT_FIXED_RESOLUTION_TEMPLATE_FILE}")
         print(f"Saved: {DEFAULT_FIXED_RESOLUTION_AUDIT_FILE}")
         if not readiness.ready:
-            print("Generation blocked because critical input issues were found.")
+            print("Generation blocked because global input issues were found.")
             raise SystemExit(1)
+        fixed_assignments = guarded_state.anchored_fixed_assignments
         schedule_courses = adjusted_courses_after_exact_matches(courses, reconciliation_report)
-        demand_courses = schedule_courses + _fixed_requirement_courses(fixed_assignments)
+        demand_courses = schedule_courses + _fixed_requirement_courses(fixed_assignments) + quarantined_requirement_courses(guarded_state.quarantined_requirements)
 
     print("\nGenerating initial schedule...")
     remarks_enabled = _remark_interpretation_enabled(args)
@@ -689,11 +717,19 @@ def main() -> None:
         enable_remark_interpretation=remarks_enabled,
     ) or {}
     if args.scope == "eng" and DEFAULT_FIXED_SESSION_FILE.exists():
+        programme_completeness_rows = build_programme_completeness_rows(
+            demand_courses,
+            final_schedule,
+            guarded_state.quarantined_requirements if guarded_state is not None else [],
+        )
+        complete_programmes = complete_programme_set(programme_completeness_rows)
         export_submission_ready_schedule(
             final_schedule,
             DEFAULT_TEMPLATE2_SUBMISSION_FILE,
             template2_path=DEFAULT_TEMPLATE2_FILE,
             enable_remark_interpretation=remarks_enabled,
+            complete_programmes=complete_programmes,
+            rooms=rooms,
         )
         template2_validation = validate_template2_submission(
             DEFAULT_TEMPLATE2_SUBMISSION_FILE,
@@ -707,8 +743,32 @@ def main() -> None:
         print(f"Saved: {DEFAULT_TEMPLATE2_SUBMISSION_FILE}")
         print(f"Saved: {DEFAULT_TEMPLATE2_SUBMISSION_VALIDATION_FILE}")
         print(f"Template 2 submission readiness: {'PASS' if template2_validation.ready else 'FAIL'}")
+        if guarded_state is not None:
+            programme_completeness_rows = build_programme_completeness_rows(
+                demand_courses,
+                final_schedule,
+                guarded_state.quarantined_requirements,
+                submission_ready_programmes={
+                    str(row.get("Normalised Programme/Year"))
+                    for row in template2_validation.programme_rows
+                    if row.get("Included In Submission") == "Yes"
+                },
+            )
+            export_guarded_generation_report(
+                output_path=DEFAULT_GUARDED_GENERATION_REPORT_FILE,
+                global_errors=guarded_state.global_errors,
+                quarantined=guarded_state.quarantined_requirements,
+                fixed_conflict_issues=fixed_conflict_issues,
+                warnings=guarded_state.warning_issues,
+                assignments=final_schedule,
+                demand_courses=demand_courses,
+                programme_rows=programme_completeness_rows,
+                template2_summary=template2_validation.summary,
+            )
+            print(f"Saved: {DEFAULT_GUARDED_GENERATION_REPORT_FILE}")
         output_paths["submission_ready_timetable"] = DEFAULT_TEMPLATE2_SUBMISSION_FILE
         output_paths["template2_submission_validation"] = DEFAULT_TEMPLATE2_SUBMISSION_VALIDATION_FILE
+        output_paths["guarded_generation_report"] = DEFAULT_GUARDED_GENERATION_REPORT_FILE
     output_paths.update(
         {
             "loader_report": DEFAULT_LOADER_REPORT_FILE,

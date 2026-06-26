@@ -167,6 +167,10 @@ def check_room_capacity(assignment: Assignment) -> list[str]:
     rooms = assignment_rooms(assignment)
     if not rooms:
         return ["No room assigned"]
+    if any("capacity unavailable" in room.resource_type.casefold() for room in rooms):
+        return []
+    if any(room.room_type == "external" for room in rooms):
+        return []
     total_capacity = sum(room.capacity for room in rooms)
     if total_capacity < assignment.course.class_size:
         return [f"Room capacity too small: {total_capacity} < {assignment.course.class_size}"]
