@@ -91,11 +91,12 @@ def test_parse_args_accepts_demo_safety_controls() -> None:
     assert args.disable_remark_interpretation is True
 
 
-def test_main_passes_demo_safety_controls_to_generate_schedule(monkeypatch) -> None:
+def test_main_passes_demo_safety_controls_to_generate_schedule(monkeypatch, tmp_path) -> None:
     """main() should pass demo safety controls into generate_schedule()."""
     generated = [Assignment(course=make_course(), room=None, timeslot=None)]
     captured: list[dict[str, object]] = []
     _stub_pipeline(monkeypatch, generated)
+    monkeypatch.setattr(app, "DEFAULT_FIXED_SESSION_FILE", tmp_path / "missing_fixed_sessions.xlsx")
 
     def fake_generate_schedule(courses, rooms, **kwargs):
         captured.append(kwargs)

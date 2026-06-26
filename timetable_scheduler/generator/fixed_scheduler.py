@@ -44,6 +44,16 @@ def _room_lookup(rooms: list[Room]) -> dict[str, Room]:
     return {room.room_id.casefold(): room for room in rooms}
 
 
+def _find_room_by_code(code: str, rooms: list[Room]) -> Room | None:
+    """Find an exact venue code, allowing official room-name suffixes."""
+    key = code.casefold()
+    for room in rooms:
+        room_key = room.room_id.casefold()
+        if room_key == key or room_key.startswith(f"{key}-"):
+            return room
+    return None
+
+
 def _codes_from_location(location: str) -> list[str]:
     """Extract exact venue codes such as E6-07-10 from a location string."""
     text = str(location or "").upper()
@@ -60,6 +70,10 @@ def _generic_room_type(location: str) -> str:
     text = str(location or "").casefold()
     if "computer" in text:
         return "Computer Room"
+    if "graphics" in text:
+        return "Laboratory"
+    if "discovery hub" in text:
+        return "Laboratory"
     if "seminar" in text or "ace" in text:
         return "Seminar Room"
     if "lt" in text or "lecture" in text or "lectorial" in text:
@@ -100,7 +114,7 @@ def _resolve_fixed_rooms(session: FixedSession, rooms: list[Room]) -> tuple[tupl
             codes = [location]
         if codes:
             for code in codes:
-                room = lookup.get(code.casefold())
+                room = lookup.get(code.casefold()) or _find_room_by_code(code, rooms)
                 if room is None:
                     issues.append(
                         _issue(
@@ -168,9 +182,15 @@ def _fixed_delivery_mode(rooms: tuple[Room, ...]) -> str:
 
 def _course_from_fixed_session(session: FixedSession, rooms: tuple[Room, ...]) -> Course:
     """Create a scheduler Course wrapper for one fixed session."""
-    group_ids = [session.programme_year]
-    if session.group_id:
-        group_ids.append(f"{session.programme_year}/{session.group_id}")
+    groups = [
+        part.strip()
+        for part in re.split(r"[,/+&]+", session.group_id)
+        if part and part.strip()
+    ]
+    if not groups or any(group.casefold() in {"all", "p1 to p3", "p1 to p4"} for group in groups):
+        group_ids = [session.programme_year]
+    else:
+        group_ids = [f"{session.programme_year}/{group}" for group in groups]
     return Course(
         module_code=normalise_module_code(session.module_code),
         activity=_fixed_activity(session, rooms),
@@ -183,7 +203,7 @@ def _course_from_fixed_session(session: FixedSession, rooms: tuple[Room, ...]) -
         duration_hrs=session.duration_hours,
         is_common_module=False,
         staff_names=list(session.staff_names),
-        remarks="Fixed session from structured lab workbook",
+        remarks="Structured fixed session",
         source_file=session.source_file,
         group_ids=group_ids,
         source_sheet=session.source_sheet,
@@ -228,7 +248,7 @@ def validate_fixed_assignments(assignments: list[Assignment]) -> list[dict[str, 
     issues: list[dict[str, object]] = []
     accepted: list[Assignment] = []
     for assignment in assignments:
-        violations = check_hard_constraints(assignment, accepted)
+        violations = check_hard_constraints(assignment, accepted, enable_remark_interpretation=False)
         if violations:
             assignment.hard_violations = violations
             source = assignment.fixed_source or ""

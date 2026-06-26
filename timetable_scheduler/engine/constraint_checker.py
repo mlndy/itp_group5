@@ -144,7 +144,15 @@ def course_groups(course: Course) -> set[str]:
 
 def _same_group(left: Course, right: Course) -> bool:
     """Return True if two courses share at least one student group."""
-    return bool(course_groups(left) & course_groups(right))
+    left_groups = course_groups(left)
+    right_groups = course_groups(right)
+    if left_groups & right_groups:
+        return True
+    for left_group in left_groups:
+        for right_group in right_groups:
+            if left_group.startswith(f"{right_group}/") or right_group.startswith(f"{left_group}/"):
+                return True
+    return False
 
 
 def _staff_intersection(left: Course, right: Course) -> set[str]:

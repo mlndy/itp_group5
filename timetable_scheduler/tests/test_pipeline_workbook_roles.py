@@ -59,6 +59,7 @@ def test_pipeline_keeps_template1_input_separate_from_template2_output_template(
     captured: dict[str, object] = {}
 
     monkeypatch.setattr(pipeline, "load_common_modules", lambda path: set())
+    monkeypatch.setattr(pipeline, "DEFAULT_FIXED_SESSION_FILE", tmp_path / "missing_fixed_sessions.xlsx")
     monkeypatch.setattr(
         pipeline,
         "load_consolidated_schedule_with_report",

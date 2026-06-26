@@ -8,7 +8,7 @@ from threading import Event
 from openpyxl import Workbook
 
 from pipeline import PipelineOptions, PipelineResult
-from ui.controller import TimetableUIController, build_default_ui_options
+from ui.controller import TimetableUIController, ValidationResult, build_default_ui_options
 
 
 def write_schedule_workbook(path: Path, rows: list[list[object]] | None = None) -> None:
@@ -63,10 +63,15 @@ def make_result(tmp_path: Path) -> PipelineResult:
     )
 
 
-def test_validate_consolidated_schedule_loads_workbook(tmp_path: Path) -> None:
+def test_validate_consolidated_schedule_loads_workbook(monkeypatch, tmp_path: Path) -> None:
     """A real workbook with scheduling rows should validate successfully."""
     input_file = tmp_path / "schedule.xlsx"
     write_schedule_workbook(input_file)
+    monkeypatch.setattr(
+        TimetableUIController,
+        "_validate_fixed_readiness",
+        lambda self, courses: ValidationResult(True, "Input ready"),
+    )
     controller = TimetableUIController(file_opener=lambda path: None)
 
     result = controller.validate_consolidated_schedule(input_file)
@@ -142,11 +147,16 @@ def test_controller_rejects_template2_output_as_input(tmp_path: Path) -> None:
     assert result.message == "This workbook appears to be a generated timetable.\nPlease select the consolidated schedule."
 
 
-def test_controller_calls_pipeline_service_with_valid_workbook(tmp_path: Path) -> None:
+def test_controller_calls_pipeline_service_with_valid_workbook(monkeypatch, tmp_path: Path) -> None:
     """The controller should call the injected pipeline runner after validation."""
     input_file = tmp_path / "schedule.xlsx"
     write_schedule_workbook(input_file)
     captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        TimetableUIController,
+        "_validate_fixed_readiness",
+        lambda self, courses: ValidationResult(True, "Input ready"),
+    )
 
     def runner(options: PipelineOptions, progress_callback, cancel_event: Event | None) -> PipelineResult:
         captured["options"] = options

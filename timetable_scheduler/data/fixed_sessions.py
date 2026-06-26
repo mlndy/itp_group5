@@ -16,21 +16,25 @@ from data.models import FixedSession
 
 METADATA_SHEETS = {"mod list", "uni wide mod", "sheet1", "sample"}
 FIXED_AUDIT_COLUMNS = [
+    "source workbook",
     "source sheet",
     "source row",
     "programme/year",
-    "module",
+    "module code",
     "group",
+    "group size",
     "day",
-    "start",
+    "start time",
     "duration",
-    "weeks",
+    "teaching weeks",
     "location",
     "staff",
-    "validation status",
-    "duplicate status",
-    "matching non-fixed requirement",
-    "remarks",
+    "candidate status",
+    "loader status",
+    "severity",
+    "issue",
+    "intended treatment",
+    "reconciliation status",
 ]
 ISSUE_COLUMNS = ["severity", "workbook", "sheet", "row", "field", "entered value", "problem", "how to correct it"]
 
@@ -50,7 +54,7 @@ class FixedSessionLoaderReport:
     @property
     def fixed_rows_loaded(self) -> int:
         """Return the number of valid non-duplicate fixed sessions loaded."""
-        return sum(1 for row in self.audit_rows if row.get("validation status") == "loaded")
+        return sum(1 for row in self.audit_rows if row.get("loader status") == "loaded")
 
     @property
     def critical_errors(self) -> int:
@@ -237,7 +241,11 @@ def split_locations(value: object) -> tuple[str, ...]:
     text = _clean(value)
     if not text:
         return ()
-    text = re.sub(r"\s+\band\b\s+", ",", text, flags=re.IGNORECASE)
+    codes = re.findall(r"\b[A-Z]\d-[0-9A-Z]{2}-[0-9A-Z]{2}(?:-[A-Z0-9]+)?\b", text.upper())
+    if len(codes) > 1:
+        return tuple(codes)
+    if "," not in text:
+        return (text,)
     parts = [part.strip(" ,") for part in text.split(",")]
     return tuple(part for part in parts if part)
 
@@ -290,38 +298,47 @@ def _issue(
 
 def _audit_row(
     *,
+    workbook: str,
     sheet: str,
     row: int,
     programme_year: str,
     module_code: str,
     group: str,
+    group_size: int | None,
     day: str,
     start: str,
     duration: object,
     weeks: tuple[int, ...],
     locations: tuple[str, ...],
     staff: tuple[str, ...],
-    status: str,
-    duplicate: str,
-    remarks: str,
+    candidate_status: str,
+    loader_status: str,
+    severity: str,
+    issue: str,
+    intended_treatment: str,
+    reconciliation_status: str = "Not reconciled",
 ) -> dict[str, object]:
     """Build one audit row for the fixed-session workbook."""
     return {
+        "source workbook": workbook,
         "source sheet": sheet,
         "source row": row,
         "programme/year": programme_year,
-        "module": module_code,
+        "module code": module_code,
         "group": group,
+        "group size": group_size,
         "day": day,
-        "start": start,
+        "start time": start,
         "duration": duration,
-        "weeks": ", ".join(str(week) for week in weeks),
+        "teaching weeks": ", ".join(str(week) for week in weeks),
         "location": "; ".join(locations),
         "staff": "; ".join(staff),
-        "validation status": status,
-        "duplicate status": duplicate,
-        "matching non-fixed requirement": "",
-        "remarks": remarks,
+        "candidate status": candidate_status,
+        "loader status": loader_status,
+        "severity": severity,
+        "issue": issue,
+        "intended treatment": intended_treatment,
+        "reconciliation status": reconciliation_status,
     }
 
 
@@ -424,20 +441,24 @@ def load_fixed_sessions(workbook_path: Path) -> tuple[list[FixedSession], FixedS
                 if not day_raw or not start_raw:
                     report.audit_rows.append(
                         _audit_row(
+                            workbook=workbook_path.name,
                             sheet=sheet_name,
                             row=row_number,
                             programme_year=programme_year,
                             module_code=module_code,
                             group=group,
+                            group_size=group_size,
                             day=day_raw,
                             start=start_raw,
                             duration=duration_raw,
                             weeks=weeks,
                             locations=locations,
                             staff=staff_names,
-                            status="review",
-                            duplicate="not loaded",
-                            remarks="Row is not a complete fixed placement because day or start time is blank.",
+                            candidate_status="candidate",
+                            loader_status="not loaded",
+                            severity="warning",
+                            issue="Row is not a complete fixed placement because day or start time is blank.",
+                            intended_treatment="Treat as non-fixed or source-review row until fixed placement is completed.",
                         )
                     )
                     _issue(
@@ -481,20 +502,24 @@ def load_fixed_sessions(workbook_path: Path) -> tuple[list[FixedSession], FixedS
                 if errors:
                     report.audit_rows.append(
                         _audit_row(
+                            workbook=workbook_path.name,
                             sheet=sheet_name,
                             row=row_number,
                             programme_year=programme_year,
                             module_code=module_code,
                             group=group,
+                            group_size=group_size,
                             day=day_raw,
                             start=start_raw,
                             duration=duration_raw,
                             weeks=weeks,
                             locations=locations,
                             staff=staff_names,
-                            status="critical",
-                            duplicate="not loaded",
-                            remarks=f"Missing or invalid fields: {', '.join(errors)}",
+                            candidate_status="candidate",
+                            loader_status="invalid",
+                            severity="critical",
+                            issue=f"Missing or invalid fields: {', '.join(errors)}",
+                            intended_treatment="Block generation until the source row is corrected or excluded by reconciliation.",
                         )
                     )
                     continue
@@ -520,20 +545,24 @@ def load_fixed_sessions(workbook_path: Path) -> tuple[list[FixedSession], FixedS
                     report.duplicate_rows_removed += 1
                     report.audit_rows.append(
                         _audit_row(
+                            workbook=workbook_path.name,
                             sheet=sheet_name,
                             row=row_number,
                             programme_year=programme_year,
                             module_code=module_code,
                             group=group,
+                            group_size=group_size,
                             day=day,
                             start=start,
                             duration=duration,
                             weeks=weeks,
                             locations=locations,
                             staff=staff_names,
-                            status="duplicate",
-                            duplicate="removed",
-                            remarks="Duplicate fixed-session row was not loaded twice.",
+                            candidate_status="candidate",
+                            loader_status="duplicate removed",
+                            severity="info",
+                            issue="Duplicate fixed-session row was not loaded twice.",
+                            intended_treatment="Exclude duplicate from demand.",
                         )
                     )
                     continue
@@ -541,20 +570,24 @@ def load_fixed_sessions(workbook_path: Path) -> tuple[list[FixedSession], FixedS
                 sessions.append(session)
                 report.audit_rows.append(
                     _audit_row(
+                        workbook=workbook_path.name,
                         sheet=sheet_name,
                         row=row_number,
                         programme_year=programme_year,
                         module_code=module_code,
                         group=group,
+                        group_size=group_size,
                         day=day,
                         start=start,
                         duration=duration,
                         weeks=weeks,
                         locations=locations,
                         staff=staff_names,
-                        status="loaded",
-                        duplicate="unique",
-                        remarks="",
+                        candidate_status="candidate",
+                        loader_status="loaded",
+                        severity="info",
+                        issue="",
+                        intended_treatment="Anchor as fixed session if reconciliation remains unambiguous.",
                     )
                 )
         return sessions, report

@@ -8,12 +8,25 @@ from pathlib import Path
 from threading import Event
 from typing import Callable
 
-from config import DEFAULT_COMMON_MODULE_FILE
+from config import (
+    DEFAULT_COMMON_MODULE_FILE,
+    DEFAULT_FIXED_RECONCILIATION_FILE,
+    DEFAULT_FIXED_SESSION_FILE,
+    DEFAULT_FIXED_SESSIONS_AUDIT_FILE,
+    DEFAULT_INPUT_READINESS_REPORT_FILE,
+    DEFAULT_ROOM_FILE,
+)
+from data.fixed_sessions import export_fixed_sessions_audit, load_fixed_sessions
 from data.loader import (
     ConsolidatedScheduleValidationError,
+    LoaderReport,
+    load_rooms_from_csv,
     load_common_modules,
     load_consolidated_schedule,
 )
+from engine.fixed_reconciliation import export_fixed_reconciliation_report, reconcile_fixed_sessions
+from engine.input_readiness import build_input_readiness_result, export_input_readiness_report
+from generator.fixed_scheduler import create_fixed_assignments, validate_fixed_assignments
 from pipeline import PipelineCancelled, PipelineOptions, PipelineResult, run_timetable_pipeline
 
 
@@ -77,6 +90,11 @@ OUTPUT_ACTIONS: dict[str, OutputAction] = {
         description="Review coverage, validation checks and scheduling findings.",
         output_key="run_summary",
     ),
+    "input_issues": OutputAction(
+        label="Review Input Issues",
+        description="Open the input readiness report.",
+        output_key="input_readiness_report",
+    ),
     "all_files": OutputAction(
         label="Open All Files",
         description="Open the folder containing all generated outputs.",
@@ -132,7 +150,33 @@ class TimetableUIController:
             return ValidationResult(False, "This workbook does not match the consolidated schedule format.")
         if not courses:
             return ValidationResult(False, "The selected workbook contains no scheduling records")
+        if DEFAULT_FIXED_SESSION_FILE.exists():
+            fixed_status = self._validate_fixed_readiness(courses)
+            if not fixed_status.valid:
+                return fixed_status
         return ValidationResult(True, "Schedule selected")
+
+    def _validate_fixed_readiness(self, courses) -> ValidationResult:
+        """Validate bundled fixed-session data for UI readiness."""
+        try:
+            rooms = load_rooms_from_csv(DEFAULT_ROOM_FILE)
+            fixed_sessions, fixed_loader_report = load_fixed_sessions(DEFAULT_FIXED_SESSION_FILE)
+            export_fixed_sessions_audit(fixed_loader_report, DEFAULT_FIXED_SESSIONS_AUDIT_FILE)
+            reconciliation_report = reconcile_fixed_sessions(fixed_sessions, courses, fixed_loader_report)
+            export_fixed_reconciliation_report(reconciliation_report, DEFAULT_FIXED_RECONCILIATION_FILE)
+            fixed_assignments, mapping_issues = create_fixed_assignments(fixed_sessions, rooms)
+            conflict_issues = validate_fixed_assignments(fixed_assignments)
+            empty_report = LoaderReport()
+            readiness = build_input_readiness_result(
+                fixed_loader_report=fixed_loader_report,
+                reconciliation_report=reconciliation_report,
+                fixed_assignment_issues=mapping_issues + conflict_issues,
+                loader_report=empty_report,
+            )
+            export_input_readiness_report(readiness, DEFAULT_INPUT_READINESS_REPORT_FILE)
+        except Exception:
+            return ValidationResult(False, "Input validation failed. Review the input issue report.")
+        return ValidationResult(readiness.ready, readiness.message)
 
     def run_pipeline(
         self,

@@ -712,6 +712,7 @@ def generate_schedule(
     courses: list[Course],
     rooms: list[Room],
     allow_weekly_fallback: bool = True,
+    initial_assignments: list[Assignment] | None = None,
     progress_callback: ProgressCallback | None = None,
     progress_interval: int = 25,
     max_retry_assignments: int | None = None,
@@ -719,7 +720,7 @@ def generate_schedule(
     enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
 ) -> list[Assignment]:
     """Generate a complete greedy timetable with common modules merged first."""
-    assignments: list[Assignment] = []
+    assignments: list[Assignment] = list(initial_assignments or [])
     index = build_schedule_index(assignments)
     prepared_courses = prepare_courses_for_scheduling(courses)
     ordered_courses = sorted(
