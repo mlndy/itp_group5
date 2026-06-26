@@ -14,6 +14,8 @@ from config import (
     DEFAULT_COURSE_FILE,
     DEFAULT_ENGINEERING_FOLDER,
     DEFAULT_FIXED_RECONCILIATION_FILE,
+    DEFAULT_FIXED_CONFLICT_TRIAGE_FILE,
+    DEFAULT_FIXED_ROOT_CAUSE_FILE,
     DEFAULT_FIXED_SESSION_FILE,
     DEFAULT_FIXED_SESSIONS_AUDIT_FILE,
     DEFAULT_INPUT_READINESS_REPORT_FILE,
@@ -24,6 +26,7 @@ from config import (
     DEFAULT_RUN_MANIFEST_FILE,
     DEFAULT_RUN_SUMMARY_FILE,
     DEFAULT_STAKEHOLDER_VIEWS_FILE,
+    DEFAULT_SUPERVISOR_FIXED_QUERIES_FILE,
     DEFAULT_TEMPLATE2_SUBMISSION_FILE,
     DEFAULT_TEMPLATE2_SUBMISSION_VALIDATION_FILE,
     DEFAULT_TEMPLATE2_FILE,
@@ -48,6 +51,7 @@ from engine.fixed_reconciliation import (
     export_fixed_reconciliation_report,
     reconcile_fixed_sessions,
 )
+from engine.fixed_issue_analysis import export_fixed_issue_workbooks
 from engine.input_readiness import build_input_readiness_result, export_input_readiness_report
 from engine.preflight_validator import run_preflight_checks
 from engine.remarks_interpreter import export_remarks_audit
@@ -254,6 +258,19 @@ def run_timetable_pipeline(
             loader_report=loader_report,
         )
         export_input_readiness_report(readiness, DEFAULT_INPUT_READINESS_REPORT_FILE)
+        export_fixed_issue_workbooks(
+            fixed_sessions=fixed_sessions,
+            courses=courses,
+            assignments=fixed_assignments,
+            rooms=rooms,
+            loader_report=fixed_loader_report,
+            reconciliation_report=reconciliation_report,
+            mapping_issues=fixed_mapping_issues,
+            conflict_issues=fixed_conflict_issues,
+            root_cause_path=DEFAULT_FIXED_ROOT_CAUSE_FILE,
+            conflict_triage_path=DEFAULT_FIXED_CONFLICT_TRIAGE_FILE,
+            supervisor_queries_path=DEFAULT_SUPERVISOR_FIXED_QUERIES_FILE,
+        )
         if not readiness.ready:
             raise ValueError(readiness.message)
         schedule_courses = adjusted_courses_after_exact_matches(courses, reconciliation_report)
@@ -404,6 +421,9 @@ def run_timetable_pipeline(
         output_paths["fixed_sessions_audit"] = DEFAULT_FIXED_SESSIONS_AUDIT_FILE
         output_paths["fixed_reconciliation"] = DEFAULT_FIXED_RECONCILIATION_FILE
         output_paths["input_readiness_report"] = DEFAULT_INPUT_READINESS_REPORT_FILE
+        output_paths["fixed_issue_root_cause_analysis"] = DEFAULT_FIXED_ROOT_CAUSE_FILE
+        output_paths["fixed_conflict_triage"] = DEFAULT_FIXED_CONFLICT_TRIAGE_FILE
+        output_paths["supervisor_fixed_session_queries"] = DEFAULT_SUPERVISOR_FIXED_QUERIES_FILE
     if not options.skip_unscheduled_diagnostics:
         output_paths["unscheduled_diagnostics"] = DEFAULT_UNSCHEDULED_DIAGNOSTICS_FILE
 

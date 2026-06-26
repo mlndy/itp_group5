@@ -32,6 +32,9 @@ DEFAULT_FIXED_SESSION_FILE = DEFAULT_ENGINEERING_FOLDER / "Requirements Template
 DEFAULT_FIXED_SESSIONS_AUDIT_FILE = GENERATED_DIR / "fixed_sessions_audit.xlsx"
 DEFAULT_FIXED_RECONCILIATION_FILE = GENERATED_DIR / "fixed_nonfixed_reconciliation.xlsx"
 DEFAULT_INPUT_READINESS_REPORT_FILE = GENERATED_DIR / "input_readiness_report.xlsx"
+DEFAULT_FIXED_ROOT_CAUSE_FILE = GENERATED_DIR / "fixed_issue_root_cause_analysis.xlsx"
+DEFAULT_FIXED_CONFLICT_TRIAGE_FILE = GENERATED_DIR / "fixed_conflict_triage.xlsx"
+DEFAULT_SUPERVISOR_FIXED_QUERIES_FILE = GENERATED_DIR / "supervisor_fixed_session_queries.xlsx"
 DEFAULT_TEMPLATE2_SUBMISSION_FILE = OUTPUT_DIR / "Template2_Submission_Ready.xlsx"
 DEFAULT_TEMPLATE2_SUBMISSION_VALIDATION_FILE = GENERATED_DIR / "template2_submission_validation.xlsx"
 

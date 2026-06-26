@@ -10,6 +10,8 @@ from config import (
     DEFAULT_COURSE_FILE,
     DEFAULT_ENGINEERING_FOLDER,
     DEFAULT_FIXED_RECONCILIATION_FILE,
+    DEFAULT_FIXED_CONFLICT_TRIAGE_FILE,
+    DEFAULT_FIXED_ROOT_CAUSE_FILE,
     DEFAULT_FIXED_SESSION_FILE,
     DEFAULT_FIXED_SESSIONS_AUDIT_FILE,
     DEFAULT_INPUT_READINESS_REPORT_FILE,
@@ -22,6 +24,7 @@ from config import (
     DEFAULT_RUN_SUMMARY_FILE,
     DEFAULT_REMARKS_COMPARISON_FILE,
     DEFAULT_STAKEHOLDER_VIEWS_FILE,
+    DEFAULT_SUPERVISOR_FIXED_QUERIES_FILE,
     DEFAULT_TEMPLATE2_SUBMISSION_FILE,
     DEFAULT_TEMPLATE2_SUBMISSION_VALIDATION_FILE,
     DEFAULT_TEMPLATE2_FILE,
@@ -44,6 +47,7 @@ from engine.fixed_reconciliation import (
     export_fixed_reconciliation_report,
     reconcile_fixed_sessions,
 )
+from engine.fixed_issue_analysis import export_fixed_issue_workbooks
 from engine.input_readiness import build_input_readiness_result, export_input_readiness_report
 from engine.preflight_validator import run_preflight_checks
 from engine.remarks_comparison import export_remarks_coverage_comparison
@@ -481,15 +485,34 @@ def main() -> None:
             loader_report=loader_report,
         )
         export_input_readiness_report(readiness, DEFAULT_INPUT_READINESS_REPORT_FILE)
+        fixed_analysis = export_fixed_issue_workbooks(
+            fixed_sessions=fixed_sessions,
+            courses=courses,
+            assignments=fixed_assignments,
+            rooms=rooms,
+            loader_report=fixed_loader_report,
+            reconciliation_report=reconciliation_report,
+            mapping_issues=fixed_mapping_issues,
+            conflict_issues=fixed_conflict_issues,
+            root_cause_path=DEFAULT_FIXED_ROOT_CAUSE_FILE,
+            conflict_triage_path=DEFAULT_FIXED_CONFLICT_TRIAGE_FILE,
+            supervisor_queries_path=DEFAULT_SUPERVISOR_FIXED_QUERIES_FILE,
+        )
         print(f"Fixed source rows: {fixed_loader_report.source_rows}")
         print(f"Valid fixed source rows: {fixed_loader_report.fixed_rows_loaded}")
         print(f"Fixed teaching occurrences: {sum(len(session.teaching_weeks) for session in fixed_sessions)}")
         print(f"Fixed mapping issues: {len(fixed_mapping_issues)}")
         print(f"Fixed-source conflicts: {len(fixed_conflict_issues)}")
+        print(f"Unique affected fixed rows: {fixed_analysis['unique_affected_rows']}")
+        print(f"Confirmed shared sessions: {fixed_analysis['shared_sessions']}")
+        print(f"Supervisor queries: {fixed_analysis['supervisor_queries']}")
         print(f"Input readiness: {readiness.message}")
         print(f"Saved: {DEFAULT_FIXED_SESSIONS_AUDIT_FILE}")
         print(f"Saved: {DEFAULT_FIXED_RECONCILIATION_FILE}")
         print(f"Saved: {DEFAULT_INPUT_READINESS_REPORT_FILE}")
+        print(f"Saved: {DEFAULT_FIXED_ROOT_CAUSE_FILE}")
+        print(f"Saved: {DEFAULT_FIXED_CONFLICT_TRIAGE_FILE}")
+        print(f"Saved: {DEFAULT_SUPERVISOR_FIXED_QUERIES_FILE}")
         if not readiness.ready:
             print("Generation blocked because critical input issues were found.")
             raise SystemExit(1)

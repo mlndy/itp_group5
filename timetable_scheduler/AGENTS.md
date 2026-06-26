@@ -71,6 +71,20 @@ Preflight report and run summary report now exist and should be preserved.
 - Previous metrics must be revalidated after fixed-session integration.
 - Do not claim the old `2777` demand total remains final until the new integration is complete.
 
+## Fixed-Session Conflict Triage and Source Reconciliation
+
+- The readiness gate must not be bypassed.
+- Official fixed sessions must not be moved automatically.
+- Raw source workbooks must not be edited silently.
+- Systematic formatting differences may be normalised only when the identity is unambiguous.
+- Duplicate rows and shared sessions must be identified using evidence, not assumptions.
+- Multiple rows representing the same shared class must not create false lecturer, room or group clashes.
+- Genuine source conflicts must be reported for supervisor clarification.
+- Every automatically resolved issue must retain its original value, normalised value, rule applied and evidence.
+- Critical-error counts must distinguish unique affected rows from total issue instances.
+- Conflicts may overlap, so summary totals must not be added blindly.
+- The full Engineering scheduler may run only when no blocking critical issue remains.
+
 ## Coding Rules
 
 Follow these rules for all future code changes:

@@ -10,11 +10,14 @@ from typing import Callable
 
 from config import (
     DEFAULT_COMMON_MODULE_FILE,
+    DEFAULT_FIXED_CONFLICT_TRIAGE_FILE,
     DEFAULT_FIXED_RECONCILIATION_FILE,
+    DEFAULT_FIXED_ROOT_CAUSE_FILE,
     DEFAULT_FIXED_SESSION_FILE,
     DEFAULT_FIXED_SESSIONS_AUDIT_FILE,
     DEFAULT_INPUT_READINESS_REPORT_FILE,
     DEFAULT_ROOM_FILE,
+    DEFAULT_SUPERVISOR_FIXED_QUERIES_FILE,
 )
 from data.fixed_sessions import export_fixed_sessions_audit, load_fixed_sessions
 from data.loader import (
@@ -25,6 +28,7 @@ from data.loader import (
     load_consolidated_schedule,
 )
 from engine.fixed_reconciliation import export_fixed_reconciliation_report, reconcile_fixed_sessions
+from engine.fixed_issue_analysis import export_fixed_issue_workbooks
 from engine.input_readiness import build_input_readiness_result, export_input_readiness_report
 from generator.fixed_scheduler import create_fixed_assignments, validate_fixed_assignments
 from pipeline import PipelineCancelled, PipelineOptions, PipelineResult, run_timetable_pipeline
@@ -174,6 +178,19 @@ class TimetableUIController:
                 loader_report=empty_report,
             )
             export_input_readiness_report(readiness, DEFAULT_INPUT_READINESS_REPORT_FILE)
+            export_fixed_issue_workbooks(
+                fixed_sessions=fixed_sessions,
+                courses=courses,
+                assignments=fixed_assignments,
+                rooms=rooms,
+                loader_report=fixed_loader_report,
+                reconciliation_report=reconciliation_report,
+                mapping_issues=mapping_issues,
+                conflict_issues=conflict_issues,
+                root_cause_path=DEFAULT_FIXED_ROOT_CAUSE_FILE,
+                conflict_triage_path=DEFAULT_FIXED_CONFLICT_TRIAGE_FILE,
+                supervisor_queries_path=DEFAULT_SUPERVISOR_FIXED_QUERIES_FILE,
+            )
         except Exception:
             return ValidationResult(False, "Input validation failed. Review the input issue report.")
         return ValidationResult(readiness.ready, readiness.message)
