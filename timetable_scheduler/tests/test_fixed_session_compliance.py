@@ -671,7 +671,11 @@ def test_guarded_generation_report_exports_required_sheets(tmp_path: Path) -> No
         assignments=[scheduled],
         demand_courses=demand_courses,
         programme_rows=programme_rows,
-        template2_summary={"Template 2 readiness status": "FAIL"},
+        template2_summary={
+            "Template 2 readiness status": "FAIL",
+            "complete programme-year schedules": 7,
+            "submission-ready programme-year schedules": 5,
+        },
     )
 
     workbook = load_workbook(output, read_only=True)
@@ -684,5 +688,8 @@ def test_guarded_generation_report_exports_required_sheets(tmp_path: Path) -> No
             "Submission Exclusions",
             "Resolution Guidance",
         } <= set(workbook.sheetnames)
+        summary = {row[0]: row[1] for row in workbook["Summary"].iter_rows(min_row=2, values_only=True)}
+        assert summary["Template 2 complete programme-years"] == 7
+        assert summary["Submission-ready programme-years"] == 5
     finally:
         workbook.close()

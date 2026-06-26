@@ -50,6 +50,23 @@ def _is_submission_assignment(assignment: Assignment) -> bool:
     return assignment.room is not None and assignment.timeslot is not None and not assignment.hard_violations
 
 
+def _has_required_submission_values(assignment: Assignment) -> bool:
+    """Return True when required Template 2 values can be populated."""
+    course = assignment.course
+    return all(
+        [
+            course.module_code,
+            course.activity,
+            course.group_ids or course.prog_yr,
+            course.class_size > 0,
+            assignment.room is not None and assignment.room.room_id,
+            course.staff_names or course.staff_ids,
+            assignment.timeslot is not None,
+            course.duration_hrs > 0,
+        ]
+    )
+
+
 def submission_assignments(
     assignments: list[Assignment],
     complete_programmes: set[str] | None = None,
@@ -60,6 +77,8 @@ def submission_assignments(
     rows: list[Assignment] = []
     for assignment in assignments:
         if not _is_submission_assignment(assignment):
+            continue
+        if not _has_required_submission_values(assignment):
             continue
         programme = normalise_programme_year(assignment.course.prog_yr)
         if complete_programmes is not None and programme not in complete_programmes:

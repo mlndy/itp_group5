@@ -284,7 +284,12 @@ def export_guarded_generation_report(
     quarantined_occurrences = sum(item.affected_occurrences for item in quarantined)
     unscheduled_search_occurrences = max(total_occurrences - scheduled_occurrences - quarantined_occurrences, 0)
     complete_programmes = sum(1 for row in programme_rows if row.get("Status") in {"COMPLETE", "COMPLETE_WITH_WARNINGS"})
-    submission_ready = sum(1 for row in programme_rows if row.get("Submission-Ready Status") == "PASS")
+    template2_complete = _template2_summary_count(template2_summary, "complete programme-year schedules", complete_programmes)
+    submission_ready = _template2_summary_count(
+        template2_summary,
+        "submission-ready programme-year schedules",
+        sum(1 for row in programme_rows if row.get("Submission-Ready Status") == "PASS"),
+    )
     summary = [
         {"Metric": "Total source requirements", "Value": len(demand_courses)},
         {"Metric": "Total teaching occurrences", "Value": total_occurrences},
@@ -296,6 +301,7 @@ def export_guarded_generation_report(
         {"Metric": "Scheduled hard violations", "Value": scheduled_hard},
         {"Metric": "Complete programme-years", "Value": complete_programmes},
         {"Metric": "Incomplete programme-years", "Value": max(len(programme_rows) - complete_programmes, 0)},
+        {"Metric": "Template 2 complete programme-years", "Value": template2_complete},
         {"Metric": "Submission-ready programme-years", "Value": submission_ready},
     ]
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
@@ -313,6 +319,19 @@ def export_guarded_generation_report(
             index=False,
         )
         pd.DataFrame(_resolution_guidance()).to_excel(writer, sheet_name="Resolution Guidance", index=False)
+
+
+def _template2_summary_count(summary: dict[str, object] | None, key: str, default: int) -> int:
+    """Return a numeric Template 2 summary value when validation is available."""
+    if not summary:
+        return default
+    value = summary.get(key)
+    if value in (None, ""):
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def quarantine_to_row(item: QuarantinedRequirement) -> dict[str, object]:
