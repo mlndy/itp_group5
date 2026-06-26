@@ -13,7 +13,7 @@ from openpyxl.utils import get_column_letter
 
 from config import ACTIVITY_TYPE_CODES, DAY_ABBREVIATIONS, DEFAULT_TEMPLATE2_FILE, ENABLE_REMARK_INTERPRETATION
 from data.models import Assignment
-from engine.constraint_checker import annotate_schedule_violations, hour_to_time, time_to_hour
+from engine.constraint_checker import annotate_schedule_violations, assignment_end_time
 from engine.remarks_interpreter import assignment_room_ids, assignment_rooms
 
 
@@ -90,7 +90,7 @@ def _template_row_values(assignment: Assignment) -> dict[str, object]:
     timeslot = assignment.timeslot
     end_time = None
     if timeslot is not None:
-        end_time = hour_to_time(time_to_hour(timeslot.start_time) + course.duration_hrs)
+        end_time = assignment_end_time(assignment)
 
     room_id = _room_id(assignment)
     room2_id = _room2_id(assignment)

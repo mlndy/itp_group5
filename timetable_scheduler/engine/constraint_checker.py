@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections import Counter, defaultdict
 
 import config
@@ -54,24 +55,49 @@ def time_to_hour(time_text: str) -> int:
     return int(str(time_text).split(":")[0])
 
 
+def time_to_minutes(time_text: str) -> int:
+    """Convert HH:MM text to minutes after midnight."""
+    hour_text, minute_text = str(time_text).split(":", 1)
+    return int(hour_text) * 60 + int(minute_text)
+
+
 def hour_to_time(hour: int) -> str:
     """Convert an integer hour to HH:MM text."""
     return f"{hour:02d}:00"
 
 
-def assignment_end_hour(assignment: Assignment) -> int:
-    """Return the ending hour of an assignment."""
+def minutes_to_time(minutes: int) -> str:
+    """Convert minutes after midnight to HH:MM text."""
+    hour, minute = divmod(minutes, 60)
+    return f"{hour:02d}:{minute:02d}"
+
+
+def assignment_end_minutes(assignment: Assignment) -> int:
+    """Return the ending time in minutes after midnight."""
     if assignment.timeslot is None:
         return 0
-    return time_to_hour(assignment.timeslot.start_time) + assignment.course.duration_hrs
+    return time_to_minutes(assignment.timeslot.start_time) + int(round(float(assignment.course.duration_hrs) * 60))
+
+
+def assignment_end_time(assignment: Assignment) -> str:
+    """Return the ending time as HH:MM text."""
+    return minutes_to_time(assignment_end_minutes(assignment))
+
+
+def assignment_end_hour(assignment: Assignment) -> int:
+    """Return the ending hour, rounded up for partial-hour sessions."""
+    return math.ceil(assignment_end_minutes(assignment) / 60)
 
 
 def occupied_start_times(assignment: Assignment) -> set[str]:
     """Return all hourly start blocks occupied by an assignment."""
     if assignment.timeslot is None:
         return set()
-    start = time_to_hour(assignment.timeslot.start_time)
-    return {hour_to_time(hour) for hour in range(start, start + assignment.course.duration_hrs)}
+    start_minutes = time_to_minutes(assignment.timeslot.start_time)
+    end_minutes = assignment_end_minutes(assignment)
+    start_hour = start_minutes // 60
+    end_hour = math.ceil(end_minutes / 60)
+    return {hour_to_time(hour) for hour in range(start_hour, end_hour)}
 
 
 def assignments_overlap(left: Assignment, right: Assignment) -> bool:
@@ -175,14 +201,14 @@ def check_time_window(assignment: Assignment) -> list[str]:
     if assignment.timeslot is None:
         return []
     day = assignment.timeslot.day
-    start_hour = time_to_hour(assignment.timeslot.start_time)
-    end_hour = assignment_end_hour(assignment)
+    start_minutes = time_to_minutes(assignment.timeslot.start_time)
+    end_minutes = assignment_end_minutes(assignment)
     violations: list[str] = []
     if day not in VALID_DAYS:
         violations.append(f"Invalid teaching day: {day}")
-    if start_hour < EARLIEST_START_HOUR:
+    if start_minutes < EARLIEST_START_HOUR * 60:
         violations.append("Class starts before 09:00")
-    if end_hour > LATEST_END_HOUR:
+    if end_minutes > LATEST_END_HOUR * 60:
         violations.append("Class ends after 18:00")
     return violations
 

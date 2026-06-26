@@ -28,6 +28,12 @@ DEFAULT_STAKEHOLDER_VIEWS_FILE = GENERATED_DIR / "stakeholder_views.xlsx"
 DEFAULT_RUN_MANIFEST_FILE = GENERATED_DIR / "run_manifest.xlsx"
 DEFAULT_REMARKS_AUDIT_FILE = GENERATED_DIR / "remarks_audit.xlsx"
 DEFAULT_REMARKS_COMPARISON_FILE = GENERATED_DIR / "remarks_coverage_comparison.xlsx"
+DEFAULT_FIXED_SESSION_FILE = DEFAULT_ENGINEERING_FOLDER / "Requirements Template_Lab (ENG) - AY25 Tri 1.xlsx"
+DEFAULT_FIXED_SESSIONS_AUDIT_FILE = GENERATED_DIR / "fixed_sessions_audit.xlsx"
+DEFAULT_FIXED_RECONCILIATION_FILE = GENERATED_DIR / "fixed_nonfixed_reconciliation.xlsx"
+DEFAULT_INPUT_READINESS_REPORT_FILE = GENERATED_DIR / "input_readiness_report.xlsx"
+DEFAULT_TEMPLATE2_SUBMISSION_FILE = OUTPUT_DIR / "Template2_Submission_Ready.xlsx"
+DEFAULT_TEMPLATE2_SUBMISSION_VALIDATION_FILE = GENERATED_DIR / "template2_submission_validation.xlsx"
 
 VALID_DAYS: list[str] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
 DAY_ABBREVIATIONS: dict[str, str] = {

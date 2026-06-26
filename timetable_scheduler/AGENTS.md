@@ -54,6 +54,23 @@ The previous release-ready baseline before remarks enforcement had `2747` schedu
 
 Preflight report and run summary report now exist and should be preserved.
 
+## Additional DSC2204 Requirements - June 26
+
+- Input errors should be detected before timetable generation.
+- Critical input errors must prevent generation.
+- Fixed sessions must be anchored exactly as supplied.
+- Non-fixed modules must be scheduled around fixed sessions.
+- Fixed sessions must not be silently moved to improve coverage.
+- Fixed and non-fixed requirements must not be double-counted.
+- Template 2 must be validated for field completeness and accuracy.
+- The final submission workbook must contain at least `20` programme-year schedules.
+- Programme year is the schedule-counting unit.
+- Unscheduled or incomplete rows must not appear in the submission-ready Template 2 workbook.
+- Unresolved requirements remain in separate exception reports.
+- Existing hard constraints must not be weakened.
+- Previous metrics must be revalidated after fixed-session integration.
+- Do not claim the old `2777` demand total remains final until the new integration is complete.
+
 ## Coding Rules
 
 Follow these rules for all future code changes:
