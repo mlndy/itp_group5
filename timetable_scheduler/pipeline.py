@@ -15,10 +15,13 @@ from config import (
     DEFAULT_ENGINEERING_FOLDER,
     DEFAULT_FIXED_RECONCILIATION_FILE,
     DEFAULT_FIXED_CONFLICT_TRIAGE_FILE,
+    DEFAULT_FIXED_RESOLUTION_AUDIT_FILE,
+    DEFAULT_FIXED_RESOLUTION_TEMPLATE_FILE,
     DEFAULT_FIXED_ROOT_CAUSE_FILE,
     DEFAULT_FIXED_SESSION_FILE,
     DEFAULT_FIXED_SESSIONS_AUDIT_FILE,
     DEFAULT_INPUT_READINESS_REPORT_FILE,
+    DEFAULT_LOCATION_MAPPING_EVIDENCE_FILE,
     DEFAULT_LOADER_REPORT_FILE,
     DEFAULT_PREFLIGHT_REPORT_FILE,
     DEFAULT_REMARKS_AUDIT_FILE,
@@ -26,6 +29,7 @@ from config import (
     DEFAULT_RUN_MANIFEST_FILE,
     DEFAULT_RUN_SUMMARY_FILE,
     DEFAULT_STAKEHOLDER_VIEWS_FILE,
+    DEFAULT_SUPERVISOR_CLARIFICATION_PACK_FILE,
     DEFAULT_SUPERVISOR_FIXED_QUERIES_FILE,
     DEFAULT_TEMPLATE2_SUBMISSION_FILE,
     DEFAULT_TEMPLATE2_SUBMISSION_VALIDATION_FILE,
@@ -270,6 +274,10 @@ def run_timetable_pipeline(
             root_cause_path=DEFAULT_FIXED_ROOT_CAUSE_FILE,
             conflict_triage_path=DEFAULT_FIXED_CONFLICT_TRIAGE_FILE,
             supervisor_queries_path=DEFAULT_SUPERVISOR_FIXED_QUERIES_FILE,
+            location_evidence_path=DEFAULT_LOCATION_MAPPING_EVIDENCE_FILE,
+            supervisor_pack_path=DEFAULT_SUPERVISOR_CLARIFICATION_PACK_FILE,
+            resolution_template_path=DEFAULT_FIXED_RESOLUTION_TEMPLATE_FILE,
+            resolution_audit_path=DEFAULT_FIXED_RESOLUTION_AUDIT_FILE,
         )
         if not readiness.ready:
             raise ValueError(readiness.message)
@@ -424,6 +432,10 @@ def run_timetable_pipeline(
         output_paths["fixed_issue_root_cause_analysis"] = DEFAULT_FIXED_ROOT_CAUSE_FILE
         output_paths["fixed_conflict_triage"] = DEFAULT_FIXED_CONFLICT_TRIAGE_FILE
         output_paths["supervisor_fixed_session_queries"] = DEFAULT_SUPERVISOR_FIXED_QUERIES_FILE
+        output_paths["location_mapping_evidence"] = DEFAULT_LOCATION_MAPPING_EVIDENCE_FILE
+        output_paths["supervisor_clarification_pack"] = DEFAULT_SUPERVISOR_CLARIFICATION_PACK_FILE
+        output_paths["fixed_resolution_template"] = DEFAULT_FIXED_RESOLUTION_TEMPLATE_FILE
+        output_paths["fixed_resolution_audit"] = DEFAULT_FIXED_RESOLUTION_AUDIT_FILE
     if not options.skip_unscheduled_diagnostics:
         output_paths["unscheduled_diagnostics"] = DEFAULT_UNSCHEDULED_DIAGNOSTICS_FILE
 

@@ -10,7 +10,9 @@ from data.fixed_sessions import FixedSessionLoaderReport, load_fixed_sessions
 from data.models import Assignment, Course, FixedSession, Room, TimeSlot
 from engine.fixed_issue_analysis import export_fixed_issue_workbooks
 from engine.fixed_reconciliation import FixedReconciliationReport, normalise_programme_year, reconcile_fixed_sessions
+from engine.fixed_resolution import export_resolution_template, load_resolution_workbook
 from engine.input_readiness import build_input_readiness_result
+from engine.location_mapping import classify_location
 from generator.fixed_scheduler import create_fixed_assignments, normalise_staff_name, validate_fixed_assignments
 from generator.scheduler import generate_schedule
 from optimiser.local_search import optimise_schedule_with_stats
@@ -85,6 +87,28 @@ def write_fixed_workbook(path: Path, rows: list[list[object]]) -> None:
     workbook.save(path)
 
 
+def write_template2_locations(path: Path, rows: list[list[object]]) -> None:
+    """Write a minimal Template 2-style Location support sheet."""
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = "Location"
+    worksheet.append(["Name", "Host Key", "Capacity"])
+    for row in rows:
+        worksheet.append(row)
+    workbook.save(path)
+
+
+def write_resolution_workbook(path: Path, rows: list[list[object]]) -> None:
+    """Write a supervisor resolution workbook fixture."""
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = "Resolution Decisions"
+    worksheet.append(["Query ID", "Decision", "Approved Value", "Reason", "Approved By", "Approval Date", "Notes"])
+    for row in rows:
+        worksheet.append(row)
+    workbook.save(path)
+
+
 def test_fixed_loader_separates_warning_and_critical_rows(tmp_path: Path) -> None:
     """Incomplete placements should warn, while invalid fixed placements remain critical."""
     workbook_path = tmp_path / "fixed.xlsx"
@@ -138,6 +162,60 @@ def test_fixed_assignments_resolve_exact_room_alias_and_remain_anchored() -> Non
     assert assignments[0].room is not None
     assert assignments[0].room.room_id == "E2-07-01-SR259"
     assert assignments[0].timeslot == TimeSlot("Monday", "09:00", 1)
+
+
+def test_location_mapping_classifies_w3_exact_and_alias(tmp_path: Path) -> None:
+    """W3 venue codes should resolve only when an exact authoritative room exists."""
+    rooms = [Room("W3-01-03", 40, "physical", "Laboratory")]
+
+    exact = classify_location("W3-01-03", rooms, tmp_path / "missing_template2.xlsx")
+    alias = classify_location("Non-Destructive Testing Lab (W3 01 03)", rooms, tmp_path / "missing_template2.xlsx")
+
+    assert exact.blocking_status == "non-blocking"
+    assert exact.treatment == "exact internal venue fully validated"
+    assert alias.blocking_status == "non-blocking"
+    assert alias.candidate_venue_code == "W3-01-03"
+
+
+def test_unknown_w3_venue_remains_blocking(tmp_path: Path) -> None:
+    """Missing W3 rooms should not be inferred from unrelated internal venues."""
+    evidence = classify_location("W3-01-99", [], tmp_path / "missing_template2.xlsx")
+
+    assert evidence.blocking_status == "blocking"
+    assert evidence.treatment == "unknown venue"
+
+
+def test_external_venue_does_not_reserve_internal_room() -> None:
+    """Recognised external venues should anchor the row without consuming an internal room."""
+    session = make_fixed_session(locations=("ENG External Venue",), source_row=12)
+
+    assignments, issues = create_fixed_assignments([session], [])
+
+    assert len(assignments) == 1
+    assert assignments[0].room is not None
+    assert assignments[0].room.room_type == "external"
+    assert assignments[0].room.room_id == "ENG External Venue"
+    assert all(issue["severity"] == "warning" for issue in issues)
+
+
+def test_recognised_venue_without_capacity_is_classified(tmp_path: Path) -> None:
+    """Template-supported venues missing CSV capacity should be visible but not fully validated."""
+    template2 = tmp_path / "template2.xlsx"
+    write_template2_locations(template2, [["W3-01-03", "W3-01-03", None]])
+
+    evidence = classify_location("W3-01-03", [], template2)
+
+    assert evidence.blocking_status == "warning"
+    assert evidence.treatment == "recognised institutional venue missing capacity data"
+    assert evidence.capacity is None
+
+
+def test_unknown_location_remains_critical() -> None:
+    """Unknown locations should continue to block fixed assignment creation."""
+    assignments, issues = create_fixed_assignments([make_fixed_session(locations=("UNKNOWN ROOM",))], [])
+
+    assert assignments == []
+    assert any(issue["severity"] == "critical" for issue in issues)
 
 
 def test_programme_and_staff_alias_normalisation_is_conservative() -> None:
@@ -296,6 +374,123 @@ def test_fixed_issue_workbooks_include_supervisor_queries(tmp_path: Path) -> Non
     assert stats["unique_affected_rows"] == 1
     workbook = load_workbook(tmp_path / "queries.xlsx", read_only=True)
     try:
+        assert "Query Summary" in workbook.sheetnames
+        assert "Affected Source Rows" in workbook.sheetnames
+    finally:
+        workbook.close()
+
+
+def test_fixed_issue_workbook_uses_valid_sheet_names(tmp_path: Path) -> None:
+    """Generated evidence workbooks should avoid over-length worksheet names."""
+    session = make_fixed_session(locations=("UNKNOWN",))
+    stats = export_fixed_issue_workbooks(
+        fixed_sessions=[session],
+        courses=[],
+        assignments=[],
+        rooms=[],
+        loader_report=FixedSessionLoaderReport(workbook_path="fixed.xlsx"),
+        reconciliation_report=FixedReconciliationReport(),
+        mapping_issues=[
+            {
+                "severity": "critical",
+                "source": "fixed.xlsx",
+                "sheet": "ENG",
+                "row": 2,
+                "field": "location",
+                "problem": "Location 'UNKNOWN' is neither an exact room nor a supported generic room type.",
+                "recommendation": "Clarify the room.",
+            }
+        ],
+        conflict_issues=[],
+        root_cause_path=tmp_path / "root.xlsx",
+        conflict_triage_path=tmp_path / "conflicts.xlsx",
+        supervisor_queries_path=tmp_path / "queries.xlsx",
+        supervisor_pack_path=tmp_path / "pack.xlsx",
+        resolution_template_path=tmp_path / "resolution.xlsx",
+        resolution_audit_path=tmp_path / "audit.xlsx",
+    )
+
+    assert stats["supervisor_decisions"] == 1
+    workbook = load_workbook(tmp_path / "root.xlsx", read_only=True)
+    try:
+        assert all(len(name) <= 31 for name in workbook.sheetnames)
         assert "Supervisor Queries" in workbook.sheetnames
+    finally:
+        workbook.close()
+
+
+def test_grouped_supervisor_queries_retain_all_source_rows(tmp_path: Path) -> None:
+    """A grouped decision should still link every affected source row."""
+    issues = [
+        {
+            "severity": "critical",
+            "source": "fixed.xlsx",
+            "sheet": "ENG",
+            "row": row,
+            "field": "location",
+            "problem": "Exact fixed room 'W3-01-03' was not found in the venue data.",
+            "recommendation": "Clarify the room.",
+        }
+        for row in [2, 3]
+    ]
+    export_fixed_issue_workbooks(
+        fixed_sessions=[make_fixed_session(source_row=2), make_fixed_session(source_row=3)],
+        courses=[],
+        assignments=[],
+        rooms=[],
+        loader_report=FixedSessionLoaderReport(workbook_path="fixed.xlsx"),
+        reconciliation_report=FixedReconciliationReport(),
+        mapping_issues=issues,
+        conflict_issues=[],
+        root_cause_path=tmp_path / "root.xlsx",
+        conflict_triage_path=tmp_path / "conflicts.xlsx",
+        supervisor_queries_path=tmp_path / "queries.xlsx",
+    )
+
+    workbook = load_workbook(tmp_path / "queries.xlsx", read_only=True, data_only=True)
+    try:
+        assert workbook["Query Summary"].max_row == 2
+        assert workbook["Affected Source Rows"].max_row == 3
+    finally:
+        workbook.close()
+
+
+def test_resolution_workbook_validation(tmp_path: Path) -> None:
+    """Resolution loader should reject unknown, unsupported, and unauthenticated decisions."""
+    valid_path = tmp_path / "valid.xlsx"
+    write_resolution_workbook(
+        valid_path,
+        [["Q001", "PROVIDE_TEACHING_WEEKS", "1-6,8-13", "Confirmed by owner", "Supervisor", "2026-06-26", ""]],
+    )
+    invalid_path = tmp_path / "invalid.xlsx"
+    write_resolution_workbook(
+        invalid_path,
+        [
+            ["Q999", "PROVIDE_TEACHING_WEEKS", "1-6", "Confirmed", "Supervisor", "2026-06-26", ""],
+            ["Q001", "IGNORE_ERROR", "", "No", "Supervisor", "2026-06-26", ""],
+            ["Q002", "CONFIRM_ROOM_ALIAS", "W3-01-03", "Confirmed", "", "2026-06-26", ""],
+            ["Q003", "PROVIDE_TEACHING_WEEKS", "banana", "Confirmed", "Supervisor", "2026-06-26", ""],
+        ],
+    )
+
+    valid = load_resolution_workbook(valid_path, {"Q001"})
+    invalid = load_resolution_workbook(invalid_path, {"Q001", "Q002", "Q003"})
+
+    assert valid.valid
+    assert valid.decisions[0].approved_value == "1-6,8-13"
+    assert not invalid.valid
+    assert len(invalid.errors) >= 4
+
+
+def test_resolution_template_lists_query_ids(tmp_path: Path) -> None:
+    """Blank resolution templates should preserve linked query IDs."""
+    output_path = tmp_path / "resolution_template.xlsx"
+
+    export_resolution_template(output_path, ["Q001", "Q002"])
+
+    workbook = load_workbook(output_path, read_only=True, data_only=True)
+    try:
+        assert workbook["Resolution Decisions"]["A2"].value == "Q001"
+        assert workbook["Resolution Decisions"]["A3"].value == "Q002"
     finally:
         workbook.close()

@@ -129,6 +129,8 @@ def room_is_exclusive(room: Room | None) -> bool:
     """Return True when the room should block concurrent room use."""
     if room is None:
         return False
+    if room.room_type == "external":
+        return False
     if room.room_type == "virtual" and not config.VIRTUAL_ROOM_IS_EXCLUSIVE:
         return False
     return True

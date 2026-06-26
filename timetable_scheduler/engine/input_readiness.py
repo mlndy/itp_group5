@@ -116,7 +116,13 @@ def build_input_readiness_result(
             )
         )
     for issue in fixed_assignment_issues:
-        critical.append(_normalise_issue(issue, fixed_loader_report.workbook_path))
+        row = _normalise_issue(issue, fixed_loader_report.workbook_path)
+        if row["severity"] == "warning":
+            warnings.append(row)
+        elif row["severity"] == "critical":
+            critical.append(row)
+        else:
+            info.append(row)
 
     status = "PASS" if not critical else "FAIL"
     return InputReadinessResult(

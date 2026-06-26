@@ -85,6 +85,20 @@ Preflight report and run summary report now exist and should be preserved.
 - Conflicts may overlap, so summary totals must not be added blindly.
 - The full Engineering scheduler may run only when no blocking critical issue remains.
 
+## Authoritative Resolution and Supervisor Approval Workflow
+
+- Remaining issues must first be checked against all authoritative project files.
+- Source values must not be invented.
+- Venue aliases may be resolved only using the venue dataset, Template 2 support sheets, or clear exact-code equivalence.
+- External venues must not be mapped to arbitrary internal rooms.
+- Missing teaching weeks must not receive default values.
+- Genuine fixed conflicts require human clarification.
+- Approved resolutions must be stored separately from raw source files.
+- Raw institutional workbooks must remain unchanged.
+- Every approved resolution must record approver, date, reason and original source row.
+- The scheduler must support strict mode with no unresolved critical issues.
+- Resolution overrides must not silently bypass unrelated validation errors.
+
 ## Coding Rules
 
 Follow these rules for all future code changes:

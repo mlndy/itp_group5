@@ -11,10 +11,13 @@ from config import (
     DEFAULT_ENGINEERING_FOLDER,
     DEFAULT_FIXED_RECONCILIATION_FILE,
     DEFAULT_FIXED_CONFLICT_TRIAGE_FILE,
+    DEFAULT_FIXED_RESOLUTION_AUDIT_FILE,
+    DEFAULT_FIXED_RESOLUTION_TEMPLATE_FILE,
     DEFAULT_FIXED_ROOT_CAUSE_FILE,
     DEFAULT_FIXED_SESSION_FILE,
     DEFAULT_FIXED_SESSIONS_AUDIT_FILE,
     DEFAULT_INPUT_READINESS_REPORT_FILE,
+    DEFAULT_LOCATION_MAPPING_EVIDENCE_FILE,
     DEFAULT_LOADER_REPORT_FILE,
     DEFAULT_PREFLIGHT_REPORT_FILE,
     DEFAULT_REMARKS_AUDIT_FILE,
@@ -24,6 +27,7 @@ from config import (
     DEFAULT_RUN_SUMMARY_FILE,
     DEFAULT_REMARKS_COMPARISON_FILE,
     DEFAULT_STAKEHOLDER_VIEWS_FILE,
+    DEFAULT_SUPERVISOR_CLARIFICATION_PACK_FILE,
     DEFAULT_SUPERVISOR_FIXED_QUERIES_FILE,
     DEFAULT_TEMPLATE2_SUBMISSION_FILE,
     DEFAULT_TEMPLATE2_SUBMISSION_VALIDATION_FILE,
@@ -497,6 +501,10 @@ def main() -> None:
             root_cause_path=DEFAULT_FIXED_ROOT_CAUSE_FILE,
             conflict_triage_path=DEFAULT_FIXED_CONFLICT_TRIAGE_FILE,
             supervisor_queries_path=DEFAULT_SUPERVISOR_FIXED_QUERIES_FILE,
+            location_evidence_path=DEFAULT_LOCATION_MAPPING_EVIDENCE_FILE,
+            supervisor_pack_path=DEFAULT_SUPERVISOR_CLARIFICATION_PACK_FILE,
+            resolution_template_path=DEFAULT_FIXED_RESOLUTION_TEMPLATE_FILE,
+            resolution_audit_path=DEFAULT_FIXED_RESOLUTION_AUDIT_FILE,
         )
         print(f"Fixed source rows: {fixed_loader_report.source_rows}")
         print(f"Valid fixed source rows: {fixed_loader_report.fixed_rows_loaded}")
@@ -506,6 +514,7 @@ def main() -> None:
         print(f"Unique affected fixed rows: {fixed_analysis['unique_affected_rows']}")
         print(f"Confirmed shared sessions: {fixed_analysis['shared_sessions']}")
         print(f"Supervisor queries: {fixed_analysis['supervisor_queries']}")
+        print(f"Supervisor decision questions: {fixed_analysis['supervisor_decisions']}")
         print(f"Input readiness: {readiness.message}")
         print(f"Saved: {DEFAULT_FIXED_SESSIONS_AUDIT_FILE}")
         print(f"Saved: {DEFAULT_FIXED_RECONCILIATION_FILE}")
@@ -513,6 +522,10 @@ def main() -> None:
         print(f"Saved: {DEFAULT_FIXED_ROOT_CAUSE_FILE}")
         print(f"Saved: {DEFAULT_FIXED_CONFLICT_TRIAGE_FILE}")
         print(f"Saved: {DEFAULT_SUPERVISOR_FIXED_QUERIES_FILE}")
+        print(f"Saved: {DEFAULT_LOCATION_MAPPING_EVIDENCE_FILE}")
+        print(f"Saved: {DEFAULT_SUPERVISOR_CLARIFICATION_PACK_FILE}")
+        print(f"Saved: {DEFAULT_FIXED_RESOLUTION_TEMPLATE_FILE}")
+        print(f"Saved: {DEFAULT_FIXED_RESOLUTION_AUDIT_FILE}")
         if not readiness.ready:
             print("Generation blocked because critical input issues were found.")
             raise SystemExit(1)

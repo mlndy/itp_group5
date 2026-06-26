@@ -12,11 +12,15 @@ from config import (
     DEFAULT_COMMON_MODULE_FILE,
     DEFAULT_FIXED_CONFLICT_TRIAGE_FILE,
     DEFAULT_FIXED_RECONCILIATION_FILE,
+    DEFAULT_FIXED_RESOLUTION_AUDIT_FILE,
+    DEFAULT_FIXED_RESOLUTION_TEMPLATE_FILE,
     DEFAULT_FIXED_ROOT_CAUSE_FILE,
     DEFAULT_FIXED_SESSION_FILE,
     DEFAULT_FIXED_SESSIONS_AUDIT_FILE,
     DEFAULT_INPUT_READINESS_REPORT_FILE,
+    DEFAULT_LOCATION_MAPPING_EVIDENCE_FILE,
     DEFAULT_ROOM_FILE,
+    DEFAULT_SUPERVISOR_CLARIFICATION_PACK_FILE,
     DEFAULT_SUPERVISOR_FIXED_QUERIES_FILE,
 )
 from data.fixed_sessions import export_fixed_sessions_audit, load_fixed_sessions
@@ -190,6 +194,10 @@ class TimetableUIController:
                 root_cause_path=DEFAULT_FIXED_ROOT_CAUSE_FILE,
                 conflict_triage_path=DEFAULT_FIXED_CONFLICT_TRIAGE_FILE,
                 supervisor_queries_path=DEFAULT_SUPERVISOR_FIXED_QUERIES_FILE,
+                location_evidence_path=DEFAULT_LOCATION_MAPPING_EVIDENCE_FILE,
+                supervisor_pack_path=DEFAULT_SUPERVISOR_CLARIFICATION_PACK_FILE,
+                resolution_template_path=DEFAULT_FIXED_RESOLUTION_TEMPLATE_FILE,
+                resolution_audit_path=DEFAULT_FIXED_RESOLUTION_AUDIT_FILE,
             )
         except Exception:
             return ValidationResult(False, "Input validation failed. Review the input issue report.")

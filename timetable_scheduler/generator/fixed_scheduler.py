@@ -8,6 +8,7 @@ from pathlib import Path
 
 from data.models import Assignment, Course, FixedSession, Room, TimeSlot
 from engine.constraint_checker import check_hard_constraints
+from engine.location_mapping import classify_location, room_from_location_evidence
 from engine.remarks_interpreter import assignment_room_ids
 
 FIXED_ISSUE_COLUMNS = ["severity", "source", "sheet", "row", "field", "problem", "recommendation"]
@@ -131,15 +132,29 @@ def _resolve_fixed_rooms(session: FixedSession, rooms: list[Room]) -> tuple[tupl
             for code in codes:
                 room = lookup.get(code.casefold()) or _find_room_by_code(code, rooms)
                 if room is None:
-                    issues.append(
-                        _issue(
-                            session,
-                            severity="critical",
-                            field="location",
-                            problem=f"Exact fixed room '{code}' was not found in the venue data.",
-                            recommendation="Correct the room code or add the venue record before generation.",
+                    evidence = classify_location(code, rooms)
+                    evidence_room = room_from_location_evidence(evidence)
+                    if evidence_room is None:
+                        issues.append(
+                            _issue(
+                                session,
+                                severity="critical",
+                                field="location",
+                                problem=f"Exact fixed room '{code}' was not found in the venue data.",
+                                recommendation="Correct the room code or add the venue record before generation.",
+                            )
                         )
-                    )
+                    else:
+                        issues.append(
+                            _issue(
+                                session,
+                                severity="warning",
+                                field="location",
+                                problem=f"{code} is a recognised venue but capacity is not fully verified.",
+                                recommendation="Keep fixed placement visible and confirm capacity with supervisor.",
+                            )
+                        )
+                        resolved.append(evidence_room)
                 else:
                     resolved.append(room)
             continue
@@ -158,6 +173,20 @@ def _resolve_fixed_rooms(session: FixedSession, rooms: list[Room]) -> tuple[tupl
                 )
             else:
                 resolved.append(room)
+            continue
+        evidence = classify_location(location, rooms)
+        evidence_room = room_from_location_evidence(evidence)
+        if evidence_room is not None:
+            issues.append(
+                _issue(
+                    session,
+                    severity="warning",
+                    field="location",
+                    problem=f"Location '{location}' is recognised as {evidence.treatment}.",
+                    recommendation="Keep fixed placement visible and confirm non-standard venue details before final submission.",
+                )
+            )
+            resolved.append(evidence_room)
             continue
         issues.append(
             _issue(
@@ -280,7 +309,7 @@ def create_fixed_assignments(
     for session in fixed_sessions:
         room_group, room_issues = _resolve_fixed_rooms(session, rooms)
         issues.extend(room_issues)
-        if room_issues or not room_group:
+        if any(issue.get("severity") == "critical" for issue in room_issues) or not room_group:
             continue
         key = _shared_identity(session, room_group)
         if key not in grouped:

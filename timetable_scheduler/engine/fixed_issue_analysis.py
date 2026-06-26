@@ -8,10 +8,13 @@ from pathlib import Path
 
 import pandas as pd
 
+from config import DEFAULT_TEMPLATE2_FILE
 from data.fixed_sessions import FixedSessionLoaderReport
 from data.models import Assignment, Course, FixedSession, Room
 from engine.constraint_checker import assignments_overlap, check_hard_constraints, course_groups, room_is_exclusive
 from engine.fixed_reconciliation import FixedReconciliationReport, normalise_programme_year
+from engine.fixed_resolution import export_resolution_audit, export_resolution_template, load_resolution_workbook
+from engine.location_mapping import classify_location, export_location_mapping_evidence
 from engine.remarks_interpreter import assignment_rooms
 from generator.fixed_scheduler import normalise_module_code, normalise_staff_name
 
@@ -433,6 +436,88 @@ def _supervisor_queries(
     return rows
 
 
+def _teaching_occurrences(row: dict[str, object]) -> int:
+    """Return teaching occurrence count from a source-row teaching-week string."""
+    weeks = str(row.get("teaching weeks") or "")
+    return len([part for part in re.split(r"[,;\s]+", weeks) if part.isdigit()])
+
+
+def _query_key(row: dict[str, object]) -> tuple[str, str, str]:
+    """Return the grouping key for supervisor decision summaries."""
+    category = str(row.get("categories") or "other")
+    problems = str(row.get("problems") or "")
+    if "Exact fixed room" in problems:
+        match = re.search(r"'([^']+)'", problems)
+        return ("Location", f"Confirm venue {match.group(1) if match else ''}", "Location Queries")
+    if "ENG External Venue" in problems:
+        return ("Location", "Confirm external venue treatment", "Location Queries")
+    if "weeks" in problems.casefold():
+        return ("Missing weeks", "Which teaching weeks apply?", "Missing Weeks")
+    if "Ambiguous fixed/non-fixed" in problems:
+        return ("Reconciliation", "Resolve ambiguous fixed/non-fixed mapping", "Shared Session Queries")
+    if "Partial fixed/non-fixed" in problems:
+        return ("Reconciliation", "Confirm fixed/non-fixed split", "Shared Session Queries")
+    if "Room clash" in problems:
+        return ("Conflict", _normalise_problem(problems, "Room clash"), "Room Conflicts")
+    if "Staff clash" in problems:
+        return ("Conflict", _normalise_problem(problems, "Staff clash"), "Tutor Conflicts")
+    if "Student group" in problems or "lunch block" in problems:
+        return ("Conflict", _normalise_problem(problems, "Programme clash"), "Programme Conflicts")
+    if "Blocked time" in problems or "18:00" in problems or "term break" in problems:
+        return ("Placement rule", _normalise_problem(problems, "Blocked or invalid fixed time"), "Room Conflicts")
+    return ("Other", _normalise_problem(problems, "Clarify source row"), "Shared Session Queries")
+
+
+def _normalise_problem(problem: str, fallback: str) -> str:
+    """Collapse a problem string into a concise decision label."""
+    text = re.sub(r"\s+", " ", str(problem or "")).strip()
+    return text[:120] if text else fallback
+
+
+def grouped_supervisor_queries(issue_rows: list[dict[str, object]], sessions: dict[str, dict[str, object]]) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    """Return grouped supervisor decisions plus linked affected rows."""
+    unique_rows = _unique_affected_rows([row for row in issue_rows if row.get("severity") == "critical"], sessions)
+    grouped: dict[tuple[str, str, str], list[dict[str, object]]] = defaultdict(list)
+    for row in unique_rows:
+        grouped[_query_key(row)].append(row)
+
+    summary: list[dict[str, object]] = []
+    affected: list[dict[str, object]] = []
+    for index, ((category, label, sheet_group), rows) in enumerate(sorted(grouped.items()), start=1):
+        query_id = f"Q{index:03d}"
+        occurrences = sum(_teaching_occurrences(row) for row in rows)
+        problem_text = "; ".join(sorted({str(row.get("problems", "")) for row in rows if row.get("problems")}))
+        summary.append(
+            {
+                "query ID": query_id,
+                "issue category": category,
+                "decision group": sheet_group,
+                "number of affected rows": len(rows),
+                "number of affected teaching occurrences": occurrences,
+                "plain-language explanation": label,
+                "recommended question": _question_for_problem(problem_text),
+                "safe available options": _options_for_problem(problem_text),
+                "system recommendation": _system_recommendation(problem_text),
+                "impact if unresolved": "Engineering generation remains blocked for linked critical rows.",
+            }
+        )
+        for row in rows:
+            affected.append({"query ID": query_id, **row})
+    return summary, affected
+
+
+def _system_recommendation(problem: str) -> str:
+    """Return system recommendation only where evidence supports one."""
+    text = problem.casefold()
+    if "eng external venue" in text:
+        return "Template 2 recognises ENG External Venue; confirm external-venue treatment."
+    if "week" in text:
+        return "No safe automatic recovery found; request approved teaching weeks."
+    if "room clash" in text or "staff clash" in text:
+        return "Do not move fixed sessions; confirm shared versus separate classes."
+    return "Supervisor clarification required."
+
+
 def _options_for_problem(problem: str) -> str:
     """Return source-owner options for one problem."""
     text = problem.casefold()
@@ -472,9 +557,14 @@ def export_fixed_issue_workbooks(
     root_cause_path: Path,
     conflict_triage_path: Path,
     supervisor_queries_path: Path,
+    location_evidence_path: Path | None = None,
+    supervisor_pack_path: Path | None = None,
+    resolution_template_path: Path | None = None,
+    resolution_audit_path: Path | None = None,
+    resolution_input_path: Path | None = None,
+    template2_path: Path = DEFAULT_TEMPLATE2_FILE,
 ) -> dict[str, int]:
     """Export fixed-session root-cause, conflict triage and supervisor-query workbooks."""
-    del rooms
     sessions = _session_lookup(fixed_sessions, loader_report)
     issue_rows = _issue_rows(loader_report, reconciliation_report, mapping_issues, conflict_issues)
     unique_rows = _unique_affected_rows(issue_rows, sessions)
@@ -483,6 +573,8 @@ def export_fixed_issue_workbooks(
     normalisation_rows = _normalisation_rows(assignments, fixed_sessions)
     conflict_rows = conflict_triage_rows(assignments)
     supervisor_rows = _supervisor_queries(issue_rows, sessions)
+    query_summary, affected_rows = grouped_supervisor_queries(issue_rows, sessions)
+    location_rows = _location_evidence_rows(mapping_issues, sessions, rooms, template2_path)
 
     root_cause_path.parent.mkdir(parents=True, exist_ok=True)
     with pd.ExcelWriter(root_cause_path, engine="openpyxl") as writer:
@@ -497,7 +589,7 @@ def export_fixed_issue_workbooks(
         )
         pd.DataFrame(shared_rows).to_excel(writer, sheet_name="Possible Shared Sessions", index=False)
         pd.DataFrame(normalisation_rows).to_excel(writer, sheet_name="Safe Normalisation Candidates", index=False)
-        pd.DataFrame(supervisor_rows).to_excel(writer, sheet_name="Supervisor Clarification Required", index=False)
+        pd.DataFrame(query_summary).to_excel(writer, sheet_name="Supervisor Queries", index=False)
 
     conflict_triage_path.parent.mkdir(parents=True, exist_ok=True)
     with pd.ExcelWriter(conflict_triage_path, engine="openpyxl") as writer:
@@ -511,7 +603,16 @@ def export_fixed_issue_workbooks(
         pd.DataFrame([row for row in conflict_rows if row["automatic resolution allowed"] == "No"]).to_excel(writer, sheet_name="Unresolved Cases", index=False)
 
     supervisor_queries_path.parent.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(supervisor_rows).to_excel(supervisor_queries_path, sheet_name="Supervisor Queries", index=False)
+    _export_grouped_supervisor_queries(supervisor_queries_path, query_summary, affected_rows)
+    if location_evidence_path is not None:
+        export_location_mapping_evidence(mapping_issues, location_rows, location_evidence_path)
+    if supervisor_pack_path is not None:
+        _export_supervisor_pack(supervisor_pack_path, query_summary, affected_rows, location_rows, conflict_rows, loader_report, shared_rows, issue_rows)
+    if resolution_template_path is not None:
+        export_resolution_template(resolution_template_path, [str(row["query ID"]) for row in query_summary])
+    if resolution_audit_path is not None:
+        resolution = load_resolution_workbook(resolution_input_path or resolution_template_path or Path(""), {str(row["query ID"]) for row in query_summary})
+        export_resolution_audit(resolution, resolution_audit_path)
     return {
         "issue_instances": len(issue_rows),
         "critical_issue_instances": sum(1 for row in issue_rows if row.get("severity") == "critical"),
@@ -520,7 +621,119 @@ def export_fixed_issue_workbooks(
         "shared_sessions": len(shared_rows),
         "conflict_rows": len(conflict_rows),
         "supervisor_queries": len(supervisor_rows),
+        "supervisor_decisions": len(query_summary),
+        "location_evidence_rows": len(location_rows),
     }
+
+
+def _location_evidence_rows(
+    mapping_issues: list[dict[str, object]],
+    sessions: dict[str, dict[str, object]],
+    rooms: list[Room],
+    template2_path: Path,
+) -> list[dict[str, object]]:
+    """Return evidence rows for fixed-session location mapping issues."""
+    rows: list[dict[str, object]] = []
+    for issue in mapping_issues:
+        ref = f"{issue.get('source')}:{issue.get('sheet')}:{issue.get('row')}"
+        source = sessions.get(ref, {})
+        original = str(source.get("location") or "")
+        evidence = classify_location(original, rooms, template2_path)
+        rows.append(
+            {
+                "source ref": ref,
+                "original value": evidence.original_value,
+                "normalised value": evidence.normalised_value,
+                "source workbook": source.get("source workbook", ""),
+                "source sheet": source.get("source sheet", ""),
+                "source row": source.get("source row", ""),
+                "candidate venue code": evidence.candidate_venue_code,
+                "authoritative evidence source": evidence.authoritative_evidence_source,
+                "capacity": evidence.capacity,
+                "room type": evidence.room_type,
+                "host key": evidence.host_key,
+                "confidence": evidence.confidence,
+                "treatment": evidence.treatment,
+                "blocking status": evidence.blocking_status,
+                "current problem": issue.get("problem", ""),
+            }
+        )
+    return rows
+
+
+def _export_grouped_supervisor_queries(path: Path, query_summary: list[dict[str, object]], affected_rows: list[dict[str, object]]) -> None:
+    """Export grouped supervisor query workbook."""
+    categories = {
+        "Location Queries": [row for row in query_summary if row.get("decision group") == "Location Queries"],
+        "Missing Weeks": [row for row in query_summary if row.get("decision group") == "Missing Weeks"],
+        "Shared Session Queries": [row for row in query_summary if row.get("decision group") == "Shared Session Queries"],
+        "Room Conflicts": [row for row in query_summary if row.get("decision group") == "Room Conflicts"],
+        "Tutor Conflicts": [row for row in query_summary if row.get("decision group") == "Tutor Conflicts"],
+        "Programme Conflicts": [row for row in query_summary if row.get("decision group") == "Programme Conflicts"],
+    }
+    with pd.ExcelWriter(path, engine="openpyxl") as writer:
+        pd.DataFrame(query_summary).to_excel(writer, sheet_name="Query Summary", index=False)
+        pd.DataFrame(affected_rows).to_excel(writer, sheet_name="Affected Source Rows", index=False)
+        for sheet, rows in categories.items():
+            pd.DataFrame(rows).to_excel(writer, sheet_name=sheet, index=False)
+        pd.DataFrame(_resolution_options()).to_excel(writer, sheet_name="Resolution Options", index=False)
+
+
+def _resolution_options() -> list[dict[str, str]]:
+    """Return supported supervisor resolution options."""
+    return [
+        {"Decision": "CONFIRM_SHARED_SESSION", "Use": "Rows are one shared class."},
+        {"Decision": "CONFIRM_SEPARATE_SESSIONS", "Use": "Rows are separate classes and source data must avoid clashes."},
+        {"Decision": "CONFIRM_ROOM_ALIAS", "Use": "Approved venue alias or official room code."},
+        {"Decision": "CONFIRM_EXTERNAL_VENUE", "Use": "Approved external venue label."},
+        {"Decision": "PROVIDE_TEACHING_WEEKS", "Use": "Approved teaching-week expression such as 1-6,8-13."},
+        {"Decision": "CONFIRM_PROGRAMME_GROUP", "Use": "Approved programme/group relationship."},
+        {"Decision": "REMOVE_DUPLICATE_SOURCE_ROW", "Use": "Source row is a duplicate and should not add demand."},
+        {"Decision": "SOURCE_DATA_REQUIRES_CORRECTION", "Use": "Raw source file needs correction before generation."},
+    ]
+
+
+def _export_supervisor_pack(
+    path: Path,
+    query_summary: list[dict[str, object]],
+    affected_rows: list[dict[str, object]],
+    location_rows: list[dict[str, object]],
+    conflict_rows: list[dict[str, object]],
+    loader_report: FixedSessionLoaderReport,
+    shared_rows: list[dict[str, object]],
+    issue_rows: list[dict[str, object]],
+) -> None:
+    """Export a plain-language supervisor clarification package."""
+    critical_count = sum(1 for row in issue_rows if row.get("severity") == "critical")
+    executive = [
+        {"Topic": "Purpose", "Detail": "The scheduler detected inconsistent fixed-session data before generating the Engineering timetable."},
+        {"Topic": "Safety rule", "Detail": "Fixed sessions cannot be moved automatically, and raw institutional workbooks are unchanged."},
+        {"Topic": "Fixed source rows", "Detail": loader_report.source_rows},
+        {"Topic": "Valid fixed rows", "Detail": loader_report.fixed_rows_loaded},
+        {"Topic": "Fixed teaching occurrences", "Detail": "See fixed-session audit for occurrence-level detail."},
+        {"Topic": "Safely grouped shared sessions", "Detail": len(shared_rows)},
+        {"Topic": "Unresolved critical issues", "Detail": critical_count},
+        {"Topic": "Unique supervisor decisions required", "Detail": len(query_summary)},
+    ]
+    instructions = [
+        {"Step": 1, "Instruction": "Review the Decisions Required sheet first."},
+        {"Step": 2, "Instruction": "Use Affected Rows to see every source row linked to each decision."},
+        {"Step": 3, "Instruction": "Enter approved decisions only in fixed_session_resolution_template.xlsx."},
+        {"Step": 4, "Instruction": "Do not edit raw source workbooks for automated overrides."},
+    ]
+    with pd.ExcelWriter(path, engine="openpyxl") as writer:
+        pd.DataFrame(executive).to_excel(writer, sheet_name="Executive Summary", index=False)
+        pd.DataFrame(query_summary).to_excel(writer, sheet_name="Decisions Required", index=False)
+        pd.DataFrame(affected_rows).to_excel(writer, sheet_name="Affected Rows", index=False)
+        pd.DataFrame(location_rows).to_excel(writer, sheet_name="Location Evidence", index=False)
+        pd.DataFrame(conflict_rows).to_excel(writer, sheet_name="Conflict Evidence", index=False)
+        pd.DataFrame([row for row in affected_rows if "week" in str(row.get("problems", "")).casefold()]).to_excel(
+            writer,
+            sheet_name="Missing Information",
+            index=False,
+        )
+        pd.DataFrame(_resolution_options()).to_excel(writer, sheet_name="Proposed Resolutions", index=False)
+        pd.DataFrame(instructions).to_excel(writer, sheet_name="Instructions", index=False)
 
 
 def _conflict_summary(conflict_rows: list[dict[str, object]], shared_rows: list[dict[str, object]]) -> list[dict[str, object]]:

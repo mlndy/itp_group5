@@ -35,6 +35,10 @@ DEFAULT_INPUT_READINESS_REPORT_FILE = GENERATED_DIR / "input_readiness_report.xl
 DEFAULT_FIXED_ROOT_CAUSE_FILE = GENERATED_DIR / "fixed_issue_root_cause_analysis.xlsx"
 DEFAULT_FIXED_CONFLICT_TRIAGE_FILE = GENERATED_DIR / "fixed_conflict_triage.xlsx"
 DEFAULT_SUPERVISOR_FIXED_QUERIES_FILE = GENERATED_DIR / "supervisor_fixed_session_queries.xlsx"
+DEFAULT_LOCATION_MAPPING_EVIDENCE_FILE = GENERATED_DIR / "location_mapping_evidence.xlsx"
+DEFAULT_SUPERVISOR_CLARIFICATION_PACK_FILE = GENERATED_DIR / "Supervisor_Fixed_Session_Clarification_Pack.xlsx"
+DEFAULT_FIXED_RESOLUTION_TEMPLATE_FILE = GENERATED_DIR / "fixed_session_resolution_template.xlsx"
+DEFAULT_FIXED_RESOLUTION_AUDIT_FILE = GENERATED_DIR / "fixed_session_resolution_audit.xlsx"
 DEFAULT_TEMPLATE2_SUBMISSION_FILE = OUTPUT_DIR / "Template2_Submission_Ready.xlsx"
 DEFAULT_TEMPLATE2_SUBMISSION_VALIDATION_FILE = GENERATED_DIR / "template2_submission_validation.xlsx"
 
