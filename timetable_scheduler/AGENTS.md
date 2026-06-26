@@ -120,6 +120,31 @@ Preflight report and run summary report now exist and should be preserved.
 - The optimiser must never move fixed assignments.
 - Timetable visualisation is a later output phase and must not be implemented yet.
 
+## Timetable Visualisation Export
+
+- Visualisation is an output function, not a scheduling function.
+- Visual exports must use the final validated scheduled assignments.
+- Visualisation must not independently reinterpret or modify schedule data.
+- Quarantined and unscheduled requirements must not appear as scheduled blocks.
+- Incomplete programme-years must be labelled clearly.
+- Fixed and generated sessions must be visually distinguishable.
+- Physical, online and external sessions must be distinguishable.
+- Shared sessions must not be duplicated incorrectly.
+- Programme views may show the shared session for each participating programme.
+- Tutor and room views must show one physical assignment per shared session.
+- Template 2 must remain unchanged.
+- Visual workbook failure must not corrupt or delete the valid proposed timetable.
+- Every visual block must retain a traceable assignment ID.
+- Excel sheet names must remain within `31` characters.
+- Generated visual workbooks remain ignored release outputs unless intentionally packaged.
+- Current visualisation validation:
+  - Tests: `257 passed`
+  - Programme visual sheets: `81`
+  - Tutor visual sheets: `225`
+  - Room visual sheets: `43`
+  - Visual export status: `PASS`
+  - Scheduled hard violations remain `0`
+
 ## Coding Rules
 
 Follow these rules for all future code changes:

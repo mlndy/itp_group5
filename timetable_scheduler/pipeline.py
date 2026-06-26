@@ -24,9 +24,11 @@ from config import (
     DEFAULT_INPUT_READINESS_REPORT_FILE,
     DEFAULT_LOCATION_MAPPING_EVIDENCE_FILE,
     DEFAULT_LOADER_REPORT_FILE,
+    DEFAULT_PROGRAMME_VISUALS_FILE,
     DEFAULT_PREFLIGHT_REPORT_FILE,
     DEFAULT_REMARKS_AUDIT_FILE,
     DEFAULT_ROOM_FILE,
+    DEFAULT_ROOM_VISUALS_FILE,
     DEFAULT_RUN_MANIFEST_FILE,
     DEFAULT_RUN_SUMMARY_FILE,
     DEFAULT_STAKEHOLDER_VIEWS_FILE,
@@ -35,6 +37,8 @@ from config import (
     DEFAULT_TEMPLATE2_SUBMISSION_FILE,
     DEFAULT_TEMPLATE2_SUBMISSION_VALIDATION_FILE,
     DEFAULT_TEMPLATE2_FILE,
+    DEFAULT_TIMETABLE_VISUALISATION_VALIDATION_FILE,
+    DEFAULT_TUTOR_VISUALS_FILE,
     DEFAULT_UNSCHEDULED_DIAGNOSTICS_FILE,
     OUTPUT_DIR,
 )
@@ -89,6 +93,7 @@ from output.submission_validator import (
     export_template2_validation_report,
     validate_template2_submission,
 )
+from output.timetable_visualizer import export_timetable_visuals, export_visualisation_failure_report
 from validate_release import validate_release
 
 ProgressCallback = Callable[[str], None]
@@ -419,6 +424,7 @@ def run_timetable_pipeline(
         template2_path=options.template2_output_template_path,
         enable_remark_interpretation=options.enable_remark_interpretation,
     )
+    programme_rows: list[dict[str, object]] = []
     if options.scope == "eng" and DEFAULT_FIXED_SESSION_FILE.exists():
         programme_rows = build_programme_completeness_rows(
             demand_courses,
@@ -492,6 +498,28 @@ def run_timetable_pipeline(
         output_paths["guarded_generation_report"] = DEFAULT_GUARDED_GENERATION_REPORT_FILE
     if not options.skip_unscheduled_diagnostics:
         output_paths["unscheduled_diagnostics"] = DEFAULT_UNSCHEDULED_DIAGNOSTICS_FILE
+
+    _emit(progress_callback, "Exporting visual timetables")
+    try:
+        export_timetable_visuals(
+            assignments=final_schedule,
+            rooms=rooms,
+            programme_rows=programme_rows,
+            programme_path=DEFAULT_PROGRAMME_VISUALS_FILE,
+            tutor_path=DEFAULT_TUTOR_VISUALS_FILE,
+            room_path=DEFAULT_ROOM_VISUALS_FILE,
+            validation_path=DEFAULT_TIMETABLE_VISUALISATION_VALIDATION_FILE,
+        )
+    except Exception as exc:  # pragma: no cover - keeps official timetable outputs intact
+        export_visualisation_failure_report(DEFAULT_TIMETABLE_VISUALISATION_VALIDATION_FILE, exc)
+    output_paths.update(
+        {
+            "programme_visuals": DEFAULT_PROGRAMME_VISUALS_FILE,
+            "tutor_visuals": DEFAULT_TUTOR_VISUALS_FILE,
+            "room_visuals": DEFAULT_ROOM_VISUALS_FILE,
+            "visualisation_validation": DEFAULT_TIMETABLE_VISUALISATION_VALIDATION_FILE,
+        }
+    )
 
     _emit(progress_callback, "Validating outputs")
     export_run_manifest(

@@ -82,6 +82,24 @@ OUTPUT_ACTIONS: dict[str, OutputAction] = {
         description="Review programme, tutor and room schedules.",
         output_key="stakeholder_views",
     ),
+    "programme_visuals": OutputAction(
+        label="Open Programme Timetables",
+        description="Open calendar-style programme and year timetable views.",
+        output_key="programme_visuals",
+        success_message="Visual timetable files created. Opened Programme Timetables.",
+    ),
+    "tutor_visuals": OutputAction(
+        label="Open Tutor Timetables",
+        description="Open calendar-style tutor timetable views.",
+        output_key="tutor_visuals",
+        success_message="Visual timetable files created. Opened Tutor Timetables.",
+    ),
+    "room_visuals": OutputAction(
+        label="Open Room Timetables",
+        description="Open calendar-style room timetable views.",
+        output_key="room_visuals",
+        success_message="Visual timetable files created. Opened Room Timetables.",
+    ),
     "unscheduled_review": OutputAction(
         label="Review Unscheduled Classes",
         description="See classes that still require manual scheduling.",
@@ -250,6 +268,9 @@ class TimetableUIController:
             "Scheduled classes": str(result.scheduled_occurrences),
             "Classes needing review": review_text,
             "Hard conflicts": hard_conflicts,
+            "Visual timetables": "Visual timetable files created"
+            if {"programme_visuals", "tutor_visuals", "room_visuals"} <= set(result.output_paths)
+            else "Not created",
         }
 
     def output_actions(self) -> dict[str, OutputAction]:

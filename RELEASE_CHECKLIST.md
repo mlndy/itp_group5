@@ -29,6 +29,11 @@ Use this checklist before final submission and GitHub release.
 - [ ] Multiple-room handling works.
 - [ ] Hybrid handling uses the available recording-capability proxy.
 - [ ] Special Requests Review is generated.
+- [ ] Programme visual timetable workbook is generated.
+- [ ] Tutor visual timetable workbook is generated.
+- [ ] Room visual timetable workbook is generated.
+- [ ] Visual timetable workbooks use scheduled assignments only and do not alter Template 2.
+- [ ] Visual timetable validation report is generated.
 - [ ] Unscheduled classes remain visible.
 - [ ] Scheduled hard violations remain zero.
 - [ ] Proposed timetable output structure is unchanged.
@@ -69,6 +74,15 @@ Use this checklist before final submission and GitHub release.
 ```
 
 - [ ] Final product run is remarks-aware and executed last before release validation.
+- [ ] Visual timetable validation reports:
+
+```text
+Visual export status: PASS
+0 missing visual entries
+0 unexpected visual entries
+0 invalid overlaps
+```
+
 - [ ] `validate_release.py` reports `FINAL RELEASE VALIDATION: PASS`.
 - [ ] Clean release ZIP builds.
 - [ ] Clean release ZIP inspection passes.

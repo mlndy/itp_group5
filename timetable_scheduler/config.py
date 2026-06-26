@@ -42,6 +42,10 @@ DEFAULT_FIXED_RESOLUTION_AUDIT_FILE = GENERATED_DIR / "fixed_session_resolution_
 DEFAULT_GUARDED_GENERATION_REPORT_FILE = GENERATED_DIR / "guarded_generation_report.xlsx"
 DEFAULT_TEMPLATE2_SUBMISSION_FILE = OUTPUT_DIR / "Template2_Submission_Ready.xlsx"
 DEFAULT_TEMPLATE2_SUBMISSION_VALIDATION_FILE = GENERATED_DIR / "template2_submission_validation.xlsx"
+DEFAULT_PROGRAMME_VISUALS_FILE = OUTPUT_DIR / "Programme_Timetable_Visuals.xlsx"
+DEFAULT_TUTOR_VISUALS_FILE = OUTPUT_DIR / "Tutor_Timetable_Visuals.xlsx"
+DEFAULT_ROOM_VISUALS_FILE = OUTPUT_DIR / "Room_Timetable_Visuals.xlsx"
+DEFAULT_TIMETABLE_VISUALISATION_VALIDATION_FILE = GENERATED_DIR / "timetable_visualisation_validation.xlsx"
 
 VALID_DAYS: list[str] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
 DAY_ABBREVIATIONS: dict[str, str] = {

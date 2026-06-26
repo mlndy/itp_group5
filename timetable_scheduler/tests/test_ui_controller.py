@@ -40,6 +40,9 @@ def make_result(tmp_path: Path) -> PipelineResult:
         "proposed_template2": "Template2.xlsx",
         "stakeholder_views": "stakeholder_views.xlsx",
         "run_summary": "run_summary.xlsx",
+        "programme_visuals": "Programme_Timetable_Visuals.xlsx",
+        "tutor_visuals": "Tutor_Timetable_Visuals.xlsx",
+        "room_visuals": "Room_Timetable_Visuals.xlsx",
         "output_folder": "outputs",
     }.items():
         path = tmp_path / filename
@@ -185,6 +188,7 @@ def test_pipeline_result_maps_to_simple_display_values(tmp_path: Path) -> None:
     assert values["Scheduled classes"] == "2747"
     assert values["Classes needing review"] == "30 teaching occurrences require review"
     assert values["Hard conflicts"] == "No hard-constraint conflicts"
+    assert values["Visual timetables"] == "Visual timetable files created"
     assert "DSC inclusion" not in values
 
 
@@ -196,6 +200,9 @@ def test_friendly_output_keys_map_to_expected_files(tmp_path: Path) -> None:
 
     actions = controller.output_actions()
     assert actions["proposed_timetable"].description == "View the generated timetable ready for review."
+    assert actions["programme_visuals"].label == "Open Programme Timetables"
+    assert actions["tutor_visuals"].label == "Open Tutor Timetables"
+    assert actions["room_visuals"].label == "Open Room Timetables"
     assert actions["special_requests"].label == "Review Special Requests"
     status = controller.open_output(result, "unscheduled_review")
 

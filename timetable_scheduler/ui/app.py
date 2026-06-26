@@ -200,9 +200,10 @@ class TimetableSchedulerApp:
 
         metrics = ttk.Frame(frame, style="App.TFrame")
         metrics.grid(row=2, column=0, sticky="ew")
-        for col in range(4):
+        metric_labels = ["Coverage", "Scheduled classes", "Classes needing review", "Hard conflicts", "Visual timetables"]
+        for col in range(len(metric_labels)):
             metrics.columnconfigure(col, weight=1)
-        for col, label in enumerate(["Coverage", "Scheduled classes", "Classes needing review", "Hard conflicts"]):
+        for col, label in enumerate(metric_labels):
             self.result_vars[label] = tk.StringVar(value="-")
             card = ttk.Frame(metrics, style="Card.TFrame", padding=14)
             card.grid(row=0, column=col, sticky="nsew", padx=(0 if col == 0 else 8, 0))

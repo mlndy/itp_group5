@@ -12,7 +12,7 @@ The system:
 - generates a timetable that accepts only hard-feasible scheduled assignments;
 - applies bounded soft-constraint optimisation when requested;
 - interprets supported free-text scheduling remarks in a deterministic and explainable way;
-- exports a proposed timetable, stakeholder views, exception reports and run evidence.
+- exports a proposed timetable, stakeholder views, calendar-style visual timetables, exception reports and run evidence.
 
 The prototype is intentionally transparent. If a class cannot be placed safely, it remains visible for review instead of being forced into an invalid timetable.
 
@@ -23,8 +23,9 @@ The prototype is intentionally transparent. If a class cannot be placed safely, 
 3. Click **Generate Timetable**.
 4. Wait for processing to complete.
 5. Review the **Proposed Timetable**.
-6. Review unscheduled classes and special requests.
-7. Approve or manually resolve exceptions.
+6. Open the programme, tutor and room visual timetable workbooks.
+7. Review unscheduled classes and special requests.
+8. Approve or manually resolve exceptions.
 
 ## Installation
 
@@ -50,12 +51,15 @@ The desktop application opens or creates these main outputs:
 
 - **Proposed Timetable**: generated timetable workbook for review.
 - **Timetable Views**: programme, tutor and room views.
+- **Visual Timetables**: calendar-style programme/year, tutor and room workbooks generated from validated scheduled assignments.
 - **Unscheduled Classes**: exception queue for unresolved demand.
 - **Special Requests Review**: how supported free-text remarks were interpreted and handled.
 - **Scheduling Summary**: coverage, validation checks, resource audit, residual analysis and optimisation summary.
 - **Run Manifest**: traceability and release-validation evidence.
 
 Generated outputs are written under `timetable_scheduler/generated/` and `timetable_scheduler/output_files/`. These folders are intentionally ignored by Git.
+
+The scheduler automatically exports calendar-style programme, tutor and room timetable views from the validated scheduled assignments. The visual workbooks do not create or modify the timetable; quarantined and unscheduled requirements remain in exception reports rather than appearing as scheduled blocks.
 
 ## Command-Line Use
 
@@ -110,6 +114,30 @@ Enhanced-run attribution:
 
 The two runs use the same teaching-demand denominator. The enhanced run schedules fewer occurrences because it enforces additional explicit requirements from supported remarks rather than weakening constraints.
 
+### Visual Timetable Evidence
+
+The guarded Engineering visualisation run preserves the fixed-session scheduling metrics and adds supplementary workbooks:
+
+```text
+Total teaching occurrences: 3562
+Schedulable occurrences: 3160
+Quarantined occurrences: 402
+Scheduled occurrences: 3070
+Unscheduled search failures: 90
+Scheduled hard violations: 0
+Template 2 readiness: PASS
+Visual export status: PASS
+```
+
+Generated visual outputs:
+
+```text
+Programme_Timetable_Visuals.xlsx: 81 sheets, 3454 visual entries
+Tutor_Timetable_Visuals.xlsx: 225 sheets, 4255 visual entries
+Room_Timetable_Visuals.xlsx: 43 sheets, 2367 visual entries
+timetable_visualisation_validation.xlsx: 0 missing entries, 0 unexpected entries, 0 invalid overlaps
+```
+
 ## Implementation Notes
 
 Technical workbook-role detection is structure-based. The requirements input is validated from its worksheet structure and headers, while the final proposed timetable preserves the required output workbook structure.
@@ -137,7 +165,7 @@ cd C:\Users\Admin\Documents\GitHub\itp_group5\timetable_scheduler
 Current expected release result:
 
 ```text
-220 passed
+257 passed
 ```
 
 ## Release ZIP
