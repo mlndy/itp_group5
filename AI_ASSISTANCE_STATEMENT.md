@@ -5,30 +5,52 @@
 - ChatGPT
 - OpenAI Codex
 
-## Purpose Of Use
+## Project Ownership
 
-I used AI tools to support:
+This is a Group 5 project. Group 5 defined the problem, system requirements, constraint policies, architecture, validation criteria and final project decisions.
 
-- exploring implementation approaches;
+Team members:
+
+- Ivin Chew Jian Wei - 2503347
+- Chua Kai Zhong - 2500249
+- Chang Wen Lin Sarah - 2501932
+- Addison Kang Jun Loong - 2501053
+- Lim Ting Yong - 2501044
+- Amal Nadiy Bin Mohamed Faizal - 2500282
+
+Academic supervisor:
+
+- Prof. Tsoi Mun Heng
+
+## Purpose Of AI Use
+
+ChatGPT and Codex were used as support tools for:
+
+- exploring implementation options;
 - drafting and refining Python code;
-- generating and updating tests;
 - debugging failures;
-- preparing documentation drafts;
+- generating and updating automated tests;
 - reviewing repository structure;
-- preparing release instructions and validation checklists.
+- refining documentation and release evidence;
+- preparing validation and packaging checklists.
 
-## Human Ownership
+AI did not independently design, own or approve the scheduler. AI-generated suggestions were reviewed, tested, corrected and accepted only when they matched the team's requirements and validation evidence.
 
-I acted as the architect of the system by defining the scheduling workflow, constraints, acceptance criteria and feature priorities. I used ChatGPT and Codex as support tools for implementation, debugging, testing and documentation.
+## Human Review And Verification
 
-I defined the Engineering-cluster scope, confirmed that DSC is part of Engineering, interpreted the domain requirements, approved the hard and soft constraint framing, selected the final features, corrected inaccurate assumptions and accepted or rejected AI-generated changes.
+The team reviewed implementation choices, corrected inaccurate assumptions and required final claims to be supported by tests, generated workbooks and release validation.
 
-## Verification
+Final validation focuses on:
 
-AI output was not accepted without review. The final prototype was verified through automated tests, full Engineering runs, release validation, deterministic baseline and remarks-aware comparisons, generated Excel evidence and checks that scheduled assignments have zero hard violations.
+- `0` scheduled hard-constraint violations;
+- `97.15%` coverage of schedulable demand;
+- quarantined records remaining visible;
+- Template 2 readiness `PASS`;
+- visual export validation `PASS`;
+- automated tests passing.
 
 ## Limitations And Accountability
 
-AI made incorrect or incomplete assumptions during development, including around metric definitions, workbook terminology and domain policy. I corrected those issues and required the final claims to be backed by tests and evidence.
+AI assistance can produce useful code and explanations, but it can also make incorrect assumptions about metrics, workbook terminology, repository state or domain policy. Those issues were corrected during development.
 
-The documented results come from validated runs. The final submission remains my responsibility.
+The final submission remains the responsibility of Group 5, with academic guidance from Prof. Tsoi Mun Heng.

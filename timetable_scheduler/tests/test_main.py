@@ -51,6 +51,8 @@ def _stub_pipeline(monkeypatch, generated: list[Assignment]) -> None:
     )
     monkeypatch.setattr(app, "export_run_manifest", lambda courses, assignments, output_path, **kwargs: None)
     monkeypatch.setattr(app, "export_outputs", lambda assignments, scope, **kwargs: {})
+    monkeypatch.setattr(app, "export_timetable_visuals", lambda **kwargs: type("VisualResult", (), {"status": "PASS"})())
+    monkeypatch.setattr(app, "export_visualisation_failure_report", lambda *args, **kwargs: type("VisualResult", (), {"status": "FAIL"})())
 
 
 def test_parse_args_accepts_demo_safety_controls() -> None:

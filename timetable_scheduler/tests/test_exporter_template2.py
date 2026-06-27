@@ -6,6 +6,7 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
+from config import DEFAULT_TEMPLATE2_FILE
 from data.models import Assignment, Course, Room, TimeSlot
 from output import exporter
 from output.exporter import assignment_to_row, export_schedule
@@ -36,7 +37,7 @@ def _headers(ws) -> list[str | None]:
 def test_template2_workbook_is_used_when_available(tmp_path: Path, monkeypatch) -> None:
     """Exporter should preserve the provided Template 2 workbook structure."""
     template_copy = tmp_path / "template2.xlsx"
-    workbook = load_workbook(Path("input/Upload template_System (Template 2).xlsx"))
+    workbook = load_workbook(DEFAULT_TEMPLATE2_FILE)
     workbook["Course Code"]["A2"] = "TEMPLATE_MARKER"
     workbook.save(template_copy)
 
@@ -51,7 +52,7 @@ def test_template2_workbook_is_used_when_available(tmp_path: Path, monkeypatch) 
 
 def test_timetable_sheet_has_required_columns(tmp_path: Path, monkeypatch) -> None:
     """The Timetable sheet should expose the required Template 2 columns."""
-    monkeypatch.setattr(exporter, "DEFAULT_TEMPLATE2_FILE", Path("input/Upload template_System (Template 2).xlsx"))
+    monkeypatch.setattr(exporter, "DEFAULT_TEMPLATE2_FILE", DEFAULT_TEMPLATE2_FILE)
     output = tmp_path / "final_timetable.xlsx"
     export_schedule([Assignment(course=make_course(), room=None, timeslot=None)], output)
 
@@ -65,7 +66,7 @@ def test_timetable_sheet_has_required_columns(tmp_path: Path, monkeypatch) -> No
 
 def test_room1_and_location_hostkey_use_assigned_room_id(tmp_path: Path, monkeypatch) -> None:
     """Room1 and Location Hostkey should carry the assigned room ID."""
-    monkeypatch.setattr(exporter, "DEFAULT_TEMPLATE2_FILE", Path("input/Upload template_System (Template 2).xlsx"))
+    monkeypatch.setattr(exporter, "DEFAULT_TEMPLATE2_FILE", DEFAULT_TEMPLATE2_FILE)
     assignment = Assignment(
         course=make_course(staff_ids=["S001", "S002"], prog_yr="ENG/YR 2", group_ids=["ENG/YR 2"]),
         room=Room("PGB-LT-01", 120, "physical"),
@@ -85,7 +86,7 @@ def test_room1_and_location_hostkey_use_assigned_room_id(tmp_path: Path, monkeyp
 
 def test_room2_exports_second_assigned_room(tmp_path: Path, monkeypatch) -> None:
     """A two-room assignment should populate Room2 without changing Room1."""
-    monkeypatch.setattr(exporter, "DEFAULT_TEMPLATE2_FILE", Path("input/Upload template_System (Template 2).xlsx"))
+    monkeypatch.setattr(exporter, "DEFAULT_TEMPLATE2_FILE", DEFAULT_TEMPLATE2_FILE)
     assignment = Assignment(
         course=make_course(remarks="2 rooms", group_ids=["ENG/YR 1"]),
         room=Room("PGB-R1", 30, "physical"),
@@ -106,7 +107,7 @@ def test_room2_exports_second_assigned_room(tmp_path: Path, monkeypatch) -> None
 
 def test_online_assignment_exports_online_room(tmp_path: Path, monkeypatch) -> None:
     """Online assignments should export the synthetic ONLINE_ROOM placeholder."""
-    monkeypatch.setattr(exporter, "DEFAULT_TEMPLATE2_FILE", Path("input/Upload template_System (Template 2).xlsx"))
+    monkeypatch.setattr(exporter, "DEFAULT_TEMPLATE2_FILE", DEFAULT_TEMPLATE2_FILE)
     assignment = Assignment(
         course=make_course(delivery_mode="Online - Synchronous", group_ids=["ENG/YR 1"]),
         room=Room("ONLINE_ROOM", 9999, "virtual"),
@@ -126,7 +127,7 @@ def test_online_assignment_exports_online_room(tmp_path: Path, monkeypatch) -> N
 
 def test_unscheduled_assignment_keeps_room1_blank(tmp_path: Path, monkeypatch) -> None:
     """Unscheduled assignments should not invent a room ID."""
-    monkeypatch.setattr(exporter, "DEFAULT_TEMPLATE2_FILE", Path("input/Upload template_System (Template 2).xlsx"))
+    monkeypatch.setattr(exporter, "DEFAULT_TEMPLATE2_FILE", DEFAULT_TEMPLATE2_FILE)
     assignment = Assignment(course=make_course(class_size=80), room=None, timeslot=None)
     output = tmp_path / "final_timetable.xlsx"
     export_schedule([assignment], output)
@@ -142,7 +143,7 @@ def test_unscheduled_assignment_keeps_room1_blank(tmp_path: Path, monkeypatch) -
 
 def test_exporter_does_not_modify_scheduler_results(tmp_path: Path, monkeypatch) -> None:
     """Exporting should not mutate the input schedule objects."""
-    monkeypatch.setattr(exporter, "DEFAULT_TEMPLATE2_FILE", Path("input/Upload template_System (Template 2).xlsx"))
+    monkeypatch.setattr(exporter, "DEFAULT_TEMPLATE2_FILE", DEFAULT_TEMPLATE2_FILE)
     assignment = Assignment(course=make_course(), room=Room("PGB-LT-01", 120, "physical"), timeslot=TimeSlot("Monday", "09:00", 1))
     snapshot = (list(assignment.hard_violations), list(assignment.soft_violations))
 

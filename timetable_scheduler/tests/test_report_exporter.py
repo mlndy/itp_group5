@@ -6,6 +6,7 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
+from config import DEFAULT_TEMPLATE2_FILE
 from data.models import Assignment, Course, Room, TimeSlot
 from generator.scheduler import MAX_CANDIDATE_PATTERN_LIMIT_REASON
 from output.report_exporter import (
@@ -602,7 +603,7 @@ def test_run_manifest_exports_template_validation_and_traceability(tmp_path: Pat
     """Run manifest should capture reproducibility and Template/traceability checks."""
     output = tmp_path / "run_manifest.xlsx"
     timetable = tmp_path / "timetable.xlsx"
-    workbook = load_workbook(Path("input/Upload template_System (Template 2).xlsx"))
+    workbook = load_workbook(DEFAULT_TEMPLATE2_FILE)
     workbook.save(timetable)
     course = make_course(source_file="requirements.xlsx")
     assignments = [Assignment(course, Room("R1", 100, "physical"), TimeSlot("Monday", "09:00", 1))]
@@ -614,7 +615,7 @@ def test_run_manifest_exports_template_validation_and_traceability(tmp_path: Pat
         metadata={"scope": "eng", "skip_optimisation": True, "input_workbook": "selected_template1.xlsx"},
         rooms=[Room("R1", 100, "physical")],
         output_files={"timetable": timetable},
-        template2_path=Path("input/Upload template_System (Template 2).xlsx"),
+        template2_path=DEFAULT_TEMPLATE2_FILE,
     )
 
     exported = load_workbook(output)

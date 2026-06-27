@@ -1,58 +1,91 @@
 # AI Usage Log
 
-This project used AI assistance transparently. The user was the project architect and final decision-maker. ChatGPT and OpenAI Codex were used as support tools for implementation, debugging, testing, documentation and release preparation.
+This project used AI assistance transparently. Group 5 defined the problem, requirements, architecture, validation criteria and final decisions. ChatGPT and OpenAI Codex were used as support tools for implementation, debugging, automated testing, documentation refinement and code review.
 
-AI did not independently design the project. AI-generated suggestions were reviewed, corrected and validated before being retained.
+AI did not independently design or own the project. AI-generated suggestions were reviewed, corrected and validated by the team before acceptance.
 
-| Stage | User Architectural Direction | AI Assistance | User Review Or Correction | Validation Evidence |
+## Team And Supervisor
+
+- Ivin Chew Jian Wei - 2503347
+- Chua Kai Zhong - 2500249
+- Chang Wen Lin Sarah - 2501932
+- Addison Kang Jun Loong - 2501053
+- Lim Ting Yong - 2501044
+- Amal Nadiy Bin Mohamed Faizal - 2500282
+- Academic supervisor: Prof. Tsoi Mun Heng
+
+Preliminary project-plan roles should be read as initial workstream allocations, not proof of exclusive ownership by any single student.
+
+## Usage Summary
+
+| Stage | Group 5 Direction | AI Assistance | Team Review Or Correction | Validation Evidence |
 | --- | --- | --- | --- | --- |
-| Problem framing and Engineering scope | Defined the project as an Engineering Cluster timetabling problem, with DSC included in Engineering. | Helped organise requirements into implementation phases. | Rejected DSC-only framing as the final deliverable. | Engineering run and Programme Breakdown confirm DSC inclusion. |
-| Data modelling | Required explicit Course, Room, TimeSlot and Assignment objects. | Suggested dataclass usage and helper structure. | Preserved existing model boundaries and prevented duplicate dataclass definitions. | Model tests and downstream scheduler/exporter tests. |
-| Hard and soft constraints | Defined hard constraints as non-negotiable and soft constraints as quality preferences. | Helped implement and test constraint checks. | Required scheduled assignments with hard violations to remain unacceptable. | Constraint tests and scheduled hard violation count of 0. |
-| Schedule generator | Required a safe heuristic generator that leaves unsafe demand unscheduled. | Helped implement ordering, candidate filtering and retry controls. | Rejected changes that increased coverage by weakening constraints or changing demand. | Engineering baseline: 2747/2777 scheduled, 0 scheduled hard violations. |
-| Engineering scaling and bottleneck reporting | Required Engineering to be the primary deliverable. | Helped add reports, diagnostics and evidence sheets. | Required unscheduled demand to remain visible. | Run summary, stakeholder views and residual analysis. |
-| Shared online-room policy correction | Clarified that fully online teaching does not require physical room allocation. | Helped audit virtual-room semantics. | Corrected earlier treatment of `ONLINE_ROOM` as a scarce physical room. | Online baseline coverage: 813/813 scheduled. |
-| Demand-metric integrity | Required stable comparison metrics. | Helped separate raw assignment counts from teaching-occurrence demand. | Rejected comparisons where the total assignment pool changed. | Required teaching occurrences remain 2777. |
-| Resource and residual analysis | Required clear explanation of remaining unscheduled demand. | Helped classify room and F2F bottlenecks. | Required operational exceptions to be reported, not hidden. | Residual F2F analysis and exception queue. |
-| Optimiser safety | Required optimisation to improve quality without harming feasibility. | Helped add optimiser acceptance checks and summaries. | Required optimiser output to preserve demand and hard safety. | Soft violations 3030 to 3019, hard safety preserved. |
-| Stakeholder Excel outputs | Required evidence workbooks for decision-making. | Helped implement preflight, run summary, stakeholder views and manifest outputs. | Required output clarity without changing the proposed timetable structure. | Release validator checks required workbooks and sheets. |
-| Minimal desktop UI | Required a local dark desktop UI, not a web app. | Helped implement Tkinter UI and controller tests. | Required a single Consolidated Schedule input and plain-language output buttons. | UI/controller tests and demo flow. |
-| Workbook-role detection | Clarified operational workbook roles. | Helped implement structure-based validation. | Corrected prior confusion over workbook names and required structure-based detection rather than filename-based acceptance. | Workbook-role tests reject generated timetable as input. |
-| Repository cleanup and release packaging | Required a clean final repository and distributable ZIP. | Helped create packaging script, exclusions and release checklist. | Required generated files, virtual environments and caches to stay out of Git. | Clean release builder tests and ZIP inspection. |
-| Remarks interpretation innovation | Required deterministic, explainable handling of free-text scheduling remarks. | Helped implement supported patterns such as multiple rooms, hybrid delivery and preferences. | Required unsupported or unclear remarks to remain visible rather than guessed. | Remarks interpreter, scheduling and report tests. |
-| Remarks refinement | Required ambiguous remarks to remain non-blocking unless explicit and supported. | Helped refine enforcement levels and review classifications. | Rejected over-broad hard interpretation of low-confidence remarks. | Special Requests Review and remarks handling counts. |
-| Baseline restoration and deterministic comparison | Required a comparable baseline against the same 2777 teaching occurrences. | Helped restore neutral disabled-remarks behaviour and comparison reports. | Required zero unexplained enhanced-only differences. | Baseline 2747/30, enhanced 2715/62, attribution reconciles. |
-| Final release preparation | Required final documentation, validation and GitHub release readiness. | Helped update docs, AI disclosure and packaging checks. | Required honest AI disclosure and final validation before release. | Tests, compile check, deterministic runs, release validation and clean ZIP build. |
+| Problem framing and Engineering scope | Defined the deliverable as Engineering Cluster timetabling, with DSC included. | Helped organise requirements into implementation phases. | Rejected DSC-only framing as the final deliverable. | Engineering evidence confirms DSC inclusion. |
+| Data modelling | Required explicit Course, Room, TimeSlot and Assignment objects. | Suggested helper structure and type-hinted code. | Preserved existing model boundaries and prevented duplicate dataclass definitions. | Model, loader and downstream tests. |
+| Hard and soft constraints | Defined hard constraints as non-negotiable and soft constraints as quality preferences. | Helped implement and test constraint checks. | Required scheduled hard violations to remain unacceptable. | Final scheduled hard-constraint violations: 0. |
+| Engineering scaling | Required the Engineering cluster as the final scope. | Helped add reports, diagnostics and evidence sheets. | Required unresolved demand to remain visible. | `run_summary.xlsx`, `guarded_generation_report.xlsx`. |
+| Fixed-session compliance | Required official fixed sessions to remain anchored. | Helped implement fixed/non-fixed reconciliation and guarded generation. | Required fixed sessions not to be moved or guessed. | Fixed-session tests and generated fixed-session evidence. |
+| Template 2 readiness | Required official output structure and upload-critical validation. | Helped implement validation and source-to-output reconciliation. | Required invalid or incomplete rows to be excluded from submission-ready output. | `template2_submission_validation.xlsx`, Template 2 readiness PASS. |
+| Remarks interpretation | Required deterministic, explainable handling of supported free-text requests. | Helped implement supported patterns and review classifications. | Required unsupported or unclear remarks to remain visible rather than guessed. | Remarks tests and Special Requests Review. |
+| Visual timetable exports | Required stakeholder-friendly views without changing the schedule. | Helped implement programme, tutor and room visual workbooks. | Required visual exports to use scheduled assignments only. | Visual export status PASS, 0 missing entries, 0 invalid overlaps. |
+| Release validation | Required final metrics to be defensible and reproducible. | Helped update validators, documentation and packaging scripts. | Required final v1.1 metrics to replace old historical figures. | Tests, guarded runs, `validate_release.py`. |
 
-## Meaningful User Corrections
+## Final v1.1 Evidence
 
-The user corrected or clarified several important project decisions:
+```text
+Total teaching occurrences: 3562
+Schedulable occurrences: 3160
+Quarantined input occurrences: 402
+Scheduled occurrences: 3070
+Scheduler search failures: 90
+Scheduled hard-constraint violations: 0
+Coverage of schedulable demand: 97.15%
+Coverage of total recorded demand: 86.19%
+```
+
+The `86.19%` total-recorded-demand figure includes quarantined source records. The primary scheduling-performance measure is `97.15%` coverage of schedulable demand.
+
+Template 2 evidence:
+
+```text
+Proposed timetable rows: 2868
+Submission-ready Template 2 rows: 1183
+Template 2 invalid rows: 0
+Template 2 complete programme-years: 30
+Submission-ready programme-years: 23
+Template 2 readiness: PASS
+```
+
+Visual timetable evidence:
+
+```text
+Programme visual sheets: 81
+Tutor visual sheets: 225
+Room visual sheets: 43
+Programme visual entries: 3454
+Tutor visual entries: 4255
+Room visual entries: 2367
+Missing visual entries: 0
+Unexpected visual entries: 0
+Invalid overlaps: 0
+Visual export status: PASS
+```
+
+## Meaningful Human Corrections
+
+The team corrected or clarified several important project decisions:
 
 - The final deliverable is Engineering scope, not DSC-only.
 - DSC is part of Engineering and should not be presented as a separate inclusion feature.
 - Workbook roles must be detected from structure and headers, not filenames.
-- The final UI should be a minimal dark desktop app with one **Consolidated Schedule** input.
-- Internal template-number terminology should not appear in the UI.
-- Remarks such as multiple rooms and hybrid delivery matter for the final innovation.
+- Hard constraints must not be weakened to increase coverage.
+- Quarantined input demand and scheduler search failures must be reported separately.
+- The final UI should use plain-language terms such as **Consolidated Schedule** and **Proposed Timetable**.
 - Ambiguous remarks must remain non-blocking and visible for staff review.
-- The comparison denominator must be teaching occurrences, not raw assignment-object counts.
-- Deterministic baseline restoration is required before claiming remarks-aware effects.
-- Tests, full Engineering runs, generated evidence and release validation are required before release.
-
-## Verification Summary
-
-Final evidence expected for release:
-
-- Tests: `220 passed`
-- Core baseline: `2777` required, `2747` scheduled, `30` unscheduled, `98.92%` coverage
-- Remarks-aware run: `2777` required, `2715` scheduled, `62` unscheduled, `97.77%` coverage
-- Scheduled hard violations: `0`
-- Online baseline coverage: `813 / 813`
-- Remarks attribution: `13` direct explicit effects, `19` indirect displacements, `30` unchanged unscheduled, `0` unexplained
-- Release validator: `PASS`
+- Final v1.1 metrics supersede earlier pre-fixed-session v1.0 metrics.
 
 ## Limitations Of AI Assistance
 
-AI assistance can produce useful code and explanations, but it can also make incorrect assumptions about metrics, repository state, stakeholder policy or domain semantics. The user reviewed AI-generated work, corrected inaccurate assumptions and accepted only changes supported by tests and generated evidence.
+AI assistance can produce useful code and explanations, but it can also make incorrect assumptions about metrics, repository state, stakeholder policy or domain semantics. The team reviewed AI-generated work, corrected inaccurate assumptions and accepted only changes supported by tests and generated evidence.
 
-The final submission remains the user's responsibility.
+The final submission remains the responsibility of Group 5.

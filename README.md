@@ -6,26 +6,29 @@ This repository contains a local Python prototype for generating a proposed SIT 
 
 The system:
 
-- reads one consolidated scheduling-requirements workbook;
-- validates the selected workbook structure;
-- loads Engineering teaching requirements, venue data, common modules and institutional constraints;
-- generates a timetable that accepts only hard-feasible scheduled assignments;
+- reads consolidated scheduling requirements and bundled Engineering data;
+- validates workbook structure and source records;
+- separates fixed and non-fixed sessions;
+- anchors valid fixed sessions exactly as supplied;
+- quarantines unsafe records instead of guessing missing information;
+- schedules non-fixed classes around fixed reservations;
+- checks hard constraints and reports unresolved cases;
 - applies bounded soft-constraint optimisation when requested;
-- interprets supported free-text scheduling remarks in a deterministic and explainable way;
-- exports a proposed timetable, stakeholder views, calendar-style visual timetables, exception reports and run evidence.
+- exports the proposed timetable and submission-ready Template 2 workbook;
+- creates programme, tutor and room visual timetable workbooks;
+- generates validation, exception and traceability evidence.
 
-The prototype is intentionally transparent. If a class cannot be placed safely, it remains visible for review instead of being forced into an invalid timetable.
+The prototype is intended to improve the quality of life of timetabling staff by automating repetitive placement, checking, formatting and reporting work while keeping staff in control of exceptions and final approval.
 
 ## User Workflow
 
 1. Open the desktop application.
 2. Select the **Consolidated Schedule**.
 3. Click **Generate Timetable**.
-4. Wait for processing to complete.
-5. Review the **Proposed Timetable**.
-6. Open the programme, tutor and room visual timetable workbooks.
-7. Review unscheduled classes and special requests.
-8. Approve or manually resolve exceptions.
+4. Review the **Proposed Timetable**.
+5. Open the submission-ready workbook, evidence reports and visual timetables.
+6. Review unscheduled or quarantined cases.
+7. Approve or manually resolve exceptions.
 
 ## Installation
 
@@ -45,140 +48,122 @@ cd C:\Users\Admin\Documents\GitHub\itp_group5\timetable_scheduler
 ..\.venv\Scripts\python.exe run_ui.py
 ```
 
-## Outputs
-
-The desktop application opens or creates these main outputs:
-
-- **Proposed Timetable**: generated timetable workbook for review.
-- **Timetable Views**: programme, tutor and room views.
-- **Visual Timetables**: calendar-style programme/year, tutor and room workbooks generated from validated scheduled assignments.
-- **Unscheduled Classes**: exception queue for unresolved demand.
-- **Special Requests Review**: how supported free-text remarks were interpreted and handled.
-- **Scheduling Summary**: coverage, validation checks, resource audit, residual analysis and optimisation summary.
-- **Run Manifest**: traceability and release-validation evidence.
-
-Generated outputs are written under `timetable_scheduler/generated/` and `timetable_scheduler/output_files/`. These folders are intentionally ignored by Git.
-
-The scheduler automatically exports calendar-style programme, tutor and room timetable views from the validated scheduled assignments. The visual workbooks do not create or modify the timetable; quarantined and unscheduled requirements remain in exception reports rather than appearing as scheduled blocks.
-
-## Command-Line Use
-
-The desktop UI is recommended for demonstrations. The full Engineering command remains available for technical validation:
+## Command-Line Validation Run
 
 ```powershell
 cd C:\Users\Admin\Documents\GitHub\itp_group5\timetable_scheduler
 ..\.venv\Scripts\python.exe main.py --scope eng --skip-optimisation --max-candidate-patterns 300 --max-retry-assignments 50 --skip-unscheduled-diagnostics --progress-interval 25 --audit-demand-metrics
 ```
 
-For a restored structured-data baseline without remarks enforcement, add:
+## Outputs
 
-```powershell
---disable-remark-interpretation
-```
+Generated outputs are written under `timetable_scheduler/generated/` and `timetable_scheduler/output_files/`. These folders are intentionally ignored by Git.
+
+Main outputs:
+
+- `output_files/final_timetable_engineering_cluster.xlsx`: proposed Engineering timetable.
+- `output_files/Template2_Submission_Ready.xlsx`: submission-ready Template 2 workbook.
+- `generated/guarded_generation_report.xlsx`: demand split, quarantined records and programme completeness.
+- `generated/run_summary.xlsx`: scheduling summary, validation checks, run metadata and unscheduled reasons.
+- `generated/template2_submission_validation.xlsx`: Template 2 readiness and source-to-output validation.
+- `generated/timetable_visualisation_validation.xlsx`: visual workbook reconciliation.
+- `output_files/Programme_Timetable_Visuals.xlsx`: programme-year visual timetables.
+- `output_files/Tutor_Timetable_Visuals.xlsx`: tutor visual timetables.
+- `output_files/Room_Timetable_Visuals.xlsx`: room visual timetables.
 
 ## Final Verified Results
 
-### Core Baseline
-
-The core baseline uses the same Engineering input data with remarks interpretation disabled. It proves the restored structured scheduling behaviour.
-
-```text
-Required occurrences: 2777
-Scheduled occurrences: 2747
-Unscheduled occurrences: 30
-Coverage: 98.92%
-Scheduled hard violations: 0
-Online scheduled: 813 / 813
-```
-
-### Remarks-Aware Enhanced Run
-
-The remarks-aware enhanced run enables deterministic interpretation of supported free-text scheduling requests.
-
-```text
-Required occurrences: 2777
-Scheduled occurrences: 2715
-Unscheduled occurrences: 62
-Coverage: 97.77%
-Scheduled hard violations: 0
-```
-
-Enhanced-run attribution:
-
-```text
-30 unchanged baseline exceptions
-13 direct explicit remark effects
-19 indirect displacements
-0 unexplained occurrences
-```
-
-The two runs use the same teaching-demand denominator. The enhanced run schedules fewer occurrences because it enforces additional explicit requirements from supported remarks rather than weakening constraints.
-
-### Visual Timetable Evidence
-
-The guarded Engineering visualisation run preserves the fixed-session scheduling metrics and adds supplementary workbooks:
+Final v1.1 scheduling metrics:
 
 ```text
 Total teaching occurrences: 3562
 Schedulable occurrences: 3160
-Quarantined occurrences: 402
+Quarantined input occurrences: 402
 Scheduled occurrences: 3070
-Unscheduled search failures: 90
-Scheduled hard violations: 0
+Scheduler search failures: 90
+Scheduled hard-constraint violations: 0
+Coverage of schedulable demand: 3070 / 3160 = 97.15%
+Coverage of total recorded demand: 3070 / 3562 = 86.19%
+```
+
+The `86.19%` total-recorded-demand figure includes quarantined source records. The primary scheduling-performance measure is `97.15%` coverage of schedulable demand.
+
+Template 2 evidence:
+
+```text
+Proposed timetable rows: 2868
+Submission-ready Template 2 rows: 1183
+Template 2 invalid rows: 0
+Template 2 complete programme-years: 30
+Submission-ready programme-years: 23
+Minimum required programme-year schedules: 20
 Template 2 readiness: PASS
+```
+
+Visual timetable evidence:
+
+```text
+Programme visual sheets: 81
+Tutor visual sheets: 225
+Room visual sheets: 43
+Programme visual entries: 3454
+Tutor visual entries: 4255
+Room visual entries: 2367
+Missing visual entries: 0
+Unexpected visual entries: 0
+Invalid overlaps: 0
 Visual export status: PASS
 ```
 
-Generated visual outputs:
-
-```text
-Programme_Timetable_Visuals.xlsx: 81 sheets, 3454 visual entries
-Tutor_Timetable_Visuals.xlsx: 225 sheets, 4255 visual entries
-Room_Timetable_Visuals.xlsx: 43 sheets, 2367 visual entries
-timetable_visualisation_validation.xlsx: 0 missing entries, 0 unexpected entries, 0 invalid overlaps
-```
-
-## Implementation Notes
-
-Technical workbook-role detection is structure-based. The requirements input is validated from its worksheet structure and headers, while the final proposed timetable preserves the required output workbook structure.
-
-The Engineering dataset is stored under `Data/`, including Engineering requirement workbooks, common-module data, venue data, timetable constraints, university-wide modules and the output workbook template.
-
-## Limitations
-
-- The heuristic generator does not prove global optimality.
-- The optimiser improves soft-constraint quality but the verified improvement is modest.
-- Recording capability is used as the available proxy for hybrid-room support.
-- Ambiguous or unsupported remarks require staff review.
-- Upload to any internal university system is outside this prototype.
-- Remaining unscheduled demand requires operational decisions such as venue review, delivery-mode approval, splitting very large sessions, or manual exception handling.
+Earlier pre-fixed-session v1.0 validation produced `2777` required, `2747` scheduled, `30` unscheduled and `98.92%` baseline coverage. Those values are historical development evidence only, not the final v1.1 result.
 
 ## Testing
 
-Run from inside `timetable_scheduler`:
+Run from the repository root:
 
 ```powershell
-cd C:\Users\Admin\Documents\GitHub\itp_group5\timetable_scheduler
-..\.venv\Scripts\python.exe -m pytest -q
+cd C:\Users\Admin\Documents\GitHub\itp_group5
+.\.venv\Scripts\python.exe -m pytest -q
 ```
 
-Current expected release result:
+Expected result:
 
 ```text
-257 passed
+259 passed
+```
+
+Run release validation after generating evidence:
+
+```powershell
+.\.venv\Scripts\python.exe validate_release.py
+```
+
+Expected result:
+
+```text
+FINAL RELEASE VALIDATION: PASS
 ```
 
 ## Release ZIP
 
-Build a clean distributable ZIP from the repository root:
+Build a clean source ZIP from the repository root:
 
 ```powershell
-cd C:\Users\Admin\Documents\GitHub\itp_group5
 .\.venv\Scripts\python.exe scripts\build_clean_release.py
 ```
 
-The ZIP is written to `dist/itp_group5_prototype.zip` and excludes Git metadata, virtual environments, caches, generated outputs, editor folders, temporary files and old ZIP archives.
+The ZIP is written to `dist/itp_group5_prototype_v1.1.0.zip` and excludes Git metadata, virtual environments, caches, generated outputs, old ZIP files, editor folders and temporary files.
+
+Generated assessment evidence is packaged separately so source control remains clean.
+
+## Implementation Notes
+
+Workbook-role detection is structure-based. A workbook is accepted or rejected based on worksheets and headers, not filename alone.
+
+The Engineering dataset is stored under `Data/`, including Engineering requirement workbooks, common-module data, venue data, timetable constraints, university-wide modules and the output workbook template.
+
+The heuristic scheduler does not prove global mathematical optimality. It prioritises hard feasibility: scheduled assignments must have zero hard-constraint violations, while unresolved cases remain visible for staff review.
 
 ## AI Collaboration
 
-AI-assisted development is documented transparently in [AI_USAGE_LOG.md](AI_USAGE_LOG.md) and [AI_ASSISTANCE_STATEMENT.md](AI_ASSISTANCE_STATEMENT.md). The user remained the project architect and final decision-maker; ChatGPT and Codex were used as support tools for implementation, debugging, testing and documentation.
+AI-assisted development is documented transparently in [AI_USAGE_LOG.md](AI_USAGE_LOG.md) and [AI_ASSISTANCE_STATEMENT.md](AI_ASSISTANCE_STATEMENT.md). Group 5 defined the problem, requirements, architecture, validation criteria and final decisions. ChatGPT and Codex supported implementation, debugging, automated testing, documentation refinement and code review.

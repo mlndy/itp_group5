@@ -1,105 +1,104 @@
 # Final Results
 
-## Dataset
+## Final Scope
 
-The final validated scope is the SIT Engineering Cluster, including DSC.
+The final validated scope is the SIT Engineering Cluster, including DSC. The prototype operates between consolidated scheduling requirements and the proposed Template 2 timetable output used by timetabling staff for review and upload preparation.
 
-- Engineering requirements workbooks recognised: `35`
-- Input course records: `507`
-- Consolidated scheduling requirements: `465`
-- Required teaching occurrences: `2777`
-- Supporting data: common modules, venue information, timetable constraints, university-wide modules and the proposed-timetable output template
+The final validated branch also includes guarded fixed-session handling and programme, tutor and room visual timetable exports.
 
-Teaching occurrences are the stable reporting denominator. They are used instead of raw assignment-object counts because one unscheduled placeholder can represent several missing weeks, while scheduled assignments are week-level occurrences.
-
-## Core Baseline Result
-
-The core baseline disables remarks enforcement and confirms the restored structured scheduling behaviour.
+## Final v1.1 Scheduling Metrics
 
 ```text
-Required teaching occurrences: 2777
-Scheduled teaching occurrences: 2747
-Unscheduled teaching occurrences: 30
-Coverage: 98.92%
-Scheduled hard violations: 0
-Online scheduled: 813 / 813
+Total teaching occurrences: 3562
+Schedulable occurrences: 3160
+Quarantined input occurrences: 402
+Scheduled occurrences: 3070
+Scheduler search failures: 90
+Scheduled hard-constraint violations: 0
 ```
 
-The baseline does not claim that every Engineering occurrence is scheduled. It schedules only hard-feasible occurrences and leaves remaining demand visible.
-
-## Remarks-Aware Result
-
-The remarks-aware enhanced run enables deterministic interpretation of supported free-text scheduling remarks.
+Coverage of schedulable demand:
 
 ```text
-Required teaching occurrences: 2777
-Scheduled teaching occurrences: 2715
-Unscheduled teaching occurrences: 62
-Coverage: 97.77%
-Scheduled hard violations: 0
+3070 / 3160 = 97.15%
 ```
 
-The enhanced run has lower coverage because it enforces additional explicit supported requirements from remarks. It does not reduce unscheduled demand by accepting hard violations.
-
-## Attribution
-
-Occurrence-level attribution for the remarks-aware comparison:
+Coverage of total recorded demand:
 
 ```text
-30 unchanged unscheduled
-13 direct explicit remark effects
-19 indirect displacements
-0 recoveries
-0 unexplained
+3070 / 3562 = 86.19%
 ```
 
-This reconciles the enhanced result against the baseline. No enhanced-only unscheduled occurrence is left unexplained.
+The `86.19%` total-demand coverage includes source records that were quarantined because they were incomplete, ambiguous or conflicting. It should not be presented as the scheduler's algorithmic success rate. The primary scheduling-performance measure is `97.15%` coverage of schedulable demand.
 
-## Remarks Handling
+Quarantined input records are not hidden and are not counted as algorithm search failures. They remain in generated evidence for staff review.
 
-Course-level handling counts:
+## Output Metrics
 
 ```text
-Total non-empty remarks: 226
-Applied automatically: 5
-Preferences considered: 4
-Scheduled needing confirmation: 95
-Unscheduled due to explicit request: 5
-Unsupported non-blocking: 105
-No scheduling action required: 12
+Proposed timetable rows: 2868
+Submission-ready Template 2 rows: 1183
+Template 2 invalid rows: 0
+Template 2 complete programme-years: 30
+Submission-ready programme-years: 23
+Minimum required programme-year schedules: 20
+Template 2 readiness: PASS
 ```
 
-These course-level handling counts are different from occurrence-level scheduling attribution. A single course-level remark can affect multiple teaching occurrences, and some remarks are review notes rather than scheduling blockers.
+`Template 2 complete programme-years` counts programme-year schedules that are complete in the generated coverage analysis. `Submission-ready programme-years` is stricter: it counts complete schedules that also have valid submission rows and are included in the submission-ready Template 2 workbook.
 
-## Shared Online Delivery-Resource Policy
-
-`ONLINE_ROOM` is a synthetic delivery-mode placeholder, not a scarce physical venue. Fully online classes may share it when they do not share tutors or student groups.
-
-This policy does not weaken hard constraints. Tutor clashes, student-group clashes, calendar rules, duration rules, teaching-week rules and physical room clashes remain enforced.
-
-Validated online baseline result:
+## Visualisation Metrics
 
 ```text
-Online required: 813
-Online scheduled: 813
-Online unscheduled: 0
+Programme visual sheets: 81
+Tutor visual sheets: 225
+Room visual sheets: 43
+
+Programme visual entries: 3454
+Tutor visual entries: 4255
+Room visual entries: 2367
+
+Missing visual entries: 0
+Unexpected visual entries: 0
+Invalid overlaps: 0
+Visual export status: PASS
 ```
 
-## Remaining Operational Exceptions
+Visual entries exceed proposed timetable rows because the same scheduled assignment can appear in multiple stakeholder views. For example, a shared class may appear in each affected programme view while still remaining one scheduled assignment.
 
-The baseline leaves `30` F2F teaching occurrences unscheduled. The remaining demand is mainly associated with very large common-module F2F requirements affected by physical-room capacity.
+## Evidence Workbooks
 
-These are operational exceptions. Appropriate next actions include:
+The final metrics are validated through local generated evidence:
 
-- reviewing large-room availability;
-- approving an alternate delivery mode where policy allows;
-- splitting very large sessions where academically valid;
-- manually reviewing affected programme timetables;
-- confirming any source-data assumptions with stakeholders.
+- `timetable_scheduler/generated/run_summary.xlsx`
+- `timetable_scheduler/generated/guarded_generation_report.xlsx`
+- `timetable_scheduler/generated/template2_submission_validation.xlsx`
+- `timetable_scheduler/generated/timetable_visualisation_validation.xlsx`
+- `timetable_scheduler/generated/run_manifest.xlsx`
+- `timetable_scheduler/output_files/final_timetable_engineering_cluster.xlsx`
+- `timetable_scheduler/output_files/Template2_Submission_Ready.xlsx`
+- `timetable_scheduler/output_files/Programme_Timetable_Visuals.xlsx`
+- `timetable_scheduler/output_files/Tutor_Timetable_Visuals.xlsx`
+- `timetable_scheduler/output_files/Room_Timetable_Visuals.xlsx`
+
+Generated workbooks remain ignored by Git and are packaged separately for assessment evidence.
+
+## Earlier v1.0 Historical Evidence
+
+Earlier pre-fixed-session v1.0 validation produced:
+
+```text
+2777 required
+2747 scheduled
+30 unscheduled
+98.92% baseline coverage
+```
+
+Those figures are historical development evidence only. They are not the final v1.1 project result because the final system includes fixed-session reconciliation, guarded quarantining and visual timetable exports.
 
 ## Optimiser Evidence
 
-The controlled optimiser run preserved teaching demand, coverage, online coverage and hard feasibility.
+The controlled optimiser evidence from the earlier stable release phase remains useful for showing soft-preference improvement:
 
 ```text
 Baseline soft violations: 3030
@@ -108,60 +107,34 @@ Improvement: 11
 Runtime: approximately 1047 seconds
 ```
 
-The optimiser is useful as evidence, but it should not be overstated and is too slow for a live presentation run.
+The live demonstration should use the non-optimised Engineering command because the optimiser runtime is too long for a presentation window.
 
-## Testing
+## Testing And Release Validation
 
 Final expected test result:
 
 ```text
-220 passed
+259 passed
 ```
 
-If this count changes after final cleanup tests are added, the newer full-suite result should be recorded before submission.
-
-## Release Validation
-
-Expected final validation result after generating the final remarks-aware Engineering evidence:
+Release validation result after generating final Engineering evidence:
 
 ```text
 FINAL RELEASE VALIDATION: PASS
 ```
 
-Release validation checks the generated evidence workbooks without regenerating the timetable.
-
-## Exact Validation Commands
-
-Run tests:
+Run from the repository root:
 
 ```powershell
-cd C:\Users\Admin\Documents\GitHub\itp_group5\timetable_scheduler
-..\.venv\Scripts\python.exe -m pytest -q
-```
-
-Core baseline command:
-
-```powershell
-..\.venv\Scripts\python.exe main.py --scope eng --skip-optimisation --max-candidate-patterns 300 --max-retry-assignments 50 --skip-unscheduled-diagnostics --progress-interval 25 --audit-demand-metrics --disable-remark-interpretation
-```
-
-Remarks-aware final command:
-
-```powershell
-..\.venv\Scripts\python.exe main.py --scope eng --skip-optimisation --max-candidate-patterns 300 --max-retry-assignments 50 --skip-unscheduled-diagnostics --progress-interval 25 --audit-demand-metrics
-```
-
-Release validation:
-
-```powershell
-..\.venv\Scripts\python.exe validate_release.py
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe validate_release.py
 ```
 
 ## Known Limitations
 
-- The scheduler is heuristic and does not prove global optimality.
-- Remaining F2F demand needs operational review.
-- Recording capability is used as the available proxy for hybrid support.
-- Ambiguous free-text remarks are not guessed; they remain visible for review.
-- Scenario comparison and internal-system upload are outside the prototype scope.
+- The scheduler is heuristic and does not prove global mathematical optimality.
+- The prototype supports timetabling staff; it does not replace staff judgement or final approval.
+- Quarantined records require data correction or stakeholder clarification.
+- Scheduler search failures remain visible for operational review.
+- No exact staff time-savings claim is made because no formal timing study was performed.
 - Generated Excel workbooks are local artefacts and remain ignored by Git.

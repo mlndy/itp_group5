@@ -12,13 +12,13 @@ Treat this as an operations and supply chain resource-allocation prototype, not 
 
 ## Current Phase
 
-Current phase: **Explainable remarks interpretation innovation**
+Current phase: **Final Integration and Release v1.1**
 
 Main deliverable: generate a usable Engineering cluster timetable, including DSC.
 
 DSC-only mode remains useful for testing and regression checks, but Engineering scope is the final target.
 
-Scenario comparison and what-if analysis are on hold. Do not add extra innovation features until Engineering scheduling readiness is stronger.
+Scenario comparison and what-if analysis are on hold. Do not add extra innovation features during release integration.
 
 ## Current Validated State
 
@@ -34,25 +34,34 @@ The core prototype is complete through:
 8. Demand-metric audit, resource audit, online-delivery semantics, optimiser validation, and release validation
 9. Deterministic remarks interpretation, multi-room scheduling support, hybrid/flexible-delivery handling, and special-request review reporting
 
-Current validated result:
+Current validated v1.1 result:
 
-- Tests: `220 passed`
+- Tests: `259 passed`
 - Release validator: `PASS`
-- DSC demo: runs successfully with `0` hard violations on scheduled assignments
-- Engineering controlled demo with remarks interpretation enabled: runs successfully
-- Current Engineering output with remarks interpretation enabled:
-  - Input course records: `507`
-  - Consolidated scheduling requirements: `465`
-  - Required teaching occurrences: `2777`
-  - Scheduled teaching occurrences: `2715`
-  - Unscheduled teaching occurrences: `62`
-  - Coverage rate: `97.77%`
-  - Scheduled hard violations: `0`
-  - DSC inclusion: `PASS`
+- Engineering controlled demo: runs successfully with `0` scheduled hard-constraint violations
+- Total teaching occurrences: `3562`
+- Schedulable occurrences: `3160`
+- Quarantined input occurrences: `402`
+- Scheduled occurrences: `3070`
+- Scheduler search failures: `90`
+- Coverage of schedulable demand: `97.15%`
+- Coverage of total recorded demand: `86.19%`
+- Proposed timetable rows: `2868`
+- Submission-ready Template 2 rows: `1183`
+- Template 2 invalid rows: `0`
+- Template 2 complete programme-years: `30`
+- Submission-ready programme-years: `23`
+- Template 2 readiness: `PASS`
+- Programme visual sheets: `81`
+- Tutor visual sheets: `225`
+- Room visual sheets: `43`
+- Visual export status: `PASS`
 
-The previous release-ready baseline before remarks enforcement had `2747` scheduled teaching occurrences, `30` unscheduled teaching occurrences, and `98.92%` coverage. Do not compare that baseline directly against the remarks-enabled run without explaining that new interpreted requirements are now being enforced and reviewed.
+The `86.19%` total-recorded-demand coverage includes quarantined source records and must not be presented as the algorithm's scheduling success rate. The primary scheduling-performance metric is `97.15%` coverage of schedulable demand.
 
-Preflight report and run summary report now exist and should be preserved.
+The earlier pre-fixed-session v1.0 baseline had `2777` required occurrences, `2747` scheduled occurrences, `30` unscheduled occurrences, and `98.92%` coverage. Treat those values as historical development evidence only.
+
+Preflight, run summary, guarded-generation, Template 2 validation, run manifest and visualisation validation reports should be preserved.
 
 ## Additional DSC2204 Requirements - June 26
 
@@ -69,7 +78,7 @@ Preflight report and run summary report now exist and should be preserved.
 - Unresolved requirements remain in separate exception reports.
 - Existing hard constraints must not be weakened.
 - Previous metrics must be revalidated after fixed-session integration.
-- Do not claim the old `2777` demand total remains final until the new integration is complete.
+- The old `2777` demand total is historical once v1.1 guarded fixed-session evidence is used.
 
 ## Fixed-Session Conflict Triage and Source Reconciliation
 
@@ -138,12 +147,41 @@ Preflight report and run summary report now exist and should be preserved.
 - Excel sheet names must remain within `31` characters.
 - Generated visual workbooks remain ignored release outputs unless intentionally packaged.
 - Current visualisation validation:
-  - Tests: `257 passed`
+  - Tests: `259 passed`
   - Programme visual sheets: `81`
   - Tutor visual sheets: `225`
   - Room visual sheets: `43`
   - Visual export status: `PASS`
   - Scheduled hard violations remain `0`
+
+## Final Integration and Release v1.1
+
+- The validated visualisation branch includes the fixed-session compliance implementation.
+- Final scheduling metrics must not change during documentation and release work.
+- Scheduled hard violations must remain zero.
+- Template 2 readiness must remain `PASS`.
+- At least `20` submission-ready programme-year schedules must remain available.
+- Visual exports are supplementary outputs and must not change the official Template 2 workbook.
+- Quarantined input demand and scheduler search failures must remain reported separately.
+- Generated output workbooks remain ignored from source control.
+- A separate assessment-evidence package may contain validated generated outputs.
+- AI must be described as implementation, testing and documentation support under Group 5's review.
+- All project ownership and decisions must be presented as team-based.
+- Do not present one student as the sole project owner.
+- Do not delete existing branches or tags.
+- Final v1.1 metrics:
+  - Total teaching occurrences: `3562`
+  - Schedulable occurrences: `3160`
+  - Quarantined input occurrences: `402`
+  - Scheduled occurrences: `3070`
+  - Scheduler search failures: `90`
+  - Scheduled hard-constraint violations: `0`
+  - Coverage of schedulable demand: `97.15%`
+  - Coverage of total recorded demand: `86.19%`
+  - Proposed timetable rows: `2868`
+  - Submission-ready Template 2 rows: `1183`
+  - Submission-ready programme-years: `23`
+  - Visual export status: `PASS`
 
 ## Coding Rules
 
@@ -244,19 +282,19 @@ For Engineering scope:
 - Zero scheduled hard violations remains mandatory.
 - Timetable output structure must remain unchanged.
 - User-facing UI must continue to avoid template-number terminology.
-- Current restored disabled baseline:
+- Historical restored disabled baseline:
   - Required teaching occurrences: `2777`
   - Scheduled teaching occurrences: `2747`
   - Unscheduled teaching occurrences: `30`
   - Coverage rate: `98.92%`
   - Scheduled hard violations: `0`
-- Current enhanced remarks run:
+- Historical enhanced remarks run:
   - Required teaching occurrences: `2777`
   - Scheduled teaching occurrences: `2715`
   - Unscheduled teaching occurrences: `62`
   - Coverage rate: `97.77%`
   - Scheduled hard violations: `0`
-- Current attribution reconciliation:
+- Historical attribution reconciliation:
   - Direct explicit remark effects: `13`
   - Indirect enhanced-run displacements: `19`
   - Unchanged unscheduled occurrences: `30`
@@ -265,12 +303,12 @@ For Engineering scope:
 
 ## Engineering Coverage and Bottleneck Resolution
 
-- Current validated Engineering result:
+- Historical Engineering result for that phase:
   - Total assignments: `2593`
   - Scheduled assignments: `2119`
   - Unscheduled assignments: `474`
   - Hard violations on scheduled assignments: `0`
-- Current tests: `61 passed`
+- Historical phase tests: `61 passed`
 - The next goal is to reduce unscheduled assignments safely.
 - Never reduce the unscheduled count by accepting hard violations.
 - Preserve `preflight_report.xlsx`, `run_summary.xlsx`, `Validation Checks`, `Run Metadata`, `Programme Breakdown`, and DSC evidence.
@@ -281,7 +319,7 @@ For Engineering scope:
 
 ## Evidence-Driven Coverage Improvement
 
-- Current comparable baseline:
+- Historical comparable baseline:
   - Total assignments: `2593`
   - Scheduled assignments: `2119`
   - Unscheduled assignments: `474`
@@ -297,8 +335,8 @@ For Engineering scope:
 
 ## Demand Metric Integrity and Coverage Audit
 
-- Current tests: `68 passed`.
-- Current Engineering result:
+- Historical phase tests: `68 passed`.
+- Historical Engineering result:
   - Reported scheduled assignments: `2119`
   - Reported unscheduled assignments: `474`
   - Reported total: `2593`
@@ -312,8 +350,8 @@ For Engineering scope:
 
 ## Virtual Room Semantics and Resource Capacity Validation
 
-- Current tests: `78 passed`.
-- Current stable Engineering demand baseline:
+- Historical phase tests: `78 passed`.
+- Historical stable Engineering demand baseline:
   - Input course records: `507`
   - Consolidated requirements: `465`
   - Required teaching occurrences: `2777`
@@ -330,8 +368,8 @@ For Engineering scope:
 
 ## Online Delivery Resource Semantics
 
-- Current tests: `85 passed`.
-- Stable Engineering teaching demand:
+- Historical phase tests: `85 passed`.
+- Historical stable Engineering teaching demand:
   - Required teaching occurrences: `2777`
   - Scheduled teaching occurrences: `2119`
   - Unscheduled teaching occurrences: `658`
@@ -357,8 +395,8 @@ For Engineering scope:
 
 ## Residual F2F Completion and Final Scheduler Acceptance
 
-- Current tests: `91 passed`.
-- Stable Engineering demand:
+- Historical phase tests: `91 passed`.
+- Historical stable Engineering demand:
   - Required teaching occurrences: `2777`
   - Scheduled teaching occurrences: `2747`
   - Unscheduled teaching occurrences: `30`
@@ -381,8 +419,8 @@ For Engineering scope:
 
 ## Final Pipeline and Optimiser Acceptance
 
-- Current tests: `94 passed`.
-- Expected stable Engineering baseline, pending final rerun:
+- Historical phase tests: `94 passed`.
+- Historical expected stable Engineering baseline, pending final rerun:
   - Required teaching occurrences: `2777`
   - Scheduled teaching occurrences: `2747`
   - Unscheduled teaching occurrences: `30`
@@ -398,10 +436,10 @@ For Engineering scope:
 - Optimisation must never introduce hard violations.
 - Scenario comparison and unrelated innovation remain on hold.
 
-## Final Artefact Freeze and Submission Readiness
+## Historical v1.0 Artefact Freeze and Submission Readiness
 
 - Historical phase test count has been superseded by the final release test count recorded above.
-- Final Engineering demand:
+- Earlier pre-fixed-session Engineering demand:
   - Required teaching occurrences: `2777`
   - Scheduled teaching occurrences: `2747`
   - Unscheduled teaching occurrences: `30`
@@ -427,22 +465,21 @@ For Engineering scope:
 ## Report and Presentation Phase
 
 - Prototype feature development is complete.
-- Historical phase test count has been superseded by the final release test count recorded above.
+- Historical phase metrics have been superseded by the final v1.1 release result recorded above.
 - Release validator: `PASS`.
-- Final Engineering result:
-  - Input course records: `507`
-  - Consolidated scheduling requirements: `465`
-  - Required teaching occurrences: `2777`
-  - Scheduled teaching occurrences: `2747`
-  - Unscheduled teaching occurrences: `30`
-  - Coverage rate: `98.92%`
-  - Scheduled hard violations: `0`
-- Online result:
-  - Required occurrences: `813`
-  - Scheduled occurrences: `813`
-  - Unscheduled occurrences: `0`
+- Final v1.1 Engineering result:
+  - Total teaching occurrences: `3562`
+  - Schedulable occurrences: `3160`
+  - Quarantined input occurrences: `402`
+  - Scheduled occurrences: `3070`
+  - Scheduler search failures: `90`
+  - Coverage of schedulable demand: `97.15%`
+  - Coverage of total recorded demand: `86.19%`
+  - Scheduled hard-constraint violations: `0`
+  - Template 2 readiness: `PASS`
+  - Visual export status: `PASS`
 - DSC inclusion: `PASS`.
-- Remaining unscheduled demand is F2F, mainly large `ENG1001` common-module requirements affected by physical-room capacity.
+- Quarantined input records and scheduler search failures must remain visible.
 - Controlled optimiser evidence:
   - Initial soft violations: `3030`
   - Final soft violations: `3019`
@@ -535,9 +572,9 @@ Initial pre-reconciliation findings recorded for that task:
 
 ## Final Release and AI Collaboration
 
-- The user is the project architect and final decision-maker.
+- Group 5 defined the problem, requirements, architecture, validation criteria and final project decisions.
 - AI tools supported implementation, testing, debugging and documentation.
-- AI-generated suggestions were reviewed, corrected and validated by the user.
+- AI-generated suggestions were reviewed, corrected and validated by the team.
 - The repository must not claim that AI independently designed the system.
 - The repository must not hide or minimise AI involvement.
 - Final claims must be supported by tests, deterministic runs and generated evidence.
@@ -552,7 +589,7 @@ Initial pre-reconciliation findings recorded for that task:
 - The timetable output structure must not be changed.
 - Generated outputs, virtual environments, caches and temporary files must not be committed.
 - The final release must come from `main`.
-- The final release tag should be `v1.0.0` unless that tag already exists.
+- The final release tag should be `v1.1.0` unless that tag already exists.
 
 ## Important Commands
 
@@ -566,7 +603,7 @@ py -m pytest -q
 Expected result:
 
 ```text
-220 passed
+259 passed
 ```
 
 Run DSC demo:
@@ -587,16 +624,20 @@ Run Engineering remarks-aware final test:
 python main.py --scope eng --skip-optimisation --max-candidate-patterns 300 --max-retry-assignments 50 --skip-unscheduled-diagnostics --progress-interval 25 --audit-demand-metrics
 ```
 
-Expected key result for the remarks-aware run:
+Expected key result for the final v1.1 run:
 
 ```text
-Scheduled hard violations: 0
-Required teaching occurrences: 2777
-Scheduled teaching occurrences: 2715
-Unscheduled teaching occurrences: 62
+Total teaching occurrences: 3562
+Schedulable occurrences: 3160
+Quarantined input occurrences: 402
+Scheduled occurrences: 3070
+Scheduler search failures: 90
+Scheduled hard-constraint violations: 0
+Template 2 readiness: PASS
+Visual export status: PASS
 ```
 
-Scheduled and unscheduled counts may vary after scheduling-readiness changes, but scheduled hard violations must remain `0`.
+These v1.1 metrics must remain stable during release documentation and packaging. If a new full validation run changes them, stop and explain the evidence before updating any report.
 
 ## Generated Files
 
