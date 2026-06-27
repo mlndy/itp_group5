@@ -8,7 +8,7 @@ from threading import Event
 from openpyxl import Workbook
 
 from pipeline import PipelineOptions, PipelineResult
-from ui.controller import TimetableUIController, build_default_ui_options
+from ui.controller import TimetableUIController, ValidationResult, build_default_ui_options
 
 
 def write_schedule_workbook(path: Path, rows: list[list[object]] | None = None) -> None:
@@ -40,6 +40,9 @@ def make_result(tmp_path: Path) -> PipelineResult:
         "proposed_template2": "Template2.xlsx",
         "stakeholder_views": "stakeholder_views.xlsx",
         "run_summary": "run_summary.xlsx",
+        "programme_visuals": "Programme_Timetable_Visuals.xlsx",
+        "tutor_visuals": "Tutor_Timetable_Visuals.xlsx",
+        "room_visuals": "Room_Timetable_Visuals.xlsx",
         "output_folder": "outputs",
     }.items():
         path = tmp_path / filename
@@ -63,10 +66,15 @@ def make_result(tmp_path: Path) -> PipelineResult:
     )
 
 
-def test_validate_consolidated_schedule_loads_workbook(tmp_path: Path) -> None:
+def test_validate_consolidated_schedule_loads_workbook(monkeypatch, tmp_path: Path) -> None:
     """A real workbook with scheduling rows should validate successfully."""
     input_file = tmp_path / "schedule.xlsx"
     write_schedule_workbook(input_file)
+    monkeypatch.setattr(
+        TimetableUIController,
+        "_validate_fixed_readiness",
+        lambda self, courses: ValidationResult(True, "Input ready"),
+    )
     controller = TimetableUIController(file_opener=lambda path: None)
 
     result = controller.validate_consolidated_schedule(input_file)
@@ -142,11 +150,16 @@ def test_controller_rejects_template2_output_as_input(tmp_path: Path) -> None:
     assert result.message == "This workbook appears to be a generated timetable.\nPlease select the consolidated schedule."
 
 
-def test_controller_calls_pipeline_service_with_valid_workbook(tmp_path: Path) -> None:
+def test_controller_calls_pipeline_service_with_valid_workbook(monkeypatch, tmp_path: Path) -> None:
     """The controller should call the injected pipeline runner after validation."""
     input_file = tmp_path / "schedule.xlsx"
     write_schedule_workbook(input_file)
     captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        TimetableUIController,
+        "_validate_fixed_readiness",
+        lambda self, courses: ValidationResult(True, "Input ready"),
+    )
 
     def runner(options: PipelineOptions, progress_callback, cancel_event: Event | None) -> PipelineResult:
         captured["options"] = options
@@ -175,6 +188,7 @@ def test_pipeline_result_maps_to_simple_display_values(tmp_path: Path) -> None:
     assert values["Scheduled classes"] == "2747"
     assert values["Classes needing review"] == "30 teaching occurrences require review"
     assert values["Hard conflicts"] == "No hard-constraint conflicts"
+    assert values["Visual timetables"] == "Visual timetable files created"
     assert "DSC inclusion" not in values
 
 
@@ -186,6 +200,9 @@ def test_friendly_output_keys_map_to_expected_files(tmp_path: Path) -> None:
 
     actions = controller.output_actions()
     assert actions["proposed_timetable"].description == "View the generated timetable ready for review."
+    assert actions["programme_visuals"].label == "Open Programme Timetables"
+    assert actions["tutor_visuals"].label == "Open Tutor Timetables"
+    assert actions["room_visuals"].label == "Open Room Timetables"
     assert actions["special_requests"].label == "Review Special Requests"
     status = controller.open_output(result, "unscheduled_review")
 

@@ -9,6 +9,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
+from config import DEFAULT_INPUT_READINESS_REPORT_FILE
 from pipeline import PipelineResult
 from ui.controller import (
     ControllerRunResult,
@@ -136,6 +137,13 @@ class TimetableSchedulerApp:
         ttk.Label(card, textvariable=self.selected_file_var, style="Filename.TLabel").grid(row=2, column=0, sticky="w", pady=(0, 14))
         ttk.Button(card, text="Browse", command=self._browse_input).grid(row=2, column=1, sticky="e", padx=(16, 0))
         ttk.Label(card, textvariable=self.validation_var, style="Message.TLabel").grid(row=3, column=0, columnspan=2, sticky="w")
+        self.input_issues_button = ttk.Button(
+            card,
+            text="Review Input Issues",
+            command=self._open_input_issues,
+            state="disabled",
+        )
+        self.input_issues_button.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(16, 0))
         self.generate_button = ttk.Button(
             card,
             text="Generate Timetable",
@@ -143,7 +151,7 @@ class TimetableSchedulerApp:
             command=self._generate,
             state="disabled",
         )
-        self.generate_button.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(26, 0))
+        self.generate_button.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(12, 0))
         return frame
 
     def _build_loading_screen(self, parent: ttk.Frame) -> ttk.Frame:
@@ -192,9 +200,10 @@ class TimetableSchedulerApp:
 
         metrics = ttk.Frame(frame, style="App.TFrame")
         metrics.grid(row=2, column=0, sticky="ew")
-        for col in range(4):
+        metric_labels = ["Coverage", "Scheduled classes", "Classes needing review", "Hard conflicts", "Visual timetables"]
+        for col in range(len(metric_labels)):
             metrics.columnconfigure(col, weight=1)
-        for col, label in enumerate(["Coverage", "Scheduled classes", "Classes needing review", "Hard conflicts"]):
+        for col, label in enumerate(metric_labels):
             self.result_vars[label] = tk.StringVar(value="-")
             card = ttk.Frame(metrics, style="Card.TFrame", padding=14)
             card.grid(row=0, column=col, sticky="nsew", padx=(0 if col == 0 else 8, 0))
@@ -246,6 +255,7 @@ class TimetableSchedulerApp:
         result = self.controller.validate_consolidated_schedule(self.consolidated_schedule_path)
         self.validation_var.set(result.message)
         self.generate_button.configure(state="normal" if result.valid else "disabled")
+        self.input_issues_button.configure(state="normal" if DEFAULT_INPUT_READINESS_REPORT_FILE.exists() else "disabled")
         return result.valid
 
     def _generate(self) -> None:
@@ -341,6 +351,13 @@ class TimetableSchedulerApp:
         elif key == "unscheduled_review":
             messagebox.showinfo("Engineering Timetable Scheduler", result.message)
 
+    def _open_input_issues(self) -> None:
+        """Open the generated input readiness report."""
+        if not DEFAULT_INPUT_READINESS_REPORT_FILE.exists():
+            messagebox.showwarning("Engineering Timetable Scheduler", "No input issue report is available yet.")
+            return
+        self.controller.file_opener(str(DEFAULT_INPUT_READINESS_REPORT_FILE))
+
     def _reset(self) -> None:
         """Return to the file-selection screen for a new run."""
         self.consolidated_schedule_path = None
@@ -348,6 +365,7 @@ class TimetableSchedulerApp:
         self.selected_file_var.set("No workbook selected")
         self.validation_var.set("Select a valid Excel workbook")
         self.generate_button.configure(state="disabled")
+        self.input_issues_button.configure(state="disabled")
         for value in self.result_vars.values():
             value.set("-")
         self._show_screen("input")

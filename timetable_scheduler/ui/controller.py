@@ -8,12 +8,34 @@ from pathlib import Path
 from threading import Event
 from typing import Callable
 
-from config import DEFAULT_COMMON_MODULE_FILE
+from config import (
+    DEFAULT_COMMON_MODULE_FILE,
+    DEFAULT_FIXED_CONFLICT_TRIAGE_FILE,
+    DEFAULT_FIXED_RECONCILIATION_FILE,
+    DEFAULT_FIXED_RESOLUTION_AUDIT_FILE,
+    DEFAULT_FIXED_RESOLUTION_TEMPLATE_FILE,
+    DEFAULT_FIXED_ROOT_CAUSE_FILE,
+    DEFAULT_FIXED_SESSION_FILE,
+    DEFAULT_FIXED_SESSIONS_AUDIT_FILE,
+    DEFAULT_INPUT_READINESS_REPORT_FILE,
+    DEFAULT_LOCATION_MAPPING_EVIDENCE_FILE,
+    DEFAULT_ROOM_FILE,
+    DEFAULT_SUPERVISOR_CLARIFICATION_PACK_FILE,
+    DEFAULT_SUPERVISOR_FIXED_QUERIES_FILE,
+)
+from data.fixed_sessions import export_fixed_sessions_audit, load_fixed_sessions
 from data.loader import (
     ConsolidatedScheduleValidationError,
+    LoaderReport,
+    load_rooms_from_csv,
     load_common_modules,
     load_consolidated_schedule,
 )
+from engine.fixed_reconciliation import export_fixed_reconciliation_report, reconcile_fixed_sessions
+from engine.fixed_issue_analysis import export_fixed_issue_workbooks
+from engine.guarded_generation import build_guarded_generation_state
+from engine.input_readiness import build_input_readiness_result, export_input_readiness_report
+from generator.fixed_scheduler import create_fixed_assignments, validate_fixed_assignments
 from pipeline import PipelineCancelled, PipelineOptions, PipelineResult, run_timetable_pipeline
 
 
@@ -60,6 +82,24 @@ OUTPUT_ACTIONS: dict[str, OutputAction] = {
         description="Review programme, tutor and room schedules.",
         output_key="stakeholder_views",
     ),
+    "programme_visuals": OutputAction(
+        label="Open Programme Timetables",
+        description="Open calendar-style programme and year timetable views.",
+        output_key="programme_visuals",
+        success_message="Visual timetable files created. Opened Programme Timetables.",
+    ),
+    "tutor_visuals": OutputAction(
+        label="Open Tutor Timetables",
+        description="Open calendar-style tutor timetable views.",
+        output_key="tutor_visuals",
+        success_message="Visual timetable files created. Opened Tutor Timetables.",
+    ),
+    "room_visuals": OutputAction(
+        label="Open Room Timetables",
+        description="Open calendar-style room timetable views.",
+        output_key="room_visuals",
+        success_message="Visual timetable files created. Opened Room Timetables.",
+    ),
     "unscheduled_review": OutputAction(
         label="Review Unscheduled Classes",
         description="See classes that still require manual scheduling.",
@@ -76,6 +116,11 @@ OUTPUT_ACTIONS: dict[str, OutputAction] = {
         label="View Scheduling Summary",
         description="Review coverage, validation checks and scheduling findings.",
         output_key="run_summary",
+    ),
+    "input_issues": OutputAction(
+        label="Review Input Issues",
+        description="Open the input readiness report.",
+        output_key="input_readiness_report",
     ),
     "all_files": OutputAction(
         label="Open All Files",
@@ -132,7 +177,61 @@ class TimetableUIController:
             return ValidationResult(False, "This workbook does not match the consolidated schedule format.")
         if not courses:
             return ValidationResult(False, "The selected workbook contains no scheduling records")
+        if DEFAULT_FIXED_SESSION_FILE.exists():
+            fixed_status = self._validate_fixed_readiness(courses)
+            if not fixed_status.valid:
+                return fixed_status
         return ValidationResult(True, "Schedule selected")
+
+    def _validate_fixed_readiness(self, courses) -> ValidationResult:
+        """Validate bundled fixed-session data for UI readiness."""
+        try:
+            rooms = load_rooms_from_csv(DEFAULT_ROOM_FILE)
+            fixed_sessions, fixed_loader_report = load_fixed_sessions(DEFAULT_FIXED_SESSION_FILE)
+            export_fixed_sessions_audit(fixed_loader_report, DEFAULT_FIXED_SESSIONS_AUDIT_FILE)
+            reconciliation_report = reconcile_fixed_sessions(fixed_sessions, courses, fixed_loader_report)
+            export_fixed_reconciliation_report(reconciliation_report, DEFAULT_FIXED_RECONCILIATION_FILE)
+            fixed_assignments, mapping_issues = create_fixed_assignments(fixed_sessions, rooms)
+            conflict_issues = validate_fixed_assignments(fixed_assignments)
+            empty_report = LoaderReport()
+            guarded_state = build_guarded_generation_state(
+                courses=courses,
+                rooms_loaded=len(rooms),
+                fixed_sessions=fixed_sessions,
+                fixed_loader_report=fixed_loader_report,
+                reconciliation_report=reconciliation_report,
+                fixed_assignments=fixed_assignments,
+                fixed_assignment_issues=mapping_issues + conflict_issues,
+            )
+            readiness = build_input_readiness_result(
+                fixed_loader_report=fixed_loader_report,
+                reconciliation_report=reconciliation_report,
+                fixed_assignment_issues=mapping_issues + conflict_issues,
+                loader_report=empty_report,
+                global_errors=guarded_state.global_errors,
+                quarantined_requirements=guarded_state.quarantined_requirements,
+            )
+            export_input_readiness_report(readiness, DEFAULT_INPUT_READINESS_REPORT_FILE)
+            export_fixed_issue_workbooks(
+                fixed_sessions=fixed_sessions,
+                courses=courses,
+                assignments=fixed_assignments,
+                rooms=rooms,
+                loader_report=fixed_loader_report,
+                reconciliation_report=reconciliation_report,
+                mapping_issues=mapping_issues,
+                conflict_issues=conflict_issues,
+                root_cause_path=DEFAULT_FIXED_ROOT_CAUSE_FILE,
+                conflict_triage_path=DEFAULT_FIXED_CONFLICT_TRIAGE_FILE,
+                supervisor_queries_path=DEFAULT_SUPERVISOR_FIXED_QUERIES_FILE,
+                location_evidence_path=DEFAULT_LOCATION_MAPPING_EVIDENCE_FILE,
+                supervisor_pack_path=DEFAULT_SUPERVISOR_CLARIFICATION_PACK_FILE,
+                resolution_template_path=DEFAULT_FIXED_RESOLUTION_TEMPLATE_FILE,
+                resolution_audit_path=DEFAULT_FIXED_RESOLUTION_AUDIT_FILE,
+            )
+        except Exception:
+            return ValidationResult(False, "Input validation failed. Review the input issue report.")
+        return ValidationResult(readiness.ready, readiness.message)
 
     def run_pipeline(
         self,
@@ -169,6 +268,9 @@ class TimetableUIController:
             "Scheduled classes": str(result.scheduled_occurrences),
             "Classes needing review": review_text,
             "Hard conflicts": hard_conflicts,
+            "Visual timetables": "Visual timetable files created"
+            if {"programme_visuals", "tutor_visuals", "room_visuals"} <= set(result.output_paths)
+            else "Not created",
         }
 
     def output_actions(self) -> dict[str, OutputAction]:

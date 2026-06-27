@@ -11,7 +11,7 @@ from typing import Iterable
 from config import ENABLE_REMARK_INTERPRETATION, VALID_DAYS, VALID_START_TIMES
 from data.models import Assignment, Room, TimeSlot
 from engine.constraint_checker import annotate_schedule_violations, check_hard_constraints, count_soft_violations, weighted_soft_score
-from engine.remarks_interpreter import effective_remark_requirements
+from engine.remarks_interpreter import assignment_rooms, effective_remark_requirements
 from generator.scheduler import get_candidate_rooms
 
 
@@ -26,8 +26,13 @@ class OptimisationResult:
 
 
 def _is_scheduled(assignment: Assignment) -> bool:
-    """Return True for assignments the optimiser is allowed to move."""
+    """Return True when an assignment has a room and timeslot."""
     return assignment.room is not None and assignment.timeslot is not None
+
+
+def _is_movable(assignment: Assignment) -> bool:
+    """Return True for assignments the optimiser is allowed to move."""
+    return _is_scheduled(assignment) and not assignment.is_fixed
 
 
 def _snapshot_unscheduled_reasons(assignments: list[Assignment]) -> dict[int, list[str]]:
@@ -133,6 +138,30 @@ def _replace_assignment(
     return copied
 
 
+def _fixed_signature(assignment: Assignment) -> tuple[object, ...]:
+    """Return immutable fields that define a fixed placement."""
+    return (
+        assignment.fixed_source,
+        assignment.course.module_code,
+        assignment.course.prog_yr,
+        tuple(assignment.course.group_ids),
+        tuple(assignment.course.staff_ids),
+        assignment.course.duration_hrs,
+        assignment.timeslot.week if assignment.timeslot else None,
+        assignment.timeslot.day if assignment.timeslot else None,
+        assignment.timeslot.start_time if assignment.timeslot else None,
+        tuple(room.room_id for room in assignment_rooms(assignment)),
+    )
+
+
+def assert_fixed_integrity(before: list[Assignment], after: list[Assignment]) -> None:
+    """Raise if any fixed assignment changed during optimisation."""
+    before_fixed = [_fixed_signature(item) for item in before if item.is_fixed]
+    after_fixed = [_fixed_signature(item) for item in after if item.is_fixed]
+    if before_fixed != after_fixed:
+        raise RuntimeError("Fixed assignment integrity check failed after optimisation")
+
+
 def _selected_delivery_for_move(
     current: Assignment,
     room: Room,
@@ -162,7 +191,7 @@ def try_move_assignment(
 ) -> list[Assignment]:
     """Try moving one assignment and return the best found schedule."""
     current = assignments[index]
-    if not _is_scheduled(current) or _deadline_reached(deadline):
+    if not _is_movable(current) or _deadline_reached(deadline):
         return assignments
 
     current_score = current_score if current_score is not None else score_schedule(
@@ -243,11 +272,14 @@ def optimise_schedule_with_stats(
     _restore_unscheduled_reasons(best, reasons)
 
     if _scheduled_hard_violations(best, enable_remark_interpretation=enable_remark_interpretation) != 0:
+        assert_fixed_integrity(assignments, best)
         return OptimisationResult(best, 0, status="Preserved", stop_reason="Baseline has scheduled hard violations")
 
     if time_limit_seconds is not None and time_limit_seconds <= 0:
+        assert_fixed_integrity(assignments, best)
         return OptimisationResult(best, 0, status="Time limit reached", stop_reason=f"Stopped after {time_limit_seconds} seconds")
     if time_limit_seconds is not None and sum(1 for item in best if _is_scheduled(item)) > 1000:
+        assert_fixed_integrity(assignments, best)
         return OptimisationResult(
             best,
             0,
@@ -268,7 +300,7 @@ def optimise_schedule_with_stats(
             stop_reason = f"Stopped after {time_limit_seconds} seconds"
             break
         iterations_completed += 1
-        indices = [index for index, assignment in enumerate(best) if _is_scheduled(assignment)]
+        indices = [index for index, assignment in enumerate(best) if _is_movable(assignment)]
         rng.shuffle(indices)
         if deadline is not None:
             indices = indices[:1]
@@ -326,6 +358,7 @@ def optimise_schedule_with_stats(
         enable_remark_interpretation=enable_remark_interpretation,
     )
     _restore_unscheduled_reasons(best, reasons)
+    assert_fixed_integrity(assignments, best)
     return OptimisationResult(best, iterations_completed, status=status, stop_reason=stop_reason)
 
 

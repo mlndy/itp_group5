@@ -59,6 +59,7 @@ def test_pipeline_keeps_template1_input_separate_from_template2_output_template(
     captured: dict[str, object] = {}
 
     monkeypatch.setattr(pipeline, "load_common_modules", lambda path: set())
+    monkeypatch.setattr(pipeline, "DEFAULT_FIXED_SESSION_FILE", tmp_path / "missing_fixed_sessions.xlsx")
     monkeypatch.setattr(
         pipeline,
         "load_consolidated_schedule_with_report",
@@ -76,6 +77,8 @@ def test_pipeline_keeps_template1_input_separate_from_template2_output_template(
     monkeypatch.setattr(pipeline, "_skipped_optimisation_summary", lambda *args, **kwargs: {"status": "Skipped"})
     monkeypatch.setattr(pipeline, "export_run_summary", lambda *args, **kwargs: None)
     monkeypatch.setattr(pipeline, "export_stakeholder_views", lambda *args, **kwargs: None)
+    monkeypatch.setattr(pipeline, "export_timetable_visuals", lambda **kwargs: SimpleNamespace(status="PASS"))
+    monkeypatch.setattr(pipeline, "export_visualisation_failure_report", lambda *args, **kwargs: SimpleNamespace(status="FAIL"))
 
     def fake_export_outputs(assignments, scope, template2_path, **kwargs):
         captured["export_template2_path"] = template2_path

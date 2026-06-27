@@ -13,14 +13,32 @@ from config import (
     DEFAULT_COMMON_MODULE_FILE,
     DEFAULT_COURSE_FILE,
     DEFAULT_ENGINEERING_FOLDER,
+    DEFAULT_FIXED_RECONCILIATION_FILE,
+    DEFAULT_FIXED_CONFLICT_TRIAGE_FILE,
+    DEFAULT_FIXED_RESOLUTION_AUDIT_FILE,
+    DEFAULT_FIXED_RESOLUTION_TEMPLATE_FILE,
+    DEFAULT_FIXED_ROOT_CAUSE_FILE,
+    DEFAULT_FIXED_SESSION_FILE,
+    DEFAULT_FIXED_SESSIONS_AUDIT_FILE,
+    DEFAULT_GUARDED_GENERATION_REPORT_FILE,
+    DEFAULT_INPUT_READINESS_REPORT_FILE,
+    DEFAULT_LOCATION_MAPPING_EVIDENCE_FILE,
     DEFAULT_LOADER_REPORT_FILE,
+    DEFAULT_PROGRAMME_VISUALS_FILE,
     DEFAULT_PREFLIGHT_REPORT_FILE,
     DEFAULT_REMARKS_AUDIT_FILE,
     DEFAULT_ROOM_FILE,
+    DEFAULT_ROOM_VISUALS_FILE,
     DEFAULT_RUN_MANIFEST_FILE,
     DEFAULT_RUN_SUMMARY_FILE,
     DEFAULT_STAKEHOLDER_VIEWS_FILE,
+    DEFAULT_SUPERVISOR_CLARIFICATION_PACK_FILE,
+    DEFAULT_SUPERVISOR_FIXED_QUERIES_FILE,
+    DEFAULT_TEMPLATE2_SUBMISSION_FILE,
+    DEFAULT_TEMPLATE2_SUBMISSION_VALIDATION_FILE,
     DEFAULT_TEMPLATE2_FILE,
+    DEFAULT_TIMETABLE_VISUALISATION_VALIDATION_FILE,
+    DEFAULT_TUTOR_VISUALS_FILE,
     DEFAULT_UNSCHEDULED_DIAGNOSTICS_FILE,
     OUTPUT_DIR,
 )
@@ -33,19 +51,36 @@ from data.loader import (
     load_courses_from_requirements,
     load_rooms_from_csv,
 )
+from data.fixed_sessions import export_fixed_sessions_audit, load_fixed_sessions
 from data.models import Course
 from engine.constraint_checker import annotate_schedule_violations, count_soft_violations
 from engine.demand_metrics import build_demand_metrics
+from engine.fixed_reconciliation import (
+    adjusted_courses_after_exact_matches,
+    export_fixed_reconciliation_report,
+    reconcile_fixed_sessions,
+)
+from engine.fixed_issue_analysis import export_fixed_issue_workbooks
+from engine.guarded_generation import (
+    build_guarded_generation_state,
+    build_programme_completeness_rows,
+    complete_programme_set,
+    export_guarded_generation_report,
+    quarantined_requirement_courses,
+)
+from engine.input_readiness import build_input_readiness_result, export_input_readiness_report
 from engine.preflight_validator import run_preflight_checks
 from engine.remarks_interpreter import export_remarks_audit
 from engine.resource_audit import audit_resources
 from engine.unscheduled_diagnostics import diagnose_unscheduled_assignments, export_unscheduled_diagnostics
 from generator.scheduler import generate_schedule
+from generator.fixed_scheduler import create_fixed_assignments, validate_fixed_assignments
 from main import (
     _completed_optimisation_summary,
     _count_current_hard_violations,
     _count_scheduled_hard_violations,
     _count_weighted_soft_score,
+    _fixed_requirement_courses,
     _restore_unscheduled_reasons,
     _skipped_optimisation_summary,
     _snapshot_unscheduled_reasons,
@@ -53,6 +88,12 @@ from main import (
 )
 from optimiser.local_search import optimise_schedule_with_stats
 from output.report_exporter import export_preflight_report, export_run_manifest, export_run_summary, export_stakeholder_views
+from output.submission_validator import (
+    export_submission_ready_schedule,
+    export_template2_validation_report,
+    validate_template2_submission,
+)
+from output.timetable_visualizer import export_timetable_visuals, export_visualisation_failure_report
 from validate_release import validate_release
 
 ProgressCallback = Callable[[str], None]
@@ -215,14 +256,71 @@ def run_timetable_pipeline(
         export_preflight_report(preflight_issues, DEFAULT_PREFLIGHT_REPORT_FILE)
     _check_cancel(cancel_event)
 
+    fixed_sessions = []
+    fixed_assignments: list = []
+    fixed_conflict_issues: list[dict[str, object]] = []
+    guarded_state = None
+    schedule_courses = courses
+    demand_courses = courses
+    if options.scope == "eng" and DEFAULT_FIXED_SESSION_FILE.exists():
+        _emit(progress_callback, "Checking fixed-session requirements")
+        fixed_sessions, fixed_loader_report = load_fixed_sessions(DEFAULT_FIXED_SESSION_FILE)
+        export_fixed_sessions_audit(fixed_loader_report, DEFAULT_FIXED_SESSIONS_AUDIT_FILE)
+        reconciliation_report = reconcile_fixed_sessions(fixed_sessions, courses, fixed_loader_report)
+        export_fixed_reconciliation_report(reconciliation_report, DEFAULT_FIXED_RECONCILIATION_FILE)
+        fixed_assignments, fixed_mapping_issues = create_fixed_assignments(fixed_sessions, rooms)
+        fixed_conflict_issues = validate_fixed_assignments(fixed_assignments)
+        guarded_state = build_guarded_generation_state(
+            courses=courses,
+            rooms_loaded=len(rooms),
+            fixed_sessions=fixed_sessions,
+            fixed_loader_report=fixed_loader_report,
+            reconciliation_report=reconciliation_report,
+            fixed_assignments=fixed_assignments,
+            fixed_assignment_issues=fixed_mapping_issues + fixed_conflict_issues,
+        )
+        readiness = build_input_readiness_result(
+            fixed_loader_report=fixed_loader_report,
+            reconciliation_report=reconciliation_report,
+            fixed_assignment_issues=fixed_mapping_issues + fixed_conflict_issues,
+            loader_report=loader_report,
+            global_errors=guarded_state.global_errors,
+            quarantined_requirements=guarded_state.quarantined_requirements,
+        )
+        export_input_readiness_report(readiness, DEFAULT_INPUT_READINESS_REPORT_FILE)
+        export_fixed_issue_workbooks(
+            fixed_sessions=fixed_sessions,
+            courses=courses,
+            assignments=fixed_assignments,
+            rooms=rooms,
+            loader_report=fixed_loader_report,
+            reconciliation_report=reconciliation_report,
+            mapping_issues=fixed_mapping_issues,
+            conflict_issues=fixed_conflict_issues,
+            root_cause_path=DEFAULT_FIXED_ROOT_CAUSE_FILE,
+            conflict_triage_path=DEFAULT_FIXED_CONFLICT_TRIAGE_FILE,
+            supervisor_queries_path=DEFAULT_SUPERVISOR_FIXED_QUERIES_FILE,
+            location_evidence_path=DEFAULT_LOCATION_MAPPING_EVIDENCE_FILE,
+            supervisor_pack_path=DEFAULT_SUPERVISOR_CLARIFICATION_PACK_FILE,
+            resolution_template_path=DEFAULT_FIXED_RESOLUTION_TEMPLATE_FILE,
+            resolution_audit_path=DEFAULT_FIXED_RESOLUTION_AUDIT_FILE,
+        )
+        if not readiness.ready:
+            raise ValueError(readiness.message)
+        fixed_assignments = guarded_state.anchored_fixed_assignments
+        schedule_courses = adjusted_courses_after_exact_matches(courses, reconciliation_report)
+        demand_courses = schedule_courses + _fixed_requirement_courses(fixed_assignments) + quarantined_requirement_courses(guarded_state.quarantined_requirements)
+    _check_cancel(cancel_event)
+
     _emit(progress_callback, "Generating timetable")
 
     def _course_progress(position: int, total: int, course: Course) -> None:
         _emit(progress_callback, f"Generating timetable: {position}/{total} {course.module_code} {course.activity}")
 
     initial_schedule = generate_schedule(
-        courses,
+        schedule_courses,
         rooms,
+        initial_assignments=fixed_assignments,
         progress_callback=_course_progress,
         progress_interval=options.progress_interval,
         max_retry_assignments=options.max_retry_assignments,
@@ -246,7 +344,7 @@ def run_timetable_pipeline(
 
     args = _args_namespace(options)
     final_schedule = initial_schedule
-    optimisation_metrics = _skipped_optimisation_summary(args, initial_soft, initial_soft_score, courses, initial_schedule, rooms)
+    optimisation_metrics = _skipped_optimisation_summary(args, initial_soft, initial_soft_score, demand_courses, initial_schedule, rooms)
     if options.run_optimisation:
         _check_cancel(cancel_event)
         _emit(progress_callback, "Running optimiser")
@@ -275,7 +373,7 @@ def run_timetable_pipeline(
             args,
             initial_schedule,
             final_schedule,
-            courses,
+            demand_courses,
             rooms,
             initial_soft,
             final_soft,
@@ -294,8 +392,8 @@ def run_timetable_pipeline(
         final_schedule,
         DEFAULT_RUN_SUMMARY_FILE,
         metadata=metadata,
-        demand_courses=courses,
-        input_course_records=len(courses),
+        demand_courses=demand_courses,
+        input_course_records=len(demand_courses),
         rooms=rooms,
         room_source_path=_room_source_path(options),
         optimisation_summary=optimisation_metrics,
@@ -307,7 +405,7 @@ def run_timetable_pipeline(
         DEFAULT_STAKEHOLDER_VIEWS_FILE,
         enable_remark_interpretation=options.enable_remark_interpretation,
     )
-    export_remarks_audit(courses, DEFAULT_REMARKS_AUDIT_FILE)
+    export_remarks_audit(demand_courses, DEFAULT_REMARKS_AUDIT_FILE)
 
     if not options.skip_unscheduled_diagnostics:
         report = diagnose_unscheduled_assignments(
@@ -326,6 +424,56 @@ def run_timetable_pipeline(
         template2_path=options.template2_output_template_path,
         enable_remark_interpretation=options.enable_remark_interpretation,
     )
+    programme_rows: list[dict[str, object]] = []
+    if options.scope == "eng" and DEFAULT_FIXED_SESSION_FILE.exists():
+        programme_rows = build_programme_completeness_rows(
+            demand_courses,
+            final_schedule,
+            guarded_state.quarantined_requirements if guarded_state is not None else [],
+        )
+        complete_programmes = complete_programme_set(programme_rows)
+        export_submission_ready_schedule(
+            final_schedule,
+            DEFAULT_TEMPLATE2_SUBMISSION_FILE,
+            template2_path=options.template2_output_template_path,
+            enable_remark_interpretation=options.enable_remark_interpretation,
+            complete_programmes=complete_programmes,
+            rooms=rooms,
+        )
+        template2_validation = validate_template2_submission(
+            DEFAULT_TEMPLATE2_SUBMISSION_FILE,
+            demand_courses,
+            fixed_sessions,
+            final_schedule,
+            rooms,
+            options.template2_output_template_path,
+        )
+        export_template2_validation_report(template2_validation, DEFAULT_TEMPLATE2_SUBMISSION_VALIDATION_FILE)
+        if guarded_state is not None:
+            programme_rows = build_programme_completeness_rows(
+                demand_courses,
+                final_schedule,
+                guarded_state.quarantined_requirements,
+                submission_ready_programmes={
+                    str(row.get("Normalised Programme/Year"))
+                    for row in template2_validation.programme_rows
+                    if row.get("Included In Submission") == "Yes"
+                },
+            )
+            export_guarded_generation_report(
+                output_path=DEFAULT_GUARDED_GENERATION_REPORT_FILE,
+                global_errors=guarded_state.global_errors,
+                quarantined=guarded_state.quarantined_requirements,
+                fixed_conflict_issues=fixed_conflict_issues,
+                warnings=guarded_state.warning_issues,
+                assignments=final_schedule,
+                demand_courses=demand_courses,
+                programme_rows=programme_rows,
+                template2_summary=template2_validation.summary,
+            )
+        output_paths["submission_ready_timetable"] = DEFAULT_TEMPLATE2_SUBMISSION_FILE
+        output_paths["template2_submission_validation"] = DEFAULT_TEMPLATE2_SUBMISSION_VALIDATION_FILE
+        output_paths["guarded_generation_report"] = DEFAULT_GUARDED_GENERATION_REPORT_FILE
     output_paths.update(
         {
             "loader_report": DEFAULT_LOADER_REPORT_FILE,
@@ -336,12 +484,46 @@ def run_timetable_pipeline(
     )
     if not options.skip_preflight:
         output_paths["preflight_report"] = DEFAULT_PREFLIGHT_REPORT_FILE
+    if options.scope == "eng" and DEFAULT_FIXED_SESSION_FILE.exists():
+        output_paths["fixed_sessions_audit"] = DEFAULT_FIXED_SESSIONS_AUDIT_FILE
+        output_paths["fixed_reconciliation"] = DEFAULT_FIXED_RECONCILIATION_FILE
+        output_paths["input_readiness_report"] = DEFAULT_INPUT_READINESS_REPORT_FILE
+        output_paths["fixed_issue_root_cause_analysis"] = DEFAULT_FIXED_ROOT_CAUSE_FILE
+        output_paths["fixed_conflict_triage"] = DEFAULT_FIXED_CONFLICT_TRIAGE_FILE
+        output_paths["supervisor_fixed_session_queries"] = DEFAULT_SUPERVISOR_FIXED_QUERIES_FILE
+        output_paths["location_mapping_evidence"] = DEFAULT_LOCATION_MAPPING_EVIDENCE_FILE
+        output_paths["supervisor_clarification_pack"] = DEFAULT_SUPERVISOR_CLARIFICATION_PACK_FILE
+        output_paths["fixed_resolution_template"] = DEFAULT_FIXED_RESOLUTION_TEMPLATE_FILE
+        output_paths["fixed_resolution_audit"] = DEFAULT_FIXED_RESOLUTION_AUDIT_FILE
+        output_paths["guarded_generation_report"] = DEFAULT_GUARDED_GENERATION_REPORT_FILE
     if not options.skip_unscheduled_diagnostics:
         output_paths["unscheduled_diagnostics"] = DEFAULT_UNSCHEDULED_DIAGNOSTICS_FILE
 
+    _emit(progress_callback, "Exporting visual timetables")
+    try:
+        export_timetable_visuals(
+            assignments=final_schedule,
+            rooms=rooms,
+            programme_rows=programme_rows,
+            programme_path=DEFAULT_PROGRAMME_VISUALS_FILE,
+            tutor_path=DEFAULT_TUTOR_VISUALS_FILE,
+            room_path=DEFAULT_ROOM_VISUALS_FILE,
+            validation_path=DEFAULT_TIMETABLE_VISUALISATION_VALIDATION_FILE,
+        )
+    except Exception as exc:  # pragma: no cover - keeps official timetable outputs intact
+        export_visualisation_failure_report(DEFAULT_TIMETABLE_VISUALISATION_VALIDATION_FILE, exc)
+    output_paths.update(
+        {
+            "programme_visuals": DEFAULT_PROGRAMME_VISUALS_FILE,
+            "tutor_visuals": DEFAULT_TUTOR_VISUALS_FILE,
+            "room_visuals": DEFAULT_ROOM_VISUALS_FILE,
+            "visualisation_validation": DEFAULT_TIMETABLE_VISUALISATION_VALIDATION_FILE,
+        }
+    )
+
     _emit(progress_callback, "Validating outputs")
     export_run_manifest(
-        courses,
+        demand_courses,
         final_schedule,
         DEFAULT_RUN_MANIFEST_FILE,
         metadata=metadata,
@@ -355,8 +537,8 @@ def run_timetable_pipeline(
     output_paths["exception_queue"] = DEFAULT_STAKEHOLDER_VIEWS_FILE
     output_paths["output_folder"] = OUTPUT_DIR
 
-    demand = build_demand_metrics(courses, final_schedule, input_course_records=len(courses))
-    resource_audit = audit_resources(courses, rooms, final_schedule, room_source_path=_room_source_path(options))
+    demand = build_demand_metrics(demand_courses, final_schedule, input_course_records=len(demand_courses))
+    resource_audit = audit_resources(demand_courses, rooms, final_schedule, room_source_path=_room_source_path(options))
     validation = validate_release(
         DEFAULT_RUN_SUMMARY_FILE,
         Path(output_paths["timetable"]),

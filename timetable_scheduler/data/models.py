@@ -18,7 +18,7 @@ class Course:
     teaching_weeks: list[int]
     week_pattern: str
     staff_ids: list[str]
-    duration_hrs: int
+    duration_hrs: float
     is_common_module: bool = False
     staff_names: list[str] = field(default_factory=list)
     remarks: str = ""
@@ -27,6 +27,8 @@ class Course:
     source_sheet: str = ""
     source_row: int | None = None
     remark_requirements: Any = None
+    is_fixed_requirement: bool = False
+    fixed_source: str | None = None
 
 
 @dataclass(slots=True)
@@ -62,6 +64,8 @@ class Assignment:
     selected_delivery_mode: str = ""
     base_unscheduled_reason: str = ""
     remark_unscheduled_reason: str = ""
+    is_fixed: bool = False
+    fixed_source: str | None = None
 
     @property
     def status(self) -> str:
@@ -78,3 +82,23 @@ class Assignment:
         if self.room is None:
             return ()
         return (self.room, *self.additional_rooms)
+
+
+@dataclass(frozen=True, slots=True)
+class FixedSession:
+    """A structured fixed teaching session from the official lab workbook."""
+
+    programme_year: str
+    module_code: str
+    group_id: str
+    group_size: int | None
+    day: str
+    start_time: str
+    duration_hours: float
+    teaching_weeks: tuple[int, ...]
+    locations: tuple[str, ...]
+    staff_ids: tuple[str, ...]
+    staff_names: tuple[str, ...]
+    source_file: str
+    source_sheet: str
+    source_row: int

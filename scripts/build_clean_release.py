@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_OUTPUT_PATH = PROJECT_ROOT / "dist" / "itp_group5_prototype.zip"
+DEFAULT_OUTPUT_PATH = PROJECT_ROOT / "dist" / "itp_group5_prototype_v1.1.0.zip"
 
 EXCLUDED_DIR_NAMES = {
     ".git",
@@ -38,15 +38,19 @@ EXCLUDED_FILE_PATTERNS = {
 }
 REQUIRED_PATHS = {
     "README.md",
+    "ADDITIONAL_REQUIREMENTS_COMPLIANCE.md",
     "DEMO.md",
+    "EVIDENCE_README.md",
     "AI_USAGE_LOG.md",
     "AI_ASSISTANCE_STATEMENT.md",
     "DEMO_SCRIPT.md",
     "FINAL_RESULTS.md",
     "PRESENTATION_EVIDENCE.md",
+    "pytest.ini",
     "RELEASE_CHECKLIST.md",
     "REPORT_EVIDENCE.md",
     "requirements.txt",
+    "validate_release.py",
     "timetable_scheduler/AGENTS.md",
     "timetable_scheduler/main.py",
     "timetable_scheduler/run_ui.py",
@@ -108,7 +112,7 @@ def build_release_zip(
 ) -> ReleaseBuildResult:
     """Create the clean release ZIP and return its summary."""
     source_root = source_root.resolve()
-    output_path = (output_path or source_root / "dist" / "itp_group5_prototype.zip").resolve()
+    output_path = (output_path or DEFAULT_OUTPUT_PATH).resolve()
     ensure_required_files(source_root)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     if output_path.exists():
