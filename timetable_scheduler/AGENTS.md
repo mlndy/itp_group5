@@ -611,6 +611,19 @@ Initial pre-reconciliation findings recorded for that task:
 - The workbook with `Timetable`, `Course Code`, `Location`, `Staff`, and `Group` sheets is the Template 2 output template.
 - Do not mark a run successful until all reported output files pass integrity validation.
 
+## Final Output Quality and Scheduling Instruction Accuracy
+
+- Recurring teaching occurrences with identical placement must be aggregated before visual layout.
+- Teaching weeks should be displayed inside one visual block rather than one lane per week.
+- Visual lanes are only for genuinely simultaneous, overlapping assignments.
+- Explicit day and time instructions must be parsed conservatively and enforced when complete.
+- A recognised explicit timing instruction must not be treated only as a soft remark.
+- Duration ranges must be preserved where representable.
+- Unresolved input rows must be reported even when they represent zero parsed teaching occurrences.
+- UI review counts must distinguish requirement rows from teaching occurrences.
+- Scheduled hard violations must remain zero.
+- Template 2 structure and selected-workbook scope isolation must remain unchanged.
+
 ## Important Commands
 
 Run tests from inside the `timetable_scheduler` folder:

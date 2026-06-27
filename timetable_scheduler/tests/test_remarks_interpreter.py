@@ -236,3 +236,65 @@ def test_explicit_fixed_day_time_request_is_hard_enforceable() -> None:
     assert requirements.fixed_days == ("Thursday",)
     assert requirements.fixed_start_times == ("14:00",)
     assert hard_enforceable_interpretations(requirements)
+
+
+def test_complete_day_time_range_is_hard_enforceable() -> None:
+    """A clear day and time range should be applied as a hard fixed request."""
+    requirements = interpret_remarks("Monday, 10am-12pm")
+
+    assert requirements.fixed_days == ("Monday",)
+    assert requirements.fixed_start_times == ("10:00",)
+    assert requirements.fixed_end_times == ("12:00",)
+    assert requirements.fixed_time_ranges == (("10:00", "12:00"),)
+    assert requirements.duration_override_hours == 2
+    assert hard_enforceable_interpretations(requirements)
+
+
+def test_plural_day_time_range_is_normalised() -> None:
+    """Plural weekday wording should still create the expected fixed day."""
+    requirements = interpret_remarks("Tuesdays, 9am-11am")
+
+    assert requirements.fixed_days == ("Tuesday",)
+    assert requirements.fixed_start_times == ("09:00",)
+    assert requirements.fixed_end_times == ("11:00",)
+
+
+def test_explicit_date_time_range_captures_date_and_weekday() -> None:
+    """Dated remarks should keep the date evidence and compute a weekday when possible."""
+    requirements = interpret_remarks("10 Sep 2025, 8.30am-12pm")
+
+    assert requirements.explicit_dates == ("10 Sep 2025",)
+    assert requirements.fixed_days == ("Wednesday",)
+    assert requirements.fixed_start_times == ("08:30",)
+    assert requirements.fixed_end_times == ("12:00",)
+    assert requirements.duration_override_hours == 3.5
+
+
+def test_parenthesised_weekday_date_time_range_is_hard() -> None:
+    """A date plus parenthesised weekday should enforce the weekday and time."""
+    requirements = interpret_remarks("7 Nov (Friday), 2-4pm")
+
+    assert requirements.explicit_dates == ("7 Nov",)
+    assert requirements.fixed_days == ("Friday",)
+    assert requirements.fixed_time_ranges == (("14:00", "16:00"),)
+
+
+def test_time_range_without_day_preserves_full_duration() -> None:
+    """A long explicit time range must not collapse to a two-hour class."""
+    requirements = interpret_remarks("9AM-6PM")
+
+    assert requirements.fixed_start_times == ("09:00",)
+    assert requirements.fixed_end_times == ("18:00",)
+    assert requirements.duration_override_hours == 9
+    assert hard_enforceable_interpretations(requirements)
+
+
+def test_multi_session_time_ranges_preserve_all_starts() -> None:
+    """Multiple explicit ranges should not be reduced to the final start time."""
+    requirements = interpret_remarks("AF can only teach on Fridays, 2-4pm (T1) and 4-6pm (T2)")
+
+    assert requirements.fixed_days == ("Friday",)
+    assert requirements.fixed_start_times == ("14:00", "16:00")
+    assert requirements.fixed_end_times == ("16:00", "18:00")
+    assert requirements.fixed_time_ranges == (("14:00", "16:00"), ("16:00", "18:00"))
+    assert requirements.needs_manual_review is True

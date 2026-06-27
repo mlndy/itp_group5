@@ -284,6 +284,45 @@ def test_fixed_day_time_filters_candidate_patterns_before_demo_cap(monkeypatch) 
     assert schedule[0].hard_violations == []
 
 
+def test_clear_day_time_range_schedules_at_requested_start(monkeypatch) -> None:
+    """Complete day/time ranges should constrain both day and start time."""
+    monkeypatch.setattr(scheduler, "VALID_DAYS", ["Monday", "Tuesday"])
+    monkeypatch.setattr(scheduler, "VALID_START_TIMES", ["09:00", "10:00"])
+    course = make_course(duration_hrs=2, remarks="Monday 10am-12pm")
+
+    schedule = scheduler.generate_schedule([course], [Room("R1", 100, "physical")], allow_weekly_fallback=False)
+
+    assert schedule[0].timeslot.day == "Monday"
+    assert schedule[0].timeslot.start_time == "10:00"
+    assert schedule[0].hard_violations == []
+
+
+def test_plural_weekday_time_range_does_not_move_to_monday(monkeypatch) -> None:
+    """Plural weekday timing remarks should stay on the requested weekday."""
+    monkeypatch.setattr(scheduler, "VALID_DAYS", ["Monday", "Tuesday"])
+    monkeypatch.setattr(scheduler, "VALID_START_TIMES", ["09:00", "10:00"])
+    course = make_course(duration_hrs=2, remarks="Tuesdays, 9am-11am")
+
+    schedule = scheduler.generate_schedule([course], [Room("R1", 100, "physical")], allow_weekly_fallback=False)
+
+    assert schedule[0].timeslot.day == "Tuesday"
+    assert schedule[0].timeslot.start_time == "09:00"
+    assert schedule[0].hard_violations == []
+
+
+def test_full_day_time_range_preserves_duration_evidence_without_hard_violation(monkeypatch) -> None:
+    """A 9AM-6PM remark should remain visible even when structured duration is used."""
+    monkeypatch.setattr(scheduler, "VALID_DAYS", ["Monday"])
+    monkeypatch.setattr(scheduler, "VALID_START_TIMES", ["09:00"])
+    course = make_course(duration_hrs=2, remarks="9AM-6PM")
+
+    schedule = scheduler.generate_schedule([course], [Room("R1", 100, "physical")], allow_weekly_fallback=False)
+
+    assert course_remark_requirements(course).duration_override_hours == 9
+    assert schedule[0].timeslot.start_time == "09:00"
+    assert schedule[0].hard_violations == []
+
+
 def test_disabled_remarks_do_not_filter_candidate_rooms() -> None:
     """Feature-flag-disabled runs should use the same room pool as plain structured data."""
     course = make_course(remarks="Hybrid delivery required")

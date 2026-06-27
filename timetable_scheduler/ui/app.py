@@ -203,8 +203,9 @@ class TimetableSchedulerApp:
         metric_labels = [
             "Coverage of schedulable classes",
             "Scheduled classes",
-            "Classes needing review",
-            "Hard conflicts",
+            "Input requirements needing review",
+            "Scheduler search failures",
+            "Scheduled hard conflicts",
             "Visual timetables",
         ]
         for col in range(len(metric_labels)):

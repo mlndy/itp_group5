@@ -271,23 +271,17 @@ class TimetableUIController:
 
     def display_values(self, result: PipelineResult) -> dict[str, str]:
         """Map pipeline result values to concise completion-screen text."""
-        hard_conflicts = (
-            "No hard-constraint conflicts"
-            if result.scheduled_hard_violations == 0
-            else str(result.scheduled_hard_violations)
-        )
-        review_text = (
-            f"{result.unscheduled_occurrences} teaching occurrences require review"
-            if result.unscheduled_occurrences
-            else "0 teaching occurrences require review"
-        )
+        hard_conflicts = str(result.scheduled_hard_violations)
         coverage = result.selected_schedulable_coverage_percent or result.coverage_percent
         scheduled = result.selected_scheduled_occurrences or result.scheduled_occurrences
+        review_rows = result.input_rows_needing_review or 0
+        search_failures = result.scheduler_search_failures if result.scheduler_search_failures else result.selected_search_failures
         return {
             "Coverage of schedulable classes": f"{coverage:.2f}% schedulable",
-            "Scheduled classes": str(scheduled),
-            "Classes needing review": review_text,
-            "Hard conflicts": hard_conflicts,
+            "Scheduled classes": f"{scheduled} teaching occurrences",
+            "Input requirements needing review": f"{review_rows} rows",
+            "Scheduler search failures": f"{search_failures} occurrences",
+            "Scheduled hard conflicts": hard_conflicts,
             "Visual timetables": "Visual timetable files created"
             if {"programme_visuals", "tutor_visuals", "room_visuals"} <= set(result.output_paths)
             else "Not created",

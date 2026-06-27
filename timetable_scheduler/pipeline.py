@@ -157,6 +157,12 @@ class PipelineResult:
     selected_search_failures: int = 0
     selected_schedulable_coverage_percent: float = 0.0
     selected_total_coverage_percent: float = 0.0
+    input_requirement_rows: int = 0
+    scheduled_requirement_rows: int = 0
+    input_rows_needing_review: int = 0
+    recorded_teaching_occurrences: int = 0
+    quarantined_teaching_occurrences: int = 0
+    scheduler_search_failures: int = 0
 
 
 class PipelineCancelled(RuntimeError):
@@ -696,6 +702,16 @@ def run_timetable_pipeline(
         if selected_schedulable
         else 0.0
     )
+    scheduled_requirement_rows = sum(
+        1
+        for assignment in final_schedule
+        if assignment.room is not None and assignment.timeslot is not None and not assignment.hard_violations
+    )
+    input_rows_needing_review = sum(
+        1
+        for assignment in final_schedule
+        if assignment.room is None or assignment.timeslot is None or assignment.hard_violations
+    )
     _emit(progress_callback, "Completed")
     return PipelineResult(
         required_occurrences=demand.required_teaching_occurrences,
@@ -717,4 +733,10 @@ def run_timetable_pipeline(
         selected_search_failures=selected_search_failures,
         selected_schedulable_coverage_percent=selected_schedulable_coverage,
         selected_total_coverage_percent=demand.coverage_rate_percent,
+        input_requirement_rows=scheduled_requirement_rows + input_rows_needing_review,
+        scheduled_requirement_rows=scheduled_requirement_rows,
+        input_rows_needing_review=input_rows_needing_review,
+        recorded_teaching_occurrences=demand.required_teaching_occurrences,
+        quarantined_teaching_occurrences=selected_quarantined,
+        scheduler_search_failures=selected_search_failures,
     )

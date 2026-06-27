@@ -6,6 +6,7 @@ env/
 # Python/runtime caches
 __pycache__/
 .pytest_cache/
+.pytest_tmp/
 *.py[cod]
 
 # Generated prototype outputs

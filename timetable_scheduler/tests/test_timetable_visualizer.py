@@ -9,6 +9,7 @@ from openpyxl import load_workbook
 from data.models import Assignment, Course, Room, TimeSlot
 from output.timetable_visualizer import (
     allocate_lanes,
+    aggregate_visual_entries,
     build_programme_visual_entries,
     build_room_visual_entries,
     build_tutor_visual_entries,
@@ -120,8 +121,8 @@ def test_lane_allocation_separates_overlaps_and_reuses_free_lanes() -> None:
     assert lanes == allocate_lanes([first, overlapping, later])
 
 
-def test_disjoint_week_same_time_does_not_overwrite() -> None:
-    """Same-time entries in different weeks still receive deterministic lanes."""
+def test_disjoint_week_same_time_can_share_lane() -> None:
+    """Same-time entries in different weeks should not create unnecessary lanes."""
     week_one = build_programme_visual_entries([make_assignment(week=1)], programme_rows())[0]
     week_two = build_programme_visual_entries(
         [make_assignment(course=make_course(module_code="ENG2001"), week=2)],
@@ -130,7 +131,25 @@ def test_disjoint_week_same_time_does_not_overwrite() -> None:
 
     lanes = allocate_lanes([week_one, week_two])
 
-    assert len(set(lanes.values())) == 2
+    assert len(set(lanes.values())) == 1
+
+
+def test_aggregate_visual_entries_combines_recurring_weeks() -> None:
+    """Recurring occurrences with the same placement should render as one visual block."""
+    course = make_course(teaching_weeks=[1, 2])
+    entries = build_programme_visual_entries(
+        [
+            make_assignment(course=course, week=1),
+            make_assignment(course=course, week=2),
+        ],
+        [{"Programme/Year": "ENG/Y1", "Valid Exported Rows": 2}],
+    )
+
+    aggregated = aggregate_visual_entries(entries)
+
+    assert len(aggregated) == 1
+    assert aggregated[0].teaching_weeks == (1, 2)
+    assert len(aggregated[0].source_occurrence_ids) == 2
 
 
 def test_safe_sheet_name_handles_long_duplicates_invalid_and_external_names() -> None:
@@ -199,6 +218,8 @@ def test_export_visual_workbooks_and_validation_pass(tmp_path: Path) -> None:
         workbook = load_workbook(path, read_only=True, data_only=True)
         try:
             assert "Index" in workbook.sheetnames or "Summary" in workbook.sheetnames
+            if path == result.validation_path:
+                assert "Lane Quality" in workbook.sheetnames
         finally:
             workbook.close()
 

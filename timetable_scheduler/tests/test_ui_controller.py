@@ -69,6 +69,14 @@ def make_result(tmp_path: Path) -> PipelineResult:
         validation_passed=True,
         optimisation_status="Skipped",
         output_paths=output_paths,
+        selected_scheduled_occurrences=93,
+        selected_schedulable_coverage_percent=100.0,
+        input_requirement_rows=95,
+        scheduled_requirement_rows=93,
+        input_rows_needing_review=2,
+        recorded_teaching_occurrences=93,
+        quarantined_teaching_occurrences=0,
+        scheduler_search_failures=0,
     )
 
 
@@ -299,10 +307,11 @@ def test_pipeline_result_maps_to_simple_display_values(tmp_path: Path) -> None:
 
     values = controller.display_values(make_result(tmp_path))
 
-    assert values["Coverage of schedulable classes"] == "98.92% schedulable"
-    assert values["Scheduled classes"] == "2747"
-    assert values["Classes needing review"] == "30 teaching occurrences require review"
-    assert values["Hard conflicts"] == "No hard-constraint conflicts"
+    assert values["Coverage of schedulable classes"] == "100.00% schedulable"
+    assert values["Scheduled classes"] == "93 teaching occurrences"
+    assert values["Input requirements needing review"] == "2 rows"
+    assert values["Scheduler search failures"] == "0 occurrences"
+    assert values["Scheduled hard conflicts"] == "0"
     assert values["Visual timetables"] == "Visual timetable files created"
     assert "DSC inclusion" not in values
 

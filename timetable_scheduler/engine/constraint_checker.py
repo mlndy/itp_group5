@@ -293,7 +293,10 @@ def check_remark_requirements_for_mode(
         and not requirements.requires_recording_room
         and not requirements.fixed_days
         and not requirements.fixed_start_times
+        and not requirements.fixed_end_times
+        and not requirements.fixed_time_ranges
         and not requirements.fixed_venues
+        and requirements.duration_override_hours is None
     ):
         return []
 
@@ -308,6 +311,15 @@ def check_remark_requirements_for_mode(
         violations.append(f"Remark requires day in {list(requirements.fixed_days)}")
     if requirements.fixed_start_times and assignment.timeslot is not None and assignment.timeslot.start_time not in requirements.fixed_start_times:
         violations.append(f"Remark requires start time in {list(requirements.fixed_start_times)}")
+    if requirements.fixed_end_times and assignment.timeslot is not None and assignment_end_time(assignment) not in requirements.fixed_end_times:
+        violations.append(f"Remark requires end time in {list(requirements.fixed_end_times)}")
+    if requirements.fixed_time_ranges and assignment.timeslot is not None:
+        actual_range = (assignment.timeslot.start_time, assignment_end_time(assignment))
+        if actual_range not in requirements.fixed_time_ranges:
+            violations.append(f"Remark requires time range in {list(requirements.fixed_time_ranges)}")
+    if requirements.duration_override_hours is not None:
+        if abs(float(assignment.course.duration_hrs) - requirements.duration_override_hours) > 0.01:
+            violations.append(f"Remark requires duration {requirements.duration_override_hours:g} hour(s)")
     if requirements.fixed_venues and rooms:
         assigned = {room.room_id.casefold() for room in rooms}
         required = {venue.casefold() for venue in requirements.fixed_venues}
