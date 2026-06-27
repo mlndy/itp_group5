@@ -4,7 +4,7 @@ This package contains generated output workbooks from the final v1.1 Engineering
 
 ## Official Timetable Outputs
 
-- `final_timetable_engineering_cluster.xlsx`: proposed Engineering cluster timetable generated from the validated schedule.
+- `final_timetable_engineering_cluster.xlsx`: proposed Engineering cluster timetable containing the valid generated assignments from the validated schedule.
 - `Template2_Submission_Ready.xlsx`: official submission-ready Template 2 workbook containing only validated rows from complete submission-ready programme-year schedules.
 
 ## Supplementary Visual Timetables
@@ -21,6 +21,8 @@ The visual workbooks are supplementary. They are generated from validated schedu
 - `run_summary.xlsx`: scheduling summary, validation checks, run metadata, unscheduled reasons, resource audit and residual analysis.
 - `template2_submission_validation.xlsx`: Template 2 field validation, source-to-output reconciliation, programme schedule coverage and readiness status.
 - `timetable_visualisation_validation.xlsx`: reconciliation checks confirming that visual workbooks contain expected scheduled entries with no missing entries, unexpected entries or invalid overlaps.
+
+Template 2 readiness and visual export validation both passed in the final v1.1 validation run.
 
 ## Final v1.1 Metrics
 
