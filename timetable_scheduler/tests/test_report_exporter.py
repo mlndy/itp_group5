@@ -8,6 +8,7 @@ from openpyxl import load_workbook
 
 from config import DEFAULT_TEMPLATE2_FILE
 from data.models import Assignment, Course, Room, TimeSlot
+from engine.remarks_interpreter import interpret_remarks
 from generator.scheduler import MAX_CANDIDATE_PATTERN_LIMIT_REASON
 from output.report_exporter import (
     categorise_unscheduled_reason,
@@ -597,6 +598,46 @@ def test_remarks_interpretation_handles_room_type_application(tmp_path: Path) ->
     values = dict(zip(rows[0], rows[1], strict=False))
     assert values["Detected Rule"] == "room_type"
     assert values["Applied Status"] == "Applied"
+
+
+def test_run_summary_records_fixed_session_override_status(tmp_path: Path) -> None:
+    """Remarks Interpretation should show fixed-session precedence decisions."""
+    output = tmp_path / "run_summary.xlsx"
+    source_course = make_course(
+        module_code="MET2602",
+        prog_yr="DSC/YR 2",
+        remarks="Tuesdays, 9am-11am",
+        source_file="2510_DSC.xlsx",
+        source_sheet="Module",
+        source_row=12,
+        staff_ids=["AF"],
+    )
+    source_course.remark_requirements = interpret_remarks(source_course.remarks)
+    fixed_course = make_course(
+        module_code="MET2602",
+        prog_yr="DSC/YR 2",
+        staff_ids=["AF"],
+        teaching_weeks=[1],
+        is_fixed_requirement=True,
+        fixed_source="fixed.xlsx:DSC:5",
+    )
+    assignment = Assignment(
+        fixed_course,
+        Room("R1", 100, "physical"),
+        TimeSlot("Friday", "09:00", 1),
+        is_fixed=True,
+        fixed_source="fixed.xlsx:DSC:5",
+    )
+
+    export_run_summary([assignment], output, source_courses=[source_course])
+
+    workbook = load_workbook(output)
+    rows = _sheet_rows(workbook, "Remarks Interpretation")
+    headers = rows[0]
+    data_rows = [dict(zip(headers, row, strict=False)) for row in rows[1:]]
+    override = next(row for row in data_rows if row["Applied Status"] == "FIXED_SESSION_OVERRIDES_REMARK")
+    assert override["Instruction Treatment"] == "OVERRIDDEN_BY_STRUCTURED_FIXED_SESSION"
+    assert override["Requested Placement"] == "day Tuesday; time range 09:00-11:00"
 
 
 def test_run_manifest_exports_template_validation_and_traceability(tmp_path: Path) -> None:

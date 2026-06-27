@@ -68,7 +68,7 @@ from engine.guarded_generation import (
 from engine.input_readiness import build_input_readiness_result, export_input_readiness_report
 from engine.preflight_validator import run_preflight_checks
 from engine.remarks_comparison import export_remarks_coverage_comparison
-from engine.remarks_interpreter import export_remarks_audit
+from engine.remarks_interpreter import courses_with_effective_remark_durations, export_remarks_audit
 from engine.resource_audit import audit_resources
 from engine.unscheduled_diagnostics import (
     UnscheduledDiagnosticsReport,
@@ -571,6 +571,19 @@ def main() -> None:
 
     print("\nGenerating initial schedule...")
     remarks_enabled = _remark_interpretation_enabled(args)
+    schedule_courses = courses_with_effective_remark_durations(
+        schedule_courses,
+        enabled=remarks_enabled,
+    )
+    demand_courses = [
+        *schedule_courses,
+        *_fixed_requirement_courses(fixed_assignments),
+        *(
+            quarantined_requirement_courses(guarded_state.quarantined_requirements)
+            if guarded_state is not None
+            else []
+        ),
+    ]
 
     def _progress(position: int, total: int, course: Course) -> None:
         if args.scope == "eng":
@@ -643,11 +656,12 @@ def main() -> None:
         DEFAULT_RUN_SUMMARY_FILE,
         metadata=_run_metadata(args),
         demand_courses=demand_courses,
-        input_course_records=len(demand_courses),
+        input_course_records=len(courses),
         rooms=rooms,
         room_source_path=DEFAULT_ROOM_FILE,
         optimisation_summary=optimisation_metrics,
         enable_remark_interpretation=remarks_enabled,
+        source_courses=courses,
     )
     print(f"Saved: {DEFAULT_RUN_SUMMARY_FILE}")
     export_stakeholder_views(
@@ -657,7 +671,7 @@ def main() -> None:
         enable_remark_interpretation=remarks_enabled,
     )
     print(f"Saved: {DEFAULT_STAKEHOLDER_VIEWS_FILE}")
-    export_remarks_audit(demand_courses, DEFAULT_REMARKS_AUDIT_FILE)
+    export_remarks_audit(courses, DEFAULT_REMARKS_AUDIT_FILE, assignments=final_schedule)
     print(f"Saved: {DEFAULT_REMARKS_AUDIT_FILE}")
     if args.audit_demand_metrics:
         _print_demand_audit(demand_courses, final_schedule)
@@ -690,7 +704,7 @@ def main() -> None:
             baseline_schedule,
             final_schedule,
             DEFAULT_REMARKS_COMPARISON_FILE,
-            input_course_records=len(demand_courses),
+            input_course_records=len(courses),
             scheduler_metadata={
                 "scope": args.scope,
                 "skip_optimisation": args.skip_optimisation,

@@ -297,6 +297,20 @@ def test_clear_day_time_range_schedules_at_requested_start(monkeypatch) -> None:
     assert schedule[0].hard_violations == []
 
 
+def test_explicit_time_range_updates_generated_duration(monkeypatch) -> None:
+    """Generated placements should use a recognised explicit range duration."""
+    monkeypatch.setattr(scheduler, "VALID_DAYS", ["Monday"])
+    monkeypatch.setattr(scheduler, "VALID_START_TIMES", ["09:00"])
+    course = make_course(duration_hrs=2, remarks="Monday 9am-12pm")
+
+    schedule = scheduler.generate_schedule([course], [Room("R1", 100, "physical")], allow_weekly_fallback=False)
+
+    assert schedule[0].timeslot.day == "Monday"
+    assert schedule[0].timeslot.start_time == "09:00"
+    assert schedule[0].course.duration_hrs == 3
+    assert schedule[0].hard_violations == []
+
+
 def test_plural_weekday_time_range_does_not_move_to_monday(monkeypatch) -> None:
     """Plural weekday timing remarks should stay on the requested weekday."""
     monkeypatch.setattr(scheduler, "VALID_DAYS", ["Monday", "Tuesday"])
@@ -310,8 +324,8 @@ def test_plural_weekday_time_range_does_not_move_to_monday(monkeypatch) -> None:
     assert schedule[0].hard_violations == []
 
 
-def test_full_day_time_range_preserves_duration_evidence_without_hard_violation(monkeypatch) -> None:
-    """A 9AM-6PM remark should remain visible even when structured duration is used."""
+def test_full_day_time_range_remains_unscheduled_when_atomic_block_is_infeasible(monkeypatch) -> None:
+    """A 9AM-6PM remark should not silently become a two-hour class."""
     monkeypatch.setattr(scheduler, "VALID_DAYS", ["Monday"])
     monkeypatch.setattr(scheduler, "VALID_START_TIMES", ["09:00"])
     course = make_course(duration_hrs=2, remarks="9AM-6PM")
@@ -319,8 +333,10 @@ def test_full_day_time_range_preserves_duration_evidence_without_hard_violation(
     schedule = scheduler.generate_schedule([course], [Room("R1", 100, "physical")], allow_weekly_fallback=False)
 
     assert course_remark_requirements(course).duration_override_hours == 9
-    assert schedule[0].timeslot.start_time == "09:00"
-    assert schedule[0].hard_violations == []
+    assert schedule[0].room is None
+    assert schedule[0].timeslot is None
+    assert schedule[0].course.duration_hrs == 9
+    assert schedule[0].hard_violations
 
 
 def test_disabled_remarks_do_not_filter_candidate_rooms() -> None:

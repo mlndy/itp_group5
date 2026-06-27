@@ -71,10 +71,16 @@ def make_result(tmp_path: Path) -> PipelineResult:
         output_paths=output_paths,
         selected_scheduled_occurrences=93,
         selected_schedulable_coverage_percent=100.0,
-        input_requirement_rows=95,
+        input_requirement_rows=18,
         scheduled_requirement_rows=93,
         input_rows_needing_review=2,
         recorded_teaching_occurrences=93,
+        input_course_records=18,
+        consolidated_course_requirements=18,
+        scheduling_assignments=95,
+        scheduled_assignments=93,
+        assignments_needing_review=2,
+        scheduled_teaching_occurrences=93,
         quarantined_teaching_occurrences=0,
         scheduler_search_failures=0,
     )
@@ -307,12 +313,12 @@ def test_pipeline_result_maps_to_simple_display_values(tmp_path: Path) -> None:
 
     values = controller.display_values(make_result(tmp_path))
 
-    assert values["Coverage of schedulable classes"] == "100.00% schedulable"
-    assert values["Scheduled classes"] == "93 teaching occurrences"
-    assert values["Input requirements needing review"] == "2 rows"
-    assert values["Scheduler search failures"] == "0 occurrences"
-    assert values["Scheduled hard conflicts"] == "0"
-    assert values["Visual timetables"] == "Visual timetable files created"
+    assert values["Coverage of schedulable teaching occurrences"] == "100.00% of schedulable teaching occurrences"
+    assert values["Scheduled teaching occurrences"] == "93 teaching occurrences"
+    assert values["Scheduling requirements needing review"] == "2 scheduling requirements"
+    assert values["Scheduler placement failures"] == "0 teaching occurrences"
+    assert values["Hard conflicts"] == "0"
+    assert values["Visual timetable status"] == "Visual timetable files created"
     assert "DSC inclusion" not in values
 
 

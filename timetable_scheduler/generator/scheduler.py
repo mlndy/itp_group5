@@ -22,6 +22,7 @@ from engine.constraint_checker import check_hard_constraints, course_groups, is_
 from engine.remarks_interpreter import (
     RemarkRequirements,
     assignment_rooms,
+    course_with_effective_remark_duration,
     effective_remark_requirements,
     interpret_remarks,
     remark_unscheduled_reason,
@@ -481,6 +482,7 @@ def schedule_course(
             )
         ]
     requirements = _remarks_for_course(course, enable_remark_interpretation)
+    course = course_with_effective_remark_duration(course, enabled=enable_remark_interpretation)
     if requirements.required_room_count > 2:
         return [
             _manual_review_assignment(
@@ -535,6 +537,7 @@ def schedule_course_for_weeks(
             )
         ]
     requirements = _remarks_for_course(course, enable_remark_interpretation)
+    course = course_with_effective_remark_duration(course, enabled=enable_remark_interpretation)
     if requirements.required_room_count > 2:
         return [
             _manual_review_assignment(

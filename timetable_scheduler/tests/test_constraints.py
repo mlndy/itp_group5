@@ -414,8 +414,8 @@ def test_engineering_candidate_generation_excludes_blocked_weeks(monkeypatch) ->
     assert {slot.week for slot in timeslots} == {6, 8}
 
 
-def test_dsc_input_still_has_zero_hard_violations() -> None:
-    """The DSC schedule should remain hard-feasible after scheduler changes."""
+def test_dsc_input_scheduled_rows_still_have_zero_hard_violations() -> None:
+    """Scheduled DSC rows should remain hard-feasible after scheduler changes."""
     from config import DEFAULT_COMMON_MODULE_FILE, DEFAULT_COURSE_FILE, DEFAULT_ROOM_FILE
     from data.loader import load_common_modules, load_courses_from_requirements, load_rooms_from_csv
     from engine.constraint_checker import count_hard_violations
@@ -427,7 +427,16 @@ def test_dsc_input_still_has_zero_hard_violations() -> None:
 
     schedule = generate_schedule(courses, rooms)
 
-    assert count_hard_violations(schedule) == 0
+    scheduled = [item for item in schedule if item.room is not None and item.timeslot is not None]
+    unscheduled_reasons = [
+        reason
+        for item in schedule
+        if item.room is None or item.timeslot is None
+        for reason in item.hard_violations
+    ]
+
+    assert count_hard_violations(scheduled) == 0
+    assert any("Remark requires" in reason or "Could not find feasible" in reason for reason in unscheduled_reasons)
 
 
 

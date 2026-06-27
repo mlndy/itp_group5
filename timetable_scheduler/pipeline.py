@@ -59,7 +59,7 @@ from data.loader import (
 from data.fixed_sessions import export_fixed_sessions_audit, load_fixed_sessions
 from data.models import Course
 from engine.constraint_checker import annotate_schedule_violations, count_soft_violations
-from engine.demand_metrics import build_demand_metrics
+from engine.demand_metrics import build_demand_metrics, consolidated_requirements
 from engine.fixed_reconciliation import (
     adjusted_courses_after_exact_matches,
     export_fixed_reconciliation_report,
@@ -76,7 +76,7 @@ from engine.guarded_generation import (
 )
 from engine.input_readiness import build_input_readiness_result, export_input_readiness_report
 from engine.preflight_validator import run_preflight_checks
-from engine.remarks_interpreter import export_remarks_audit
+from engine.remarks_interpreter import courses_with_effective_remark_durations, export_remarks_audit
 from engine.resource_audit import audit_resources
 from engine.unscheduled_diagnostics import diagnose_unscheduled_assignments, export_unscheduled_diagnostics
 from generator.scheduler import generate_schedule
@@ -161,6 +161,12 @@ class PipelineResult:
     scheduled_requirement_rows: int = 0
     input_rows_needing_review: int = 0
     recorded_teaching_occurrences: int = 0
+    input_course_records: int = 0
+    consolidated_course_requirements: int = 0
+    scheduling_assignments: int = 0
+    scheduled_assignments: int = 0
+    assignments_needing_review: int = 0
+    scheduled_teaching_occurrences: int = 0
     quarantined_teaching_occurrences: int = 0
     scheduler_search_failures: int = 0
 
@@ -455,6 +461,21 @@ def run_timetable_pipeline(
         demand_courses = schedule_courses + _fixed_requirement_courses(fixed_assignments) + quarantined_requirement_courses(guarded_state.quarantined_requirements)
     _check_cancel(cancel_event)
 
+    remarks_enabled = options.enable_remark_interpretation
+    schedule_courses = courses_with_effective_remark_durations(
+        schedule_courses,
+        enabled=remarks_enabled,
+    )
+    demand_courses = [
+        *schedule_courses,
+        *_fixed_requirement_courses(fixed_assignments),
+        *(
+            quarantined_requirement_courses(guarded_state.quarantined_requirements)
+            if guarded_state is not None
+            else []
+        ),
+    ]
+
     _emit(progress_callback, "Generating timetable")
 
     def _course_progress(position: int, total: int, course: Course) -> None:
@@ -468,7 +489,7 @@ def run_timetable_pipeline(
         progress_interval=options.progress_interval,
         max_retry_assignments=options.max_retry_assignments,
         max_candidate_patterns=options.max_candidate_patterns,
-        enable_remark_interpretation=options.enable_remark_interpretation,
+        enable_remark_interpretation=remarks_enabled,
     )
     initial_reasons = _snapshot_unscheduled_reasons(initial_schedule)
     annotate_schedule_violations(
@@ -536,26 +557,27 @@ def run_timetable_pipeline(
         paths["run_summary"],
         metadata=metadata,
         demand_courses=demand_courses,
-        input_course_records=len(demand_courses),
+        input_course_records=len(courses),
         rooms=rooms,
         room_source_path=_room_source_path(options),
         optimisation_summary=optimisation_metrics,
-        enable_remark_interpretation=options.enable_remark_interpretation,
+        enable_remark_interpretation=remarks_enabled,
+        source_courses=courses,
     )
     export_stakeholder_views(
         final_schedule,
         rooms,
         paths["stakeholder_views"],
-        enable_remark_interpretation=options.enable_remark_interpretation,
+        enable_remark_interpretation=remarks_enabled,
     )
-    export_remarks_audit(demand_courses, paths["remarks_audit"])
+    export_remarks_audit(courses, paths["remarks_audit"], assignments=final_schedule)
 
     if not options.skip_unscheduled_diagnostics:
         report = diagnose_unscheduled_assignments(
             final_schedule,
             rooms,
             max_diagnostic_assignments=options.max_diagnostic_assignments,
-            enable_remark_interpretation=options.enable_remark_interpretation,
+            enable_remark_interpretation=remarks_enabled,
         )
         export_unscheduled_diagnostics(report, paths["unscheduled_diagnostics"])
     _check_cancel(cancel_event)
@@ -565,7 +587,7 @@ def run_timetable_pipeline(
         final_schedule,
         options.scope,
         template2_path=options.template2_output_template_path,
-        enable_remark_interpretation=options.enable_remark_interpretation,
+        enable_remark_interpretation=remarks_enabled,
         output_dir=run_dir,
         timetable_filename="Proposed_Timetable.xlsx",
     )
@@ -583,7 +605,7 @@ def run_timetable_pipeline(
             final_schedule,
             paths["submission_ready_timetable"],
             template2_path=options.template2_output_template_path,
-            enable_remark_interpretation=options.enable_remark_interpretation,
+            enable_remark_interpretation=remarks_enabled,
             complete_programmes=complete_programmes,
             rooms=rooms,
         )
@@ -677,14 +699,14 @@ def run_timetable_pipeline(
         rooms=rooms,
         output_files=output_paths,
         template2_path=options.template2_output_template_path,
-        enable_remark_interpretation=options.enable_remark_interpretation,
+        enable_remark_interpretation=remarks_enabled,
     )
     output_paths["run_manifest"] = paths["run_manifest"]
     output_paths["proposed_template2"] = paths["proposed_timetable"]
     output_paths["exception_queue"] = paths["stakeholder_views"]
     output_paths["output_folder"] = run_dir
 
-    demand = build_demand_metrics(demand_courses, final_schedule, input_course_records=len(demand_courses))
+    demand = build_demand_metrics(demand_courses, final_schedule, input_course_records=len(courses))
     resource_audit = audit_resources(demand_courses, rooms, final_schedule, room_source_path=_room_source_path(options))
     validation_passed = _outputs_validate({key: Path(value) for key, value in output_paths.items()})
     selected_quarantined = (
@@ -712,6 +734,9 @@ def run_timetable_pipeline(
         for assignment in final_schedule
         if assignment.room is None or assignment.timeslot is None or assignment.hard_violations
     )
+    input_course_records = len(courses)
+    consolidated_course_requirements = len(consolidated_requirements(courses))
+    scheduling_assignments = len(final_schedule)
     _emit(progress_callback, "Completed")
     return PipelineResult(
         required_occurrences=demand.required_teaching_occurrences,
@@ -733,10 +758,16 @@ def run_timetable_pipeline(
         selected_search_failures=selected_search_failures,
         selected_schedulable_coverage_percent=selected_schedulable_coverage,
         selected_total_coverage_percent=demand.coverage_rate_percent,
-        input_requirement_rows=scheduled_requirement_rows + input_rows_needing_review,
+        input_requirement_rows=input_course_records,
         scheduled_requirement_rows=scheduled_requirement_rows,
         input_rows_needing_review=input_rows_needing_review,
         recorded_teaching_occurrences=demand.required_teaching_occurrences,
+        input_course_records=input_course_records,
+        consolidated_course_requirements=consolidated_course_requirements,
+        scheduling_assignments=scheduling_assignments,
+        scheduled_assignments=scheduled_requirement_rows,
+        assignments_needing_review=input_rows_needing_review,
+        scheduled_teaching_occurrences=demand.scheduled_teaching_occurrences,
         quarantined_teaching_occurrences=selected_quarantined,
         scheduler_search_failures=selected_search_failures,
     )

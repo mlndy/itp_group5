@@ -273,16 +273,16 @@ class TimetableUIController:
         """Map pipeline result values to concise completion-screen text."""
         hard_conflicts = str(result.scheduled_hard_violations)
         coverage = result.selected_schedulable_coverage_percent or result.coverage_percent
-        scheduled = result.selected_scheduled_occurrences or result.scheduled_occurrences
-        review_rows = result.input_rows_needing_review or 0
+        scheduled = result.scheduled_teaching_occurrences or result.selected_scheduled_occurrences or result.scheduled_occurrences
+        review_rows = result.assignments_needing_review or result.input_rows_needing_review or 0
         search_failures = result.scheduler_search_failures if result.scheduler_search_failures else result.selected_search_failures
         return {
-            "Coverage of schedulable classes": f"{coverage:.2f}% schedulable",
-            "Scheduled classes": f"{scheduled} teaching occurrences",
-            "Input requirements needing review": f"{review_rows} rows",
-            "Scheduler search failures": f"{search_failures} occurrences",
-            "Scheduled hard conflicts": hard_conflicts,
-            "Visual timetables": "Visual timetable files created"
+            "Coverage of schedulable teaching occurrences": f"{coverage:.2f}% of schedulable teaching occurrences",
+            "Scheduled teaching occurrences": f"{scheduled} teaching occurrences",
+            "Scheduling requirements needing review": f"{review_rows} scheduling requirements",
+            "Scheduler placement failures": f"{search_failures} teaching occurrences",
+            "Hard conflicts": hard_conflicts,
+            "Visual timetable status": "Visual timetable files created"
             if {"programme_visuals", "tutor_visuals", "room_visuals"} <= set(result.output_paths)
             else "Not created",
         }

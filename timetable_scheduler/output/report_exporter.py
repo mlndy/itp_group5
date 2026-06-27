@@ -40,6 +40,7 @@ from engine.remarks_interpreter import (
     assignment_rooms,
     assignment_satisfies_interpretation,
     course_remark_requirements,
+    fixed_session_override_rows,
     hard_enforceable_interpretations,
     is_hard_enforceable,
 )
@@ -159,6 +160,10 @@ REMARKS_INTERPRETATION_COLUMNS = [
     "Confidence",
     "Hard Enforceable",
     "Applied Status",
+    "Instruction Treatment",
+    "Requested Placement",
+    "Authoritative Fixed Placement",
+    "Final Placement",
     "Assigned Rooms",
     "Selected Delivery Mode",
     "Explanation",
@@ -1311,6 +1316,60 @@ def _why_review_needed(assignments: list[Assignment], requirements: RemarkRequir
     return ""
 
 
+def _requested_placement_text(interpretation) -> str:
+    """Return a compact requested placement string for remarks evidence."""
+    days = [str(value) for value in interpretation.parameters.get("fixed_days", [])]
+    starts = [str(value) for value in interpretation.parameters.get("fixed_start_times", [])]
+    ends = [str(value) for value in interpretation.parameters.get("fixed_end_times", [])]
+    ranges = [
+        f"{value[0]}-{value[1]}"
+        for value in interpretation.parameters.get("fixed_time_ranges", [])
+        if isinstance(value, (list, tuple)) and len(value) == 2
+    ]
+    dates = [str(value) for value in interpretation.parameters.get("explicit_dates", [])]
+    parts = []
+    if dates:
+        parts.append(f"date {', '.join(dates)}")
+    if days:
+        parts.append(f"day {', '.join(days)}")
+    if ranges:
+        parts.append(f"time range {', '.join(ranges)}")
+    elif starts:
+        time_text = ", ".join(starts)
+        if ends:
+            time_text = f"{time_text}-{', '.join(ends)}"
+        parts.append(f"time {time_text}")
+    return "; ".join(parts)
+
+
+def _assignment_placement_text(assignment: Assignment) -> str:
+    """Return the final assignment placement for remarks evidence."""
+    if assignment.timeslot is None:
+        return ""
+    return (
+        f"{assignment.timeslot.day} {assignment.timeslot.start_time}-{_end_time_text(assignment)} "
+        f"week {assignment.timeslot.week}; rooms {assignment_room_ids(assignment)}"
+    )
+
+
+def _instruction_treatment(assignment: Assignment, interpretation, applied: bool, applied_status: str) -> str:
+    """Return a presentation-ready treatment status for one instruction."""
+    explicit = str(interpretation.parameters.get("instruction_treatment", ""))
+    if explicit:
+        return explicit
+    if interpretation.parameters.get("conflicting"):
+        return "CONFLICT_REQUIRES_REVIEW"
+    if applied:
+        return "ENFORCED"
+    if getattr(assignment, "is_fixed", False) and interpretation.rule_name == "fixed_day_time":
+        return "OVERRIDDEN_BY_STRUCTURED_FIXED_SESSION"
+    if applied_status == "Manual review":
+        return "UNSUPPORTED_REQUIRES_REVIEW"
+    if applied_status == "Unscheduled":
+        return "UNSUPPORTED_REQUIRES_REVIEW"
+    return "NOT_APPLICABLE"
+
+
 def _recommended_special_request_action(status: RemarkHandlingStatus) -> str:
     """Return the next stakeholder action for one handling status."""
     if status == RemarkHandlingStatus.AUTOMATICALLY_APPLIED:
@@ -1326,7 +1385,7 @@ def _recommended_special_request_action(status: RemarkHandlingStatus) -> str:
     return "No timetable action required."
 
 
-def _remarks_interpretation_df(assignments: list[Assignment]) -> pd.DataFrame:
+def _remarks_interpretation_df(assignments: list[Assignment], source_courses: list[Course] | None = None) -> pd.DataFrame:
     """Return row-level explainability for interpreted scheduling remarks."""
     rows: list[dict[str, object]] = []
     seen: set[tuple[object, ...]] = set()
@@ -1356,6 +1415,10 @@ def _remarks_interpretation_df(assignments: list[Assignment]) -> pd.DataFrame:
                 applied_status = "Not applied"
             else:
                 applied_status = "Unscheduled"
+            final_placement = _assignment_placement_text(assignment)
+            review_reason = requirements.review_reason
+            if not review_reason and applied_status == "Unscheduled":
+                review_reason = assignment.remark_unscheduled_reason or " | ".join(assignment.hard_violations)
             rows.append(
                 {
                     "Source Workbook": assignment.course.source_file,
@@ -1371,12 +1434,49 @@ def _remarks_interpretation_df(assignments: list[Assignment]) -> pd.DataFrame:
                     "Confidence": interpretation.confidence.value,
                     "Hard Enforceable": "Yes" if is_hard_enforceable(interpretation) else "No",
                     "Applied Status": applied_status,
+                    "Instruction Treatment": _instruction_treatment(
+                        assignment,
+                        interpretation,
+                        applied,
+                        applied_status,
+                    ),
+                    "Requested Placement": _requested_placement_text(interpretation)
+                    if interpretation.rule_name == "fixed_day_time"
+                    else "",
+                    "Authoritative Fixed Placement": final_placement if assignment.is_fixed else "",
+                    "Final Placement": final_placement,
                     "Assigned Rooms": assignment_room_ids(assignment),
                     "Selected Delivery Mode": assignment.selected_delivery_mode or assignment.course.delivery_mode,
                     "Explanation": interpretation.explanation,
-                    "Review Reason": requirements.review_reason,
+                    "Review Reason": review_reason,
                 }
             )
+    for row in fixed_session_override_rows(source_courses or [], assignments):
+        rows.append(
+            {
+                "Source Workbook": row.get("source workbook", ""),
+                "Source Sheet": row.get("source sheet", ""),
+                "Source Row": row.get("source row", ""),
+                "Programme/Year": row.get("programme/year", ""),
+                "Module": row.get("module", ""),
+                "Activity": row.get("activity", ""),
+                "Raw Remark": row.get("raw remark", ""),
+                "Detected Rule": row.get("rule name", ""),
+                "Extracted Parameters": row.get("parameters", ""),
+                "Enforcement": row.get("proposed rule type", ""),
+                "Confidence": row.get("confidence", ""),
+                "Hard Enforceable": "Yes",
+                "Applied Status": row.get("applied status", ""),
+                "Instruction Treatment": row.get("instruction treatment", ""),
+                "Requested Placement": row.get("requested placement", ""),
+                "Authoritative Fixed Placement": row.get("authoritative fixed placement", ""),
+                "Final Placement": row.get("final placement", ""),
+                "Assigned Rooms": "",
+                "Selected Delivery Mode": "",
+                "Explanation": row.get("explanation", ""),
+                "Review Reason": row.get("review reason", ""),
+            }
+        )
     return pd.DataFrame(rows, columns=REMARKS_INTERPRETATION_COLUMNS)
 
 
@@ -1695,6 +1795,7 @@ def export_run_summary(
     room_source_path: Path | None = None,
     optimisation_summary: dict[str, object] | None = None,
     enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
+    source_courses: list[Course] | None = None,
 ) -> None:
     """Export a stakeholder-friendly run summary workbook."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1734,7 +1835,7 @@ def export_run_summary(
         _resource_audit_df(resource_audit).to_excel(writer, sheet_name="Resource Audit", index=False)
         _virtual_room_detail_df(resource_audit).to_excel(writer, sheet_name="Virtual Room Detail", index=False)
         _programme_breakdown_df(snapshot).to_excel(writer, sheet_name="Programme Breakdown", index=False)
-        _remarks_interpretation_df(snapshot).to_excel(writer, sheet_name="Remarks Interpretation", index=False)
+        _remarks_interpretation_df(snapshot, source_courses=source_courses).to_excel(writer, sheet_name="Remarks Interpretation", index=False)
         _validation_checks_df(
             snapshot,
             generated_at,

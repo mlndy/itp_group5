@@ -624,6 +624,16 @@ Initial pre-reconciliation findings recorded for that task:
 - Scheduled hard violations must remain zero.
 - Template 2 structure and selected-workbook scope isolation must remain unchanged.
 
+## Final Metric Semantics and Instruction Conflict Handling
+
+- Input course records, scheduling assignments and teaching occurrences are different units.
+- UI labels must never use these units interchangeably.
+- Explicit timing remarks that conflict with structured fields must not be silently ignored.
+- Authoritative fixed-session placements take precedence over free-text remarks.
+- Any such precedence decision must be visible in the audit.
+- A recognised explicit duration must either be enforced or produce a review issue.
+- Scheduled output must never contradict a recognised hard instruction without explanation.
+
 ## Important Commands
 
 Run tests from inside the `timetable_scheduler` folder:

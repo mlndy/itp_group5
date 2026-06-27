@@ -43,7 +43,7 @@ def _stub_pipeline(monkeypatch, generated: list[Assignment]) -> None:
     monkeypatch.setattr(app, "optimise_schedule", lambda assignments, rooms_arg, max_iterations: assignments)
     monkeypatch.setattr(app, "export_run_summary", lambda assignments, output_path, **kwargs: None)
     monkeypatch.setattr(app, "export_stakeholder_views", lambda assignments, rooms_arg, output_path, **kwargs: None)
-    monkeypatch.setattr(app, "export_remarks_audit", lambda courses, output_path: None)
+    monkeypatch.setattr(app, "export_remarks_audit", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         app,
         "export_remarks_coverage_comparison",

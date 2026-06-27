@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from data.models import Assignment, Course, Room, TimeSlot
 from engine.remarks_interpreter import (
     RemarkConfidence,
     RemarkEnforcement,
+    course_remark_requirements,
+    fixed_session_override_rows,
     hard_enforceable_interpretations,
     interpret_remarks,
     is_hard_enforceable,
@@ -287,6 +290,79 @@ def test_time_range_without_day_preserves_full_duration() -> None:
     assert requirements.fixed_end_times == ("18:00",)
     assert requirements.duration_override_hours == 9
     assert hard_enforceable_interpretations(requirements)
+
+
+def test_fixed_duration_conflict_requires_review() -> None:
+    """A fixed structured duration conflict should not be silently enforced."""
+    course = Course(
+        module_code="MET2602",
+        activity="Laboratory",
+        prog_yr="DSC/YR 2",
+        class_size=40,
+        delivery_mode="f2f",
+        teaching_weeks=[1],
+        week_pattern="CUSTOM",
+        staff_ids=["T1"],
+        duration_hrs=2,
+        remarks="9AM-6PM",
+        is_fixed_requirement=True,
+        fixed_source="fixed.xlsx:DSC:5",
+        remark_requirements=interpret_remarks("9AM-6PM"),
+    )
+
+    requirements = course_remark_requirements(course)
+
+    assert requirements.needs_manual_review is True
+    assert "authoritative structured duration" in requirements.review_reason
+    assert not hard_enforceable_interpretations(requirements)
+
+
+def test_fixed_session_override_rows_show_authoritative_precedence() -> None:
+    """Official fixed placements that override remarks should be visible."""
+    source_course = Course(
+        module_code="MET2602",
+        activity="Laboratory",
+        prog_yr="DSC/YR 2",
+        class_size=40,
+        delivery_mode="f2f",
+        teaching_weeks=[8],
+        week_pattern="CUSTOM",
+        staff_ids=["AF"],
+        duration_hrs=2,
+        remarks="Tuesdays, 9am-11am",
+        source_file="2510_DSC.xlsx",
+        source_sheet="Module",
+        source_row=12,
+        remark_requirements=interpret_remarks("Tuesdays, 9am-11am"),
+    )
+    fixed_course = Course(
+        module_code="MET2602",
+        activity="Laboratory",
+        prog_yr="DSC/YR 2",
+        class_size=40,
+        delivery_mode="f2f",
+        teaching_weeks=[8],
+        week_pattern="CUSTOM",
+        staff_ids=["AF"],
+        duration_hrs=2,
+        is_fixed_requirement=True,
+        fixed_source="fixed.xlsx:DSC:5",
+    )
+    assignment = Assignment(
+        course=fixed_course,
+        room=Room("R1", 80, "physical"),
+        timeslot=TimeSlot("Friday", "09:00", 8),
+        is_fixed=True,
+        fixed_source="fixed.xlsx:DSC:5",
+    )
+
+    rows = fixed_session_override_rows([source_course], [assignment])
+
+    assert rows
+    assert rows[0]["applied status"] == "FIXED_SESSION_OVERRIDES_REMARK"
+    assert rows[0]["instruction treatment"] == "OVERRIDDEN_BY_STRUCTURED_FIXED_SESSION"
+    assert rows[0]["requested placement"] == "day Tuesday; time range 09:00-11:00"
+    assert rows[0]["override source"] == "fixed.xlsx:DSC:5"
 
 
 def test_multi_session_time_ranges_preserve_all_starts() -> None:
