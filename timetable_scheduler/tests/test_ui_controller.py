@@ -4,9 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 from threading import Event
+from types import SimpleNamespace
 
 from openpyxl import Workbook
 
+import ui.controller as controller_module
+from data.fixed_sessions import FixedSessionLoaderReport
+from data.models import Course, FixedSession
 from pipeline import PipelineOptions, PipelineResult
 from ui.controller import TimetableUIController, ValidationResult, build_default_ui_options
 
@@ -37,6 +41,8 @@ def make_result(tmp_path: Path) -> PipelineResult:
     """Create a small pipeline result for controller tests."""
     output_paths: dict[str, Path] = {}
     for key, filename in {
+        "proposed_timetable": "Proposed_Timetable.xlsx",
+        "submission_ready_timetable": "Template2_Submission_Ready.xlsx",
         "proposed_template2": "Template2.xlsx",
         "stakeholder_views": "stakeholder_views.xlsx",
         "run_summary": "run_summary.xlsx",
@@ -126,6 +132,7 @@ def test_build_default_ui_options_uses_validated_engineering_defaults(tmp_path: 
     assert options.scope == "eng"
     assert options.consolidated_schedule_path == input_file
     assert options.input_path is None
+    assert options.input_mode == "selected_workbook"
     assert options.room_path is None
     assert options.run_optimisation is True
     assert options.max_iterations == 5
@@ -178,13 +185,121 @@ def test_controller_calls_pipeline_service_with_valid_workbook(monkeypatch, tmp_
     assert messages == ["Loading input"]
 
 
+def test_fixed_readiness_is_scoped_to_selected_courses(monkeypatch) -> None:
+    """Bundled fixed sessions outside the selected workbook scope should not block UI validation."""
+    selected_course = Course(
+        module_code="DSC1001",
+        activity="Lecture",
+        prog_yr="DSC/YR 1",
+        class_size=80,
+        delivery_mode="online",
+        teaching_weeks=[1],
+        week_pattern="custom",
+        staff_ids=["T1"],
+        duration_hrs=2,
+    )
+    in_scope = FixedSession(
+        programme_year="DSC/YR 1",
+        module_code="DSC1001",
+        group_id="DSC/YR 1",
+        group_size=80,
+        day="Monday",
+        start_time="09:00",
+        duration_hours=2,
+        teaching_weeks=(1,),
+        locations=("ONLINE_ROOM",),
+        staff_ids=("T1",),
+        staff_names=("Tutor",),
+        source_file="fixed.xlsx",
+        source_sheet="DSC",
+        source_row=2,
+    )
+    out_of_scope = FixedSession(
+        programme_year="CVE/YR 1",
+        module_code="CVE1001",
+        group_id="CVE/YR 1",
+        group_size=80,
+        day="Monday",
+        start_time="09:00",
+        duration_hours=2,
+        teaching_weeks=(1,),
+        locations=("ROOM",),
+        staff_ids=("T2",),
+        staff_names=("Other",),
+        source_file="fixed.xlsx",
+        source_sheet="CVE",
+        source_row=3,
+    )
+    report = FixedSessionLoaderReport(
+        workbook_path="fixed.xlsx",
+        source_rows=2,
+        audit_rows=[
+            {
+                "source workbook": "fixed.xlsx",
+                "source sheet": "DSC",
+                "source row": 2,
+                "programme/year": "DSC/YR 1",
+                "module code": "DSC1001",
+                "loader status": "loaded",
+            },
+            {
+                "source workbook": "fixed.xlsx",
+                "source sheet": "CVE",
+                "source row": 3,
+                "programme/year": "CVE/YR 1",
+                "module code": "CVE1001",
+                "loader status": "loaded",
+            },
+        ],
+    )
+    captured: dict[str, list[str] | int] = {}
+
+    monkeypatch.setattr(controller_module, "load_rooms_from_csv", lambda path: [])
+    monkeypatch.setattr(controller_module, "load_fixed_sessions", lambda path: ([in_scope, out_of_scope], report))
+    monkeypatch.setattr(controller_module, "export_fixed_sessions_audit", lambda *args, **kwargs: None)
+    monkeypatch.setattr(controller_module, "export_fixed_reconciliation_report", lambda *args, **kwargs: None)
+    monkeypatch.setattr(controller_module, "export_input_readiness_report", lambda *args, **kwargs: None)
+    monkeypatch.setattr(controller_module, "export_fixed_issue_workbooks", lambda **kwargs: None)
+    monkeypatch.setattr(controller_module, "create_fixed_assignments", lambda sessions, rooms: ([], []))
+    monkeypatch.setattr(controller_module, "validate_fixed_assignments", lambda assignments: [])
+    monkeypatch.setattr(
+        controller_module,
+        "reconcile_fixed_sessions",
+        lambda sessions, courses, fixed_report: (
+            captured.update(
+                {
+                    "modules": [session.module_code for session in sessions],
+                    "audit_rows": len(fixed_report.audit_rows),
+                }
+            )
+            or SimpleNamespace()
+        ),
+    )
+    monkeypatch.setattr(
+        controller_module,
+        "build_guarded_generation_state",
+        lambda **kwargs: SimpleNamespace(global_errors=[], quarantined_requirements=[]),
+    )
+    monkeypatch.setattr(
+        controller_module,
+        "build_input_readiness_result",
+        lambda **kwargs: SimpleNamespace(ready=True, message="Input ready"),
+    )
+
+    status = TimetableUIController(file_opener=lambda path: None)._validate_fixed_readiness([selected_course])
+
+    assert status.valid
+    assert captured["modules"] == ["DSC1001"]
+    assert captured["audit_rows"] == 1
+
+
 def test_pipeline_result_maps_to_simple_display_values(tmp_path: Path) -> None:
     """Display labels should be concise and exclude technical report details."""
     controller = TimetableUIController(file_opener=lambda path: None)
 
     values = controller.display_values(make_result(tmp_path))
 
-    assert values["Coverage"] == "98.92%"
+    assert values["Coverage of schedulable classes"] == "98.92% schedulable"
     assert values["Scheduled classes"] == "2747"
     assert values["Classes needing review"] == "30 teaching occurrences require review"
     assert values["Hard conflicts"] == "No hard-constraint conflicts"
@@ -200,6 +315,7 @@ def test_friendly_output_keys_map_to_expected_files(tmp_path: Path) -> None:
 
     actions = controller.output_actions()
     assert actions["proposed_timetable"].description == "View the generated timetable ready for review."
+    assert actions["submission_ready_timetable"].output_key == "submission_ready_timetable"
     assert actions["programme_visuals"].label == "Open Programme Timetables"
     assert actions["tutor_visuals"].label == "Open Tutor Timetables"
     assert actions["room_visuals"].label == "Open Room Timetables"

@@ -591,6 +591,26 @@ Initial pre-reconciliation findings recorded for that task:
 - The final release must come from `main`.
 - The final release tag should be `v1.1.0` unless that tag already exists.
 
+## UI Scope, Output Integrity and Run Isolation Hotfix
+
+- The selected consolidated schedule defines the scope of a UI run.
+- Selecting one requirements workbook must not silently schedule the entire bundled Engineering dataset.
+- Fixed sessions may be included only when they belong to the selected scope.
+- The UI and CLI must use identical pipeline options and scope rules.
+- No hidden fallback to the full Engineering folder is allowed when a valid file was selected.
+- Coverage displayed by the UI must be calculated from the selected run only.
+- Proposed Timetable and Submission-Ready Template 2 are separate outputs.
+- Each UI button must open the exact path returned by the current pipeline run.
+- The UI must never use stale files found through broad filename searches.
+- Every run must have a unique run ID and isolated output directory.
+- Workbooks must be written atomically and reopened successfully before being reported as created.
+- An open or locked workbook must not cause a partially written or corrupted file.
+- Visual timetable exports must be limited to the current selected run.
+- Requirements and output workbooks must be detected structurally, not by filename.
+- The workbook with a `Module` requirements sheet is input.
+- The workbook with `Timetable`, `Course Code`, `Location`, `Staff`, and `Group` sheets is the Template 2 output template.
+- Do not mark a run successful until all reported output files pass integrity validation.
+
 ## Important Commands
 
 Run tests from inside the `timetable_scheduler` folder:

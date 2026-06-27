@@ -33,7 +33,7 @@ def test_selected_template1_path_reaches_course_loader(monkeypatch, tmp_path: Pa
     selected.write_text("placeholder", encoding="utf-8")
     captured: dict[str, Path] = {}
 
-    def fake_loader(path: Path, common_modules=None):
+    def fake_loader(path: Path, common_modules=None, **kwargs):
         captured["path"] = path
         return [make_course()], WorkbookDiagnostic(str(path), "Module", "parsed", "ok", rows_parsed=1)
 
@@ -63,7 +63,7 @@ def test_pipeline_keeps_template1_input_separate_from_template2_output_template(
     monkeypatch.setattr(
         pipeline,
         "load_consolidated_schedule_with_report",
-        lambda path, common_modules=None: (
+        lambda path, common_modules=None, **kwargs: (
             [course],
             WorkbookDiagnostic(str(path), "Module", "parsed", "ok", rows_parsed=1),
         ),
@@ -109,7 +109,7 @@ def test_pipeline_keeps_template1_input_separate_from_template2_output_template(
             scheduled_online_teaching_occurrences=0,
         ),
     )
-    monkeypatch.setattr(pipeline, "validate_release", lambda *args, **kwargs: SimpleNamespace(passed=True))
+    monkeypatch.setattr(pipeline, "_outputs_validate", lambda output_paths: True)
 
     pipeline.run_timetable_pipeline(
         pipeline.PipelineOptions(
@@ -125,4 +125,4 @@ def test_pipeline_keeps_template1_input_separate_from_template2_output_template(
     assert captured["manifest_template2_path"] == bundled_template2
     assert captured["manifest_metadata"]["input_workbook"] == str(selected_template1)
     assert captured["manifest_metadata"]["output_template"] == str(bundled_template2)
-    assert captured["manifest_outputs"]["timetable"] == generated_template2
+    assert captured["manifest_outputs"]["proposed_timetable"].name == "Proposed_Timetable.xlsx"

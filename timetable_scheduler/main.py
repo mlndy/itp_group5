@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 from time import perf_counter
 
 from config import (
@@ -417,13 +418,16 @@ def export_outputs(
     scope: str,
     template2_path=None,
     enable_remark_interpretation: bool = True,
+    output_dir=None,
+    timetable_filename: str | None = None,
 ) -> dict[str, object]:
     """Export timetable and violation reports for the selected scope."""
     template2_path = template2_path or DEFAULT_TEMPLATE2_FILE
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    target_dir = Path(output_dir) if output_dir is not None else OUTPUT_DIR
+    target_dir.mkdir(parents=True, exist_ok=True)
     suffix = "engineering_cluster" if scope == "eng" else "dsc"
-    timetable_path = OUTPUT_DIR / f"final_timetable_{suffix}.xlsx"
-    violation_path = OUTPUT_DIR / f"violation_report_{suffix}.xlsx"
+    timetable_path = target_dir / (timetable_filename or f"final_timetable_{suffix}.xlsx")
+    violation_path = target_dir / f"violation_report_{suffix}.xlsx"
     export_schedule(
         submission_assignments(assignments),
         timetable_path,
@@ -436,7 +440,7 @@ def export_outputs(
         enable_remark_interpretation=enable_remark_interpretation,
     )
     # Keep the original filenames for demo convenience when running DSC mode.
-    if scope == "dsc":
+    if scope == "dsc" and output_dir is None:
         export_schedule(
             submission_assignments(assignments),
             OUTPUT_DIR / "final_timetable.xlsx",

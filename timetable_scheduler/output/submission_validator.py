@@ -103,6 +103,7 @@ def export_submission_ready_schedule(
         output_path,
         template2_path=template2_path,
         enable_remark_interpretation=enable_remark_interpretation,
+        aggregate_teaching_weeks=True,
     )
 
 
