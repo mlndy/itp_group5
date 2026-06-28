@@ -13,6 +13,7 @@ from openpyxl.workbook.workbook import Workbook
 
 from config import (
     BASE_DIR,
+    DEFAULT_FIXED_SESSION_INTEGRITY_FILE,
     DEFAULT_GUARDED_GENERATION_REPORT_FILE,
     DEFAULT_PROGRAMME_VISUALS_FILE,
     DEFAULT_ROOM_VISUALS_FILE,
@@ -27,24 +28,28 @@ from config import (
 
 DEFAULT_TIMETABLE_FILE = OUTPUT_DIR / "final_timetable_engineering_cluster.xlsx"
 
-EXPECTED_MIN_TESTS = 257
+EXPECTED_MIN_TESTS = 283
 EXPECTED_TOTAL_TEACHING_OCCURRENCES = 3562
 EXPECTED_SCHEDULABLE_OCCURRENCES = 3160
 EXPECTED_QUARANTINED_OCCURRENCES = 402
-EXPECTED_SCHEDULED_OCCURRENCES = 3070
-EXPECTED_SEARCH_FAILURE_OCCURRENCES = 90
+EXPECTED_SCHEDULED_OCCURRENCES = 3046
+EXPECTED_SEARCH_FAILURE_OCCURRENCES = 114
 EXPECTED_SCHEDULED_HARD_VIOLATIONS = 0
-EXPECTED_PROPOSED_TIMETABLE_ROWS = 2868
-EXPECTED_TEMPLATE2_SUBMISSION_ROWS = 1183
-EXPECTED_TEMPLATE2_COMPLETE_PROGRAMME_YEARS = 30
+EXPECTED_PROPOSED_TIMETABLE_ROWS = 2838
+EXPECTED_TEMPLATE2_SUBMISSION_ROWS = 242
+EXPECTED_TEMPLATE2_COMPLETE_PROGRAMME_YEARS = 29
 EXPECTED_SUBMISSION_READY_PROGRAMME_YEARS = 23
 MIN_SUBMISSION_READY_PROGRAMME_YEARS = 20
-EXPECTED_PROGRAMME_VISUAL_SHEETS = 81
-EXPECTED_TUTOR_VISUAL_SHEETS = 225
+EXPECTED_PROGRAMME_VISUAL_SHEETS = 80
+EXPECTED_TUTOR_VISUAL_SHEETS = 221
 EXPECTED_ROOM_VISUAL_SHEETS = 43
-EXPECTED_PROGRAMME_VISUAL_ENTRIES = 3454
-EXPECTED_TUTOR_VISUAL_ENTRIES = 4255
-EXPECTED_ROOM_VISUAL_ENTRIES = 2367
+EXPECTED_PROGRAMME_VISUAL_ENTRIES = 608
+EXPECTED_TUTOR_VISUAL_ENTRIES = 554
+EXPECTED_ROOM_VISUAL_ENTRIES = 471
+EXPECTED_FIXED_SOURCE_ROWS = 250
+EXPECTED_FIXED_SOURCE_OCCURRENCES = 834
+EXPECTED_ANCHORED_FIXED_SOURCE_OCCURRENCES = 432
+EXPECTED_QUARANTINED_FIXED_SOURCE_OCCURRENCES = 402
 
 REQUIRED_RUN_SUMMARY_SHEETS = [
     "Summary",
@@ -82,6 +87,12 @@ REQUIRED_VISUAL_VALIDATION_SHEETS = [
     "Unexpected Visual Entries",
     "Overlap Validation",
     "Export Status",
+]
+REQUIRED_FIXED_INTEGRITY_SHEETS = [
+    "Summary",
+    "Fixed Source Integrity",
+    "Integrity Issues",
+    "Quarantined Fixed Sources",
 ]
 REQUIRED_TIMETABLE_SHEETS = ["Timetable"]
 REQUIRED_TIMETABLE_COLUMNS = [
@@ -130,6 +141,7 @@ class ReleaseEvidencePaths:
     guarded_report: Path = DEFAULT_GUARDED_GENERATION_REPORT_FILE
     template2_validation: Path = DEFAULT_TEMPLATE2_SUBMISSION_VALIDATION_FILE
     visual_validation: Path = DEFAULT_TIMETABLE_VISUALISATION_VALIDATION_FILE
+    fixed_integrity: Path = DEFAULT_FIXED_SESSION_INTEGRITY_FILE
     programme_visuals: Path = DEFAULT_PROGRAMME_VISUALS_FILE
     tutor_visuals: Path = DEFAULT_TUTOR_VISUALS_FILE
     room_visuals: Path = DEFAULT_ROOM_VISUALS_FILE
@@ -329,6 +341,24 @@ def _check_visual_validation(workbook: Workbook, failures: list[str]) -> None:
             failures.append(f"{label} is {actual}, expected {expected}")
 
 
+def _check_fixed_integrity(workbook: Workbook, failures: list[str]) -> None:
+    """Check fixed-session integrity evidence."""
+    summary = _sheet_dict(workbook, "Summary")
+    expected_values = {
+        "fixed source rows": (summary.get("fixed source rows"), EXPECTED_FIXED_SOURCE_ROWS),
+        "expected fixed teaching occurrences": (summary.get("expected fixed teaching occurrences"), EXPECTED_FIXED_SOURCE_OCCURRENCES),
+        "anchored fixed teaching occurrences": (summary.get("anchored fixed teaching occurrences"), EXPECTED_ANCHORED_FIXED_SOURCE_OCCURRENCES),
+        "quarantined fixed teaching occurrences": (summary.get("quarantined fixed teaching occurrences"), EXPECTED_QUARANTINED_FIXED_SOURCE_OCCURRENCES),
+        "missing fixed teaching occurrences": (summary.get("missing fixed teaching occurrences"), 0),
+        "placement mismatches": (summary.get("placement mismatches"), 0),
+        "scheduled hard violations on fixed assignments": (summary.get("scheduled hard violations on fixed assignments"), 0),
+        "fixed-session integrity status": (summary.get("fixed-session integrity status"), "PASS"),
+    }
+    for label, (actual, expected) in expected_values.items():
+        if actual != expected:
+            failures.append(f"{label} is {actual}, expected {expected}")
+
+
 def _check_timetable_workbook(workbook: Workbook, failures: list[str]) -> None:
     """Check proposed timetable workbook structure and row count."""
     _check_required_sheets(workbook, REQUIRED_TIMETABLE_SHEETS, "Timetable workbook", failures)
@@ -378,6 +408,7 @@ def validate_release(
     guarded_report_path: Path = DEFAULT_GUARDED_GENERATION_REPORT_FILE,
     template2_validation_path: Path = DEFAULT_TEMPLATE2_SUBMISSION_VALIDATION_FILE,
     visual_validation_path: Path = DEFAULT_TIMETABLE_VISUALISATION_VALIDATION_FILE,
+    fixed_integrity_path: Path = DEFAULT_FIXED_SESSION_INTEGRITY_FILE,
     programme_visuals_path: Path = DEFAULT_PROGRAMME_VISUALS_FILE,
     tutor_visuals_path: Path = DEFAULT_TUTOR_VISUALS_FILE,
     room_visuals_path: Path = DEFAULT_ROOM_VISUALS_FILE,
@@ -393,6 +424,7 @@ def validate_release(
     guarded_report = _load_workbook(guarded_report_path, failures)
     template2_validation = _load_workbook(template2_validation_path, failures)
     visual_validation = _load_workbook(visual_validation_path, failures)
+    fixed_integrity = _load_workbook(fixed_integrity_path, failures)
     _load_workbook(programme_visuals_path, failures)
     _load_workbook(tutor_visuals_path, failures)
     _load_workbook(room_visuals_path, failures)
@@ -429,6 +461,16 @@ def validate_release(
         if "Summary" in visual_validation.sheetnames:
             _check_visual_validation(visual_validation, failures)
 
+    if fixed_integrity is not None:
+        _check_required_sheets(
+            fixed_integrity,
+            REQUIRED_FIXED_INTEGRITY_SHEETS,
+            "fixed_session_integrity_validation.xlsx",
+            failures,
+        )
+        if "Summary" in fixed_integrity.sheetnames:
+            _check_fixed_integrity(fixed_integrity, failures)
+
     if timetable is not None:
         _check_timetable_workbook(timetable, failures)
     if stakeholder_views is not None:
@@ -449,6 +491,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--guarded-report", type=Path, default=DEFAULT_GUARDED_GENERATION_REPORT_FILE)
     parser.add_argument("--template2-validation", type=Path, default=DEFAULT_TEMPLATE2_SUBMISSION_VALIDATION_FILE)
     parser.add_argument("--visual-validation", type=Path, default=DEFAULT_TIMETABLE_VISUALISATION_VALIDATION_FILE)
+    parser.add_argument("--fixed-session-integrity", type=Path, default=DEFAULT_FIXED_SESSION_INTEGRITY_FILE)
     parser.add_argument("--programme-visuals", type=Path, default=DEFAULT_PROGRAMME_VISUALS_FILE)
     parser.add_argument("--tutor-visuals", type=Path, default=DEFAULT_TUTOR_VISUALS_FILE)
     parser.add_argument("--room-visuals", type=Path, default=DEFAULT_ROOM_VISUALS_FILE)
@@ -467,6 +510,7 @@ def main(argv: list[str] | None = None) -> int:
         args.guarded_report,
         args.template2_validation,
         args.visual_validation,
+        args.fixed_session_integrity,
         args.programme_visuals,
         args.tutor_visuals,
         args.room_visuals,

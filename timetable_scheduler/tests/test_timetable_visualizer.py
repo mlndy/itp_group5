@@ -121,8 +121,8 @@ def test_lane_allocation_separates_overlaps_and_reuses_free_lanes() -> None:
     assert lanes == allocate_lanes([first, overlapping, later])
 
 
-def test_disjoint_week_same_time_can_share_lane() -> None:
-    """Same-time entries in different weeks should not create unnecessary lanes."""
+def test_disjoint_week_same_time_uses_separate_visual_lanes() -> None:
+    """Same-time entries in different weeks must remain visible in Excel."""
     week_one = build_programme_visual_entries([make_assignment(week=1)], programme_rows())[0]
     week_two = build_programme_visual_entries(
         [make_assignment(course=make_course(module_code="ENG2001"), week=2)],
@@ -131,7 +131,30 @@ def test_disjoint_week_same_time_can_share_lane() -> None:
 
     lanes = allocate_lanes([week_one, week_two])
 
-    assert len(set(lanes.values())) == 1
+    assert lanes[week_one.assignment_id] != lanes[week_two.assignment_id]
+
+
+def test_export_handles_partially_overlapping_disjoint_weeks(tmp_path: Path) -> None:
+    """Disjoint-week partial overlaps should not collide with merged cells."""
+    first = make_assignment(week=1, start="09:00")
+    overlapping = make_assignment(
+        course=make_course(module_code="ENG2001", teaching_weeks=[2]),
+        week=2,
+        start="09:30",
+    )
+
+    result = export_timetable_visuals(
+        assignments=[first, overlapping],
+        rooms=[first.room],
+        programme_rows=[{"Programme/Year": "ENG/Y1", "Valid Exported Rows": 2}],
+        programme_path=tmp_path / "Programme_Timetable_Visuals.xlsx",
+        tutor_path=tmp_path / "Tutor_Timetable_Visuals.xlsx",
+        room_path=tmp_path / "Room_Timetable_Visuals.xlsx",
+        validation_path=tmp_path / "timetable_visualisation_validation.xlsx",
+    )
+
+    assert result.status == "PASS"
+    assert result.programme_entries == 2
 
 
 def test_aggregate_visual_entries_combines_recurring_weeks() -> None:

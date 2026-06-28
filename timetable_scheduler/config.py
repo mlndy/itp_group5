@@ -39,6 +39,7 @@ DEFAULT_LOCATION_MAPPING_EVIDENCE_FILE = GENERATED_DIR / "location_mapping_evide
 DEFAULT_SUPERVISOR_CLARIFICATION_PACK_FILE = GENERATED_DIR / "Supervisor_Fixed_Session_Clarification_Pack.xlsx"
 DEFAULT_FIXED_RESOLUTION_TEMPLATE_FILE = GENERATED_DIR / "fixed_session_resolution_template.xlsx"
 DEFAULT_FIXED_RESOLUTION_AUDIT_FILE = GENERATED_DIR / "fixed_session_resolution_audit.xlsx"
+DEFAULT_FIXED_SESSION_INTEGRITY_FILE = GENERATED_DIR / "fixed_session_integrity_validation.xlsx"
 DEFAULT_GUARDED_GENERATION_REPORT_FILE = GENERATED_DIR / "guarded_generation_report.xlsx"
 DEFAULT_TEMPLATE2_SUBMISSION_FILE = OUTPUT_DIR / "Template2_Submission_Ready.xlsx"
 DEFAULT_TEMPLATE2_SUBMISSION_VALIDATION_FILE = GENERATED_DIR / "template2_submission_validation.xlsx"

@@ -168,6 +168,31 @@ def _create_visual_validation(path: Path, *, status: str = "PASS", missing: int 
     workbook.save(path)
 
 
+def _create_fixed_integrity(path: Path, *, status: str = "PASS", mismatches: int = 0) -> None:
+    """Create a minimal fixed-session integrity workbook."""
+    workbook = Workbook()
+    _add_metric_sheet(
+        workbook,
+        "Summary",
+        [
+            ("fixed source rows", validate_release.EXPECTED_FIXED_SOURCE_ROWS),
+            ("expected fixed teaching occurrences", validate_release.EXPECTED_FIXED_SOURCE_OCCURRENCES),
+            ("anchored fixed teaching occurrences", validate_release.EXPECTED_ANCHORED_FIXED_SOURCE_OCCURRENCES),
+            ("quarantined fixed teaching occurrences", validate_release.EXPECTED_QUARANTINED_FIXED_SOURCE_OCCURRENCES),
+            ("missing fixed teaching occurrences", 0),
+            ("placement mismatches", mismatches),
+            ("scheduled hard violations on fixed assignments", 0),
+            ("fixed-session integrity status", status),
+        ],
+    )
+    for sheet in validate_release.REQUIRED_FIXED_INTEGRITY_SHEETS:
+        if sheet not in workbook.sheetnames:
+            created = workbook.create_sheet(sheet)
+            created.append(["Value"])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    workbook.save(path)
+
+
 def _create_timetable(path: Path) -> None:
     """Create a minimal Template 2-style proposed timetable workbook."""
     workbook = Workbook()
@@ -235,6 +260,7 @@ def _create_release_workbooks(tmp_path: Path) -> dict[str, Path]:
         "guarded_report": tmp_path / "guarded_generation_report.xlsx",
         "template2_validation": tmp_path / "template2_submission_validation.xlsx",
         "visual_validation": tmp_path / "timetable_visualisation_validation.xlsx",
+        "fixed_integrity": tmp_path / "fixed_session_integrity_validation.xlsx",
         "programme_visuals": tmp_path / "Programme_Timetable_Visuals.xlsx",
         "tutor_visuals": tmp_path / "Tutor_Timetable_Visuals.xlsx",
         "room_visuals": tmp_path / "Room_Timetable_Visuals.xlsx",
@@ -246,6 +272,7 @@ def _create_release_workbooks(tmp_path: Path) -> dict[str, Path]:
     _create_guarded_report(paths["guarded_report"])
     _create_template2_validation(paths["template2_validation"])
     _create_visual_validation(paths["visual_validation"])
+    _create_fixed_integrity(paths["fixed_integrity"])
     _create_workbook(paths["programme_visuals"])
     _create_workbook(paths["tutor_visuals"])
     _create_workbook(paths["room_visuals"])
@@ -262,6 +289,7 @@ def _validate(paths: dict[str, Path], *, test_root: Path | None = None) -> valid
         paths["guarded_report"],
         paths["template2_validation"],
         paths["visual_validation"],
+        paths["fixed_integrity"],
         paths["programme_visuals"],
         paths["tutor_visuals"],
         paths["room_visuals"],
@@ -367,6 +395,17 @@ def test_visual_validation_failure_produces_fail(tmp_path: Path) -> None:
 
     assert not result.passed
     assert any("visual export status" in failure or "missing entries" in failure for failure in result.failures)
+
+
+def test_fixed_integrity_failure_produces_fail(tmp_path: Path) -> None:
+    """Fixed-session integrity evidence must pass."""
+    paths = _create_release_workbooks(tmp_path)
+    _create_fixed_integrity(paths["fixed_integrity"], status="FAIL", mismatches=1)
+
+    result = _validate(paths)
+
+    assert not result.passed
+    assert any("fixed-session integrity status" in failure or "placement mismatches" in failure for failure in result.failures)
 
 
 def test_normal_test_suite_size_is_checked(tmp_path: Path) -> None:

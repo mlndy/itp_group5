@@ -11,7 +11,6 @@ from pathlib import Path
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
-from openpyxl.worksheet.table import Table, TableStyleInfo
 
 from config import EARLIEST_START_HOUR, LATEST_END_HOUR, VALID_DAYS
 from data.models import Assignment, Room
@@ -670,16 +669,6 @@ def _write_table(sheet, columns: list[str], rows: object, start_row: int = 1) ->
         for column_index, header in enumerate(columns, start=1):
             value = row.get(header, "") if isinstance(row, dict) else ""
             sheet.cell(row=start_row + row_offset, column=column_index, value=value)
-    if columns:
-        end_row = max(start_row + len(row_list), start_row + 1)
-        table_ref = f"A{start_row}:{get_column_letter(len(columns))}{end_row}"
-        table_name = _safe_table_name(f"{sheet.title}_{start_row}")
-        table = Table(displayName=table_name, ref=table_ref)
-        table.tableStyleInfo = TableStyleInfo(name="TableStyleMedium2", showRowStripes=True, showColumnStripes=False)
-        try:
-            sheet.add_table(table)
-        except ValueError:
-            pass
     sheet.freeze_panes = f"A{start_row + 1}"
     sheet.auto_filter.ref = f"A{start_row}:{get_column_letter(len(columns))}{max(start_row + len(row_list), start_row)}"
 
@@ -1151,7 +1140,7 @@ def _weeks_overlap(left: VisualTimetableEntry, right: VisualTimetableEntry) -> b
 
 def _entries_conflict_for_lane(left: VisualTimetableEntry, right: VisualTimetableEntry) -> bool:
     """Return True when two visual blocks need separate day lanes."""
-    return _clock_overlaps(left, right) and _weeks_overlap(left, right)
+    return _clock_overlaps(left, right)
 
 
 def _entry_sort_key(entry: VisualTimetableEntry) -> tuple[object, ...]:
@@ -1380,15 +1369,6 @@ def _capacity_status(room: Room | None) -> str:
 def _weeks_text(weeks: tuple[int, ...]) -> str:
     """Return compact teaching-week text."""
     return ", ".join(str(week) for week in weeks)
-
-
-def _safe_table_name(value: str) -> str:
-    """Return a safe Excel table display name."""
-    cleaned = re.sub(r"[^A-Za-z0-9_]", "_", value)
-    cleaned = re.sub(r"_+", "_", cleaned).strip("_")
-    if not cleaned or not cleaned[0].isalpha():
-        cleaned = f"T_{cleaned}"
-    return cleaned[:240]
 
 
 def _sheet_prefix(entity_type: str) -> str:

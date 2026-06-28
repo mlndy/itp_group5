@@ -16,6 +16,7 @@ from config import (
     DEFAULT_FIXED_RESOLUTION_TEMPLATE_FILE,
     DEFAULT_FIXED_ROOT_CAUSE_FILE,
     DEFAULT_FIXED_SESSION_FILE,
+    DEFAULT_FIXED_SESSION_INTEGRITY_FILE,
     DEFAULT_FIXED_SESSIONS_AUDIT_FILE,
     DEFAULT_GUARDED_GENERATION_REPORT_FILE,
     DEFAULT_INPUT_READINESS_REPORT_FILE,
@@ -79,6 +80,7 @@ from generator.scheduler import generate_schedule
 from generator.fixed_scheduler import create_fixed_assignments, validate_fixed_assignments
 from optimiser.local_search import optimise_schedule, optimise_schedule_with_stats
 from output.exporter import export_schedule, export_violations
+from output.fixed_session_integrity import export_fixed_session_integrity_report
 from output.report_exporter import export_preflight_report, export_run_manifest, export_run_summary, export_stakeholder_views
 from output.submission_validator import (
     export_submission_ready_schedule,
@@ -764,8 +766,15 @@ def main() -> None:
             DEFAULT_TEMPLATE2_FILE,
         )
         export_template2_validation_report(template2_validation, DEFAULT_TEMPLATE2_SUBMISSION_VALIDATION_FILE)
+        export_fixed_session_integrity_report(
+            fixed_sessions,
+            final_schedule,
+            DEFAULT_FIXED_SESSION_INTEGRITY_FILE,
+            guarded_state.quarantined_requirements if guarded_state is not None else [],
+        )
         print(f"Saved: {DEFAULT_TEMPLATE2_SUBMISSION_FILE}")
         print(f"Saved: {DEFAULT_TEMPLATE2_SUBMISSION_VALIDATION_FILE}")
+        print(f"Saved: {DEFAULT_FIXED_SESSION_INTEGRITY_FILE}")
         print(f"Template 2 submission readiness: {'PASS' if template2_validation.ready else 'FAIL'}")
         if guarded_state is not None:
             programme_completeness_rows = build_programme_completeness_rows(
@@ -792,6 +801,7 @@ def main() -> None:
             print(f"Saved: {DEFAULT_GUARDED_GENERATION_REPORT_FILE}")
         output_paths["submission_ready_timetable"] = DEFAULT_TEMPLATE2_SUBMISSION_FILE
         output_paths["template2_submission_validation"] = DEFAULT_TEMPLATE2_SUBMISSION_VALIDATION_FILE
+        output_paths["fixed_session_integrity"] = DEFAULT_FIXED_SESSION_INTEGRITY_FILE
         output_paths["guarded_generation_report"] = DEFAULT_GUARDED_GENERATION_REPORT_FILE
     output_paths.update(
         {

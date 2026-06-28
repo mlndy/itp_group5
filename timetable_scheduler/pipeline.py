@@ -93,6 +93,7 @@ from main import (
     export_outputs,
 )
 from optimiser.local_search import optimise_schedule_with_stats
+from output.fixed_session_integrity import export_fixed_session_integrity_report
 from output.report_exporter import export_preflight_report, export_run_manifest, export_run_summary, export_stakeholder_views
 from output.submission_validator import (
     export_submission_ready_schedule,
@@ -261,6 +262,7 @@ def _run_paths(run_dir: Path) -> dict[str, Path]:
         "supervisor_clarification_pack": run_dir / "Supervisor_Fixed_Session_Clarification_Pack.xlsx",
         "fixed_resolution_template": run_dir / "fixed_session_resolution_template.xlsx",
         "fixed_resolution_audit": run_dir / "fixed_session_resolution_audit.xlsx",
+        "fixed_session_integrity": run_dir / "fixed_session_integrity_validation.xlsx",
         "run_summary": run_dir / "run_summary.xlsx",
         "stakeholder_views": run_dir / "stakeholder_views.xlsx",
         "remarks_audit": run_dir / "remarks_audit.xlsx",
@@ -304,6 +306,7 @@ def _outputs_validate(output_paths: dict[str, Path]) -> bool:
         "run_manifest",
         "guarded_generation_report",
         "template2_submission_validation",
+        "fixed_session_integrity",
         "programme_visuals",
         "tutor_visuals",
         "room_visuals",
@@ -618,6 +621,12 @@ def run_timetable_pipeline(
             options.template2_output_template_path,
         )
         export_template2_validation_report(template2_validation, paths["template2_submission_validation"])
+        export_fixed_session_integrity_report(
+            fixed_sessions,
+            final_schedule,
+            paths["fixed_session_integrity"],
+            guarded_state.quarantined_requirements if guarded_state is not None else [],
+        )
         if guarded_state is not None:
             programme_rows = build_programme_completeness_rows(
                 demand_courses,
@@ -642,6 +651,7 @@ def run_timetable_pipeline(
             )
         output_paths["submission_ready_timetable"] = paths["submission_ready_timetable"]
         output_paths["template2_submission_validation"] = paths["template2_submission_validation"]
+        output_paths["fixed_session_integrity"] = paths["fixed_session_integrity"]
         output_paths["guarded_generation_report"] = paths["guarded_generation_report"]
     output_paths.update(
         {
@@ -664,6 +674,7 @@ def run_timetable_pipeline(
         output_paths["supervisor_clarification_pack"] = paths["supervisor_clarification_pack"]
         output_paths["fixed_resolution_template"] = paths["fixed_resolution_template"]
         output_paths["fixed_resolution_audit"] = paths["fixed_resolution_audit"]
+        output_paths["fixed_session_integrity"] = paths["fixed_session_integrity"]
         output_paths["guarded_generation_report"] = paths["guarded_generation_report"]
     if not options.skip_unscheduled_diagnostics:
         output_paths["unscheduled_diagnostics"] = paths["unscheduled_diagnostics"]

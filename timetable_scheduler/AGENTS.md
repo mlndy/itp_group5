@@ -36,28 +36,30 @@ The core prototype is complete through:
 
 Current validated v1.1 result:
 
-- Tests: `259 passed`
+- Tests: `283 passed`
 - Release validator: `PASS`
 - Engineering controlled demo: runs successfully with `0` scheduled hard-constraint violations
 - Total teaching occurrences: `3562`
 - Schedulable occurrences: `3160`
 - Quarantined input occurrences: `402`
-- Scheduled occurrences: `3070`
-- Scheduler search failures: `90`
-- Coverage of schedulable demand: `97.15%`
-- Coverage of total recorded demand: `86.19%`
-- Proposed timetable rows: `2868`
-- Submission-ready Template 2 rows: `1183`
+- Scheduled occurrences: `3046`
+- Scheduler search failures: `114`
+- Coverage of schedulable demand: `96.39%`
+- Coverage of total recorded demand: `85.51%`
+- Proposed timetable rows: `2838`
+- Submission-ready Template 2 populated rows: `242`
 - Template 2 invalid rows: `0`
-- Template 2 complete programme-years: `30`
+- Template 2 complete programme-years: `29`
 - Submission-ready programme-years: `23`
 - Template 2 readiness: `PASS`
-- Programme visual sheets: `81`
-- Tutor visual sheets: `225`
+- Programme visual sheets: `80`
+- Tutor visual sheets: `221`
 - Room visual sheets: `43`
 - Visual export status: `PASS`
+- Fixed-session integrity status: `PASS`
+- Microsoft Excel desktop open check: `PASS`
 
-The `86.19%` total-recorded-demand coverage includes quarantined source records and must not be presented as the algorithm's scheduling success rate. The primary scheduling-performance metric is `97.15%` coverage of schedulable demand.
+The `85.51%` total-recorded-demand coverage includes quarantined source records and must not be presented as the algorithm's scheduling success rate. The primary scheduling-performance metric is `96.39%` coverage of schedulable demand.
 
 The earlier pre-fixed-session v1.0 baseline had `2777` required occurrences, `2747` scheduled occurrences, `30` unscheduled occurrences, and `98.92%` coverage. Treat those values as historical development evidence only.
 
@@ -147,12 +149,13 @@ Preflight, run summary, guarded-generation, Template 2 validation, run manifest 
 - Excel sheet names must remain within `31` characters.
 - Generated visual workbooks remain ignored release outputs unless intentionally packaged.
 - Current visualisation validation:
-  - Tests: `259 passed`
-  - Programme visual sheets: `81`
-  - Tutor visual sheets: `225`
+  - Tests: `283 passed`
+  - Programme visual sheets: `80`
+  - Tutor visual sheets: `221`
   - Room visual sheets: `43`
   - Visual export status: `PASS`
   - Scheduled hard violations remain `0`
+  - Microsoft Excel desktop open check: `PASS`
 
 ## Final Integration and Release v1.1
 
@@ -173,15 +176,17 @@ Preflight, run summary, guarded-generation, Template 2 validation, run manifest 
   - Total teaching occurrences: `3562`
   - Schedulable occurrences: `3160`
   - Quarantined input occurrences: `402`
-  - Scheduled occurrences: `3070`
-  - Scheduler search failures: `90`
+  - Scheduled occurrences: `3046`
+  - Scheduler search failures: `114`
   - Scheduled hard-constraint violations: `0`
-  - Coverage of schedulable demand: `97.15%`
-  - Coverage of total recorded demand: `86.19%`
-  - Proposed timetable rows: `2868`
-  - Submission-ready Template 2 rows: `1183`
+  - Coverage of schedulable demand: `96.39%`
+  - Coverage of total recorded demand: `85.51%`
+  - Proposed timetable rows: `2838`
+  - Submission-ready Template 2 populated rows: `242`
   - Submission-ready programme-years: `23`
   - Visual export status: `PASS`
+  - Fixed-session integrity status: `PASS`
+  - Microsoft Excel desktop open check: `PASS`
 
 ## Coding Rules
 
@@ -471,13 +476,15 @@ For Engineering scope:
   - Total teaching occurrences: `3562`
   - Schedulable occurrences: `3160`
   - Quarantined input occurrences: `402`
-  - Scheduled occurrences: `3070`
-  - Scheduler search failures: `90`
-  - Coverage of schedulable demand: `97.15%`
-  - Coverage of total recorded demand: `86.19%`
+  - Scheduled occurrences: `3046`
+  - Scheduler search failures: `114`
+  - Coverage of schedulable demand: `96.39%`
+  - Coverage of total recorded demand: `85.51%`
   - Scheduled hard-constraint violations: `0`
   - Template 2 readiness: `PASS`
   - Visual export status: `PASS`
+  - Fixed-session integrity status: `PASS`
+  - Microsoft Excel desktop open check: `PASS`
 - DSC inclusion: `PASS`.
 - Quarantined input records and scheduler search failures must remain visible.
 - Controlled optimiser evidence:
@@ -634,6 +641,23 @@ Initial pre-reconciliation findings recorded for that task:
 - A recognised explicit duration must either be enforced or produce a review issue.
 - Scheduled output must never contradict a recognised hard instruction without explanation.
 
+## Final Engineering Validation and Release Freeze
+
+- The final assessment result must come from the full Engineering dataset.
+- The selected DSC workbook is a functional smoke test, not the primary project result.
+- Full Engineering validation must use the latest remark, duration and fixed-session logic.
+- Old Engineering metrics must not be assumed unchanged.
+- Fixed sessions must remain at their authoritative day, time, duration, weeks, room and staff.
+- Free-text remarks cannot override official structured fixed sessions.
+- Any fixed-session override must remain visible in audit evidence.
+- Scheduled hard violations must remain zero.
+- Quarantined input, unresolved requirement rows and scheduler placement failures must remain separate metrics.
+- Template 2 must preserve its official workbook structure.
+- At least `20` submission-ready programme-year schedules are mandatory.
+- Visual outputs are supplementary and must reconcile with the final scheduled assignments.
+- No release is permitted until the final workbooks open successfully in Microsoft Excel.
+- After this phase, freeze scheduler behaviour and move to academic deliverables.
+
 ## Important Commands
 
 Run tests from inside the `timetable_scheduler` folder:
@@ -646,7 +670,7 @@ py -m pytest -q
 Expected result:
 
 ```text
-259 passed
+283 passed
 ```
 
 Run DSC demo:
@@ -673,11 +697,13 @@ Expected key result for the final v1.1 run:
 Total teaching occurrences: 3562
 Schedulable occurrences: 3160
 Quarantined input occurrences: 402
-Scheduled occurrences: 3070
-Scheduler search failures: 90
+Scheduled occurrences: 3046
+Scheduler search failures: 114
 Scheduled hard-constraint violations: 0
 Template 2 readiness: PASS
 Visual export status: PASS
+Fixed-session integrity status: PASS
+Microsoft Excel desktop open check: PASS
 ```
 
 These v1.1 metrics must remain stable during release documentation and packaging. If a new full validation run changes them, stop and explain the evidence before updating any report.
