@@ -12,51 +12,52 @@ The final validated branch also includes guarded fixed-session handling and prog
 Total teaching occurrences: 3562
 Schedulable occurrences: 3160
 Quarantined input occurrences: 402
-Scheduled occurrences: 3070
-Scheduler search failures: 90
+Scheduled occurrences: 3046
+Scheduler search failures: 114
 Scheduled hard-constraint violations: 0
 ```
 
 Coverage of schedulable demand:
 
 ```text
-3070 / 3160 = 97.15%
+3046 / 3160 = 96.39%
 ```
 
 Coverage of total recorded demand:
 
 ```text
-3070 / 3562 = 86.19%
+3046 / 3562 = 85.51%
 ```
 
-The `86.19%` total-demand coverage includes source records that were quarantined because they were incomplete, ambiguous or conflicting. It should not be presented as the scheduler's algorithmic success rate. The primary scheduling-performance measure is `97.15%` coverage of schedulable demand.
+The `85.51%` total-demand coverage includes source records that were quarantined because they were incomplete, ambiguous or conflicting. It should not be presented as the scheduler's algorithmic success rate. The primary scheduling-performance measure is `96.39%` coverage of schedulable demand.
 
 Quarantined input records are not hidden and are not counted as algorithm search failures. They remain in generated evidence for staff review.
 
 ## Output Metrics
 
 ```text
-Proposed timetable rows: 2868
-Submission-ready Template 2 rows: 1183
+Proposed timetable rows: 2838
+All-valid scheduled Template 2 rows: 2817
+Submission-ready Template 2 rows: 242
 Template 2 invalid rows: 0
-Template 2 complete programme-years: 30
-Submission-ready programme-years: 23
+Template 2 complete programme-years: 29
+Submission-ready programme-years: 22
 Minimum required programme-year schedules: 20
 Template 2 readiness: PASS
 ```
 
-`Template 2 complete programme-years` counts programme-year schedules that are complete in the generated coverage analysis. `Submission-ready programme-years` is stricter: it counts complete schedules that also have valid submission rows and are included in the submission-ready Template 2 workbook.
+`Template 2 complete programme-years` counts programme-year schedules that are complete in the generated coverage analysis. `Submission-ready programme-years` is stricter: it counts valid programme-years from the actual saved `Template2_Submission_Ready.xlsx` Timetable sheet.
 
 ## Visualisation Metrics
 
 ```text
-Programme visual sheets: 81
-Tutor visual sheets: 225
+Programme visual sheets: 80
+Tutor visual sheets: 221
 Room visual sheets: 43
 
-Programme visual entries: 3454
-Tutor visual entries: 4255
-Room visual entries: 2367
+Programme visual entries: 608
+Tutor visual entries: 554
+Room visual entries: 471
 
 Missing visual entries: 0
 Unexpected visual entries: 0
@@ -73,9 +74,12 @@ The final metrics are validated through local generated evidence:
 - `timetable_scheduler/generated/run_summary.xlsx`
 - `timetable_scheduler/generated/guarded_generation_report.xlsx`
 - `timetable_scheduler/generated/template2_submission_validation.xlsx`
+- `timetable_scheduler/generated/template2_programme_year_reconciliation.xlsx`
+- `timetable_scheduler/generated/template2_exclusion_audit.xlsx`
 - `timetable_scheduler/generated/timetable_visualisation_validation.xlsx`
 - `timetable_scheduler/generated/run_manifest.xlsx`
 - `timetable_scheduler/output_files/final_timetable_engineering_cluster.xlsx`
+- `timetable_scheduler/output_files/Template2_All_Valid_Scheduled_Rows.xlsx`
 - `timetable_scheduler/output_files/Template2_Submission_Ready.xlsx`
 - `timetable_scheduler/output_files/Programme_Timetable_Visuals.xlsx`
 - `timetable_scheduler/output_files/Tutor_Timetable_Visuals.xlsx`

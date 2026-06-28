@@ -67,31 +67,32 @@ Use this checklist before final v1.1 submission and GitHub release.
 Total teaching occurrences: 3562
 Schedulable occurrences: 3160
 Quarantined input occurrences: 402
-Scheduled occurrences: 3070
-Scheduler search failures: 90
+Scheduled occurrences: 3046
+Scheduler search failures: 114
 Scheduled hard-constraint violations: 0
 ```
 
 - [ ] Template 2 validation matches:
 
 ```text
-Proposed timetable rows: 2868
-Submission-ready Template 2 rows: 1183
+Proposed timetable rows: 2838
+All-valid scheduled Template 2 rows: 2817
+Submission-ready Template 2 rows: 242
 Template 2 invalid rows: 0
-Template 2 complete programme-years: 30
-Submission-ready programme-years: 23
+Template 2 complete programme-years: 29
+Submission-ready programme-years: 22
 Template 2 readiness: PASS
 ```
 
 - [ ] Visual timetable validation matches:
 
 ```text
-Programme visual sheets: 81
-Tutor visual sheets: 225
+Programme visual sheets: 80
+Tutor visual sheets: 221
 Room visual sheets: 43
-Programme visual entries: 3454
-Tutor visual entries: 4255
-Room visual entries: 2367
+Programme visual entries: 608
+Tutor visual entries: 554
+Room visual entries: 471
 Missing visual entries: 0
 Unexpected visual entries: 0
 Invalid overlaps: 0

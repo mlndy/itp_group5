@@ -36,7 +36,7 @@ The core prototype is complete through:
 
 Current validated v1.1 result:
 
-- Tests: `283 passed`
+- Tests: `291 passed`
 - Release validator: `PASS`
 - Engineering controlled demo: runs successfully with `0` scheduled hard-constraint violations
 - Total teaching occurrences: `3562`
@@ -50,7 +50,7 @@ Current validated v1.1 result:
 - Submission-ready Template 2 populated rows: `242`
 - Template 2 invalid rows: `0`
 - Template 2 complete programme-years: `29`
-- Submission-ready programme-years: `23`
+- Submission-ready programme-years: `22`
 - Template 2 readiness: `PASS`
 - Programme visual sheets: `80`
 - Tutor visual sheets: `221`
@@ -63,7 +63,7 @@ The `85.51%` total-recorded-demand coverage includes quarantined source records 
 
 The earlier pre-fixed-session v1.0 baseline had `2777` required occurrences, `2747` scheduled occurrences, `30` unscheduled occurrences, and `98.92%` coverage. Treat those values as historical development evidence only.
 
-Preflight, run summary, guarded-generation, Template 2 validation, run manifest and visualisation validation reports should be preserved.
+Preflight, run summary, guarded-generation, Template 2 validation, Template 2 programme-year reconciliation, Template 2 exclusion audit, run manifest and visualisation validation reports should be preserved.
 
 ## Additional DSC2204 Requirements - June 26
 
@@ -149,7 +149,7 @@ Preflight, run summary, guarded-generation, Template 2 validation, run manifest 
 - Excel sheet names must remain within `31` characters.
 - Generated visual workbooks remain ignored release outputs unless intentionally packaged.
 - Current visualisation validation:
-  - Tests: `283 passed`
+  - Tests: `291 passed`
   - Programme visual sheets: `80`
   - Tutor visual sheets: `221`
   - Room visual sheets: `43`
@@ -183,7 +183,7 @@ Preflight, run summary, guarded-generation, Template 2 validation, run manifest 
   - Coverage of total recorded demand: `85.51%`
   - Proposed timetable rows: `2838`
   - Submission-ready Template 2 populated rows: `242`
-  - Submission-ready programme-years: `23`
+  - Submission-ready programme-years: `22`
   - Visual export status: `PASS`
   - Fixed-session integrity status: `PASS`
   - Microsoft Excel desktop open check: `PASS`
@@ -235,6 +235,17 @@ For Engineering scope:
 - Do not claim improvement using scheduled count alone unless the total assignment pool is the same.
 - Preserve `preflight_report.xlsx` and `run_summary.xlsx`.
 - Scenario comparison is still on hold.
+
+## Template 2 All-Years Completeness Hotfix
+
+- Template 2 must contain all valid scheduled programme-year rows, not only Year 1.
+- One unresolved requirement must not silently remove all other valid rows from that programme-year.
+- Programme-year readiness and row export are separate decisions.
+- The actual saved `Timetable` sheet is the source of truth for programme-year counts.
+- Validation must not count programme-years from proposed timetable data, visual sheets, support sheets or internal records.
+- Year formats must be normalised consistently.
+- Template 2 readiness cannot pass unless the actual saved workbook contains at least `20` valid programme-year schedules.
+- No release is allowed until the saved workbook is inspected directly.
 
 ## Explainable Remarks Interpretation
 

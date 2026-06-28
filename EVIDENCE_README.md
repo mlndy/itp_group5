@@ -30,23 +30,24 @@ Template 2 readiness and visual export validation both passed in the final v1.1 
 Total teaching occurrences: 3562
 Schedulable occurrences: 3160
 Quarantined input occurrences: 402
-Scheduled occurrences: 3070
-Scheduler search failures: 90
+Scheduled occurrences: 3046
+Scheduler search failures: 114
 Scheduled hard-constraint violations: 0
-Coverage of schedulable demand: 3070 / 3160 = 97.15%
-Coverage of total recorded demand: 3070 / 3562 = 86.19%
+Coverage of schedulable demand: 3046 / 3160 = 96.39%
+Coverage of total recorded demand: 3046 / 3562 = 85.51%
 ```
 
-The `86.19%` total-recorded-demand coverage includes quarantined source records. The primary scheduling-performance measure is `97.15%` coverage of schedulable demand.
+The `85.51%` total-recorded-demand coverage includes quarantined source records. The primary scheduling-performance measure is `96.39%` coverage of schedulable demand.
 
 ## Template 2 Metrics
 
 ```text
-Proposed timetable rows: 2868
-Submission-ready Template 2 rows: 1183
+Proposed timetable rows: 2838
+All-valid scheduled Template 2 rows: 2817
+Submission-ready Template 2 rows: 242
 Template 2 invalid rows: 0
-Template 2 complete programme-years: 30
-Submission-ready programme-years: 23
+Template 2 complete programme-years: 29
+Submission-ready programme-years: 22
 Minimum required programme-year schedules: 20
 Template 2 readiness: PASS
 ```

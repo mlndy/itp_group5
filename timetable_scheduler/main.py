@@ -34,6 +34,9 @@ from config import (
     DEFAULT_STAKEHOLDER_VIEWS_FILE,
     DEFAULT_SUPERVISOR_CLARIFICATION_PACK_FILE,
     DEFAULT_SUPERVISOR_FIXED_QUERIES_FILE,
+    DEFAULT_TEMPLATE2_ALL_VALID_FILE,
+    DEFAULT_TEMPLATE2_EXCLUSION_AUDIT_FILE,
+    DEFAULT_TEMPLATE2_PROGRAMME_YEAR_RECONCILIATION_FILE,
     DEFAULT_TEMPLATE2_SUBMISSION_FILE,
     DEFAULT_TEMPLATE2_SUBMISSION_VALIDATION_FILE,
     DEFAULT_TEMPLATE2_FILE,
@@ -83,7 +86,10 @@ from output.exporter import export_schedule, export_violations
 from output.fixed_session_integrity import export_fixed_session_integrity_report
 from output.report_exporter import export_preflight_report, export_run_manifest, export_run_summary, export_stakeholder_views
 from output.submission_validator import (
+    export_all_valid_scheduled_schedule,
     export_submission_ready_schedule,
+    export_template2_exclusion_audit,
+    export_template2_programme_year_reconciliation,
     export_template2_validation_report,
     submission_assignments,
     validate_template2_submission,
@@ -749,6 +755,13 @@ def main() -> None:
             guarded_state.quarantined_requirements if guarded_state is not None else [],
         )
         complete_programmes = complete_programme_set(programme_completeness_rows)
+        export_all_valid_scheduled_schedule(
+            final_schedule,
+            DEFAULT_TEMPLATE2_ALL_VALID_FILE,
+            template2_path=DEFAULT_TEMPLATE2_FILE,
+            enable_remark_interpretation=remarks_enabled,
+            rooms=rooms,
+        )
         export_submission_ready_schedule(
             final_schedule,
             DEFAULT_TEMPLATE2_SUBMISSION_FILE,
@@ -766,14 +779,24 @@ def main() -> None:
             DEFAULT_TEMPLATE2_FILE,
         )
         export_template2_validation_report(template2_validation, DEFAULT_TEMPLATE2_SUBMISSION_VALIDATION_FILE)
+        export_template2_programme_year_reconciliation(template2_validation, DEFAULT_TEMPLATE2_PROGRAMME_YEAR_RECONCILIATION_FILE)
+        export_template2_exclusion_audit(
+            final_schedule,
+            DEFAULT_TEMPLATE2_EXCLUSION_AUDIT_FILE,
+            complete_programmes=complete_programmes,
+            rooms=rooms,
+        )
         export_fixed_session_integrity_report(
             fixed_sessions,
             final_schedule,
             DEFAULT_FIXED_SESSION_INTEGRITY_FILE,
             guarded_state.quarantined_requirements if guarded_state is not None else [],
         )
+        print(f"Saved: {DEFAULT_TEMPLATE2_ALL_VALID_FILE}")
         print(f"Saved: {DEFAULT_TEMPLATE2_SUBMISSION_FILE}")
         print(f"Saved: {DEFAULT_TEMPLATE2_SUBMISSION_VALIDATION_FILE}")
+        print(f"Saved: {DEFAULT_TEMPLATE2_PROGRAMME_YEAR_RECONCILIATION_FILE}")
+        print(f"Saved: {DEFAULT_TEMPLATE2_EXCLUSION_AUDIT_FILE}")
         print(f"Saved: {DEFAULT_FIXED_SESSION_INTEGRITY_FILE}")
         print(f"Template 2 submission readiness: {'PASS' if template2_validation.ready else 'FAIL'}")
         if guarded_state is not None:
@@ -800,7 +823,10 @@ def main() -> None:
             )
             print(f"Saved: {DEFAULT_GUARDED_GENERATION_REPORT_FILE}")
         output_paths["submission_ready_timetable"] = DEFAULT_TEMPLATE2_SUBMISSION_FILE
+        output_paths["template2_all_valid_timetable"] = DEFAULT_TEMPLATE2_ALL_VALID_FILE
         output_paths["template2_submission_validation"] = DEFAULT_TEMPLATE2_SUBMISSION_VALIDATION_FILE
+        output_paths["template2_programme_year_reconciliation"] = DEFAULT_TEMPLATE2_PROGRAMME_YEAR_RECONCILIATION_FILE
+        output_paths["template2_exclusion_audit"] = DEFAULT_TEMPLATE2_EXCLUSION_AUDIT_FILE
         output_paths["fixed_session_integrity"] = DEFAULT_FIXED_SESSION_INTEGRITY_FILE
         output_paths["guarded_generation_report"] = DEFAULT_GUARDED_GENERATION_REPORT_FILE
     output_paths.update(

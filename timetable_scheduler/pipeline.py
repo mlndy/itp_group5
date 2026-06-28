@@ -96,7 +96,10 @@ from optimiser.local_search import optimise_schedule_with_stats
 from output.fixed_session_integrity import export_fixed_session_integrity_report
 from output.report_exporter import export_preflight_report, export_run_manifest, export_run_summary, export_stakeholder_views
 from output.submission_validator import (
+    export_all_valid_scheduled_schedule,
     export_submission_ready_schedule,
+    export_template2_exclusion_audit,
+    export_template2_programme_year_reconciliation,
     export_template2_validation_report,
     validate_template2_submission,
 )
@@ -270,7 +273,10 @@ def _run_paths(run_dir: Path) -> dict[str, Path]:
         "proposed_timetable": run_dir / "Proposed_Timetable.xlsx",
         "violations": run_dir / "violation_report.xlsx",
         "submission_ready_timetable": run_dir / "Template2_Submission_Ready.xlsx",
+        "template2_all_valid_timetable": run_dir / "Template2_All_Valid_Scheduled_Rows.xlsx",
         "template2_submission_validation": run_dir / "template2_submission_validation.xlsx",
+        "template2_programme_year_reconciliation": run_dir / "template2_programme_year_reconciliation.xlsx",
+        "template2_exclusion_audit": run_dir / "template2_exclusion_audit.xlsx",
         "guarded_generation_report": run_dir / "guarded_generation_report.xlsx",
         "programme_visuals": run_dir / "Programme_Timetable_Visuals.xlsx",
         "tutor_visuals": run_dir / "Tutor_Timetable_Visuals.xlsx",
@@ -302,10 +308,13 @@ def _outputs_validate(output_paths: dict[str, Path]) -> bool:
     workbook_keys = [
         "proposed_timetable",
         "submission_ready_timetable",
+        "template2_all_valid_timetable",
         "run_summary",
         "run_manifest",
         "guarded_generation_report",
         "template2_submission_validation",
+        "template2_programme_year_reconciliation",
+        "template2_exclusion_audit",
         "fixed_session_integrity",
         "programme_visuals",
         "tutor_visuals",
@@ -604,6 +613,13 @@ def run_timetable_pipeline(
             guarded_state.quarantined_requirements if guarded_state is not None else [],
         )
         complete_programmes = complete_programme_set(programme_rows)
+        export_all_valid_scheduled_schedule(
+            final_schedule,
+            paths["template2_all_valid_timetable"],
+            template2_path=options.template2_output_template_path,
+            enable_remark_interpretation=remarks_enabled,
+            rooms=rooms,
+        )
         export_submission_ready_schedule(
             final_schedule,
             paths["submission_ready_timetable"],
@@ -621,6 +637,13 @@ def run_timetable_pipeline(
             options.template2_output_template_path,
         )
         export_template2_validation_report(template2_validation, paths["template2_submission_validation"])
+        export_template2_programme_year_reconciliation(template2_validation, paths["template2_programme_year_reconciliation"])
+        export_template2_exclusion_audit(
+            final_schedule,
+            paths["template2_exclusion_audit"],
+            complete_programmes=complete_programmes,
+            rooms=rooms,
+        )
         export_fixed_session_integrity_report(
             fixed_sessions,
             final_schedule,
@@ -650,7 +673,10 @@ def run_timetable_pipeline(
                 template2_summary=template2_validation.summary,
             )
         output_paths["submission_ready_timetable"] = paths["submission_ready_timetable"]
+        output_paths["template2_all_valid_timetable"] = paths["template2_all_valid_timetable"]
         output_paths["template2_submission_validation"] = paths["template2_submission_validation"]
+        output_paths["template2_programme_year_reconciliation"] = paths["template2_programme_year_reconciliation"]
+        output_paths["template2_exclusion_audit"] = paths["template2_exclusion_audit"]
         output_paths["fixed_session_integrity"] = paths["fixed_session_integrity"]
         output_paths["guarded_generation_report"] = paths["guarded_generation_report"]
     output_paths.update(
