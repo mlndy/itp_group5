@@ -1,6 +1,6 @@
 # Release Checklist
 
-Use this checklist before final v1.1 submission and GitHub release.
+Use this checklist before final v1.1 submission and GitHub release. The current completeness-gate branch is blocked until Template 2 readiness passes.
 
 ## Repository
 
@@ -18,11 +18,11 @@ Use this checklist before final v1.1 submission and GitHub release.
 
 ## Documentation
 
-- [ ] `README.md` uses the final v1.1 metrics.
+- [ ] `README.md` uses the current completeness-gate metrics.
 - [ ] `DEMO.md` uses the final Engineering command with `--audit-demand-metrics`.
 - [ ] `DEMO_SCRIPT.md` explains schedulable coverage versus total-recorded-demand coverage.
 - [ ] `FINAL_RESULTS.md` labels the old `2777 / 2747 / 30 / 98.92%` result as earlier pre-fixed-session v1.0 validation.
-- [ ] `REPORT_EVIDENCE.md` and `PRESENTATION_EVIDENCE.md` use the final v1.1 figures.
+- [ ] `REPORT_EVIDENCE.md` and `PRESENTATION_EVIDENCE.md` use the current completeness-gate figures until release readiness passes.
 - [ ] `ADDITIONAL_REQUIREMENTS_COMPLIANCE.md` cites implementation files and generated evidence.
 - [ ] `AI_USAGE_LOG.md` and `AI_ASSISTANCE_STATEMENT.md` present the project as team-owned and AI-assisted.
 - [ ] All six team members and Prof. Tsoi Mun Heng are listed in AI transparency documentation.
@@ -58,7 +58,7 @@ Use this checklist before final v1.1 submission and GitHub release.
 - [ ] Test result is at least:
 
 ```text
-259 passed
+296 passed
 ```
 
 - [ ] The guarded Engineering run completes twice with unchanged metrics:
@@ -77,13 +77,14 @@ Scheduled hard-constraint violations: 0
 ```text
 Proposed timetable rows: 2838
 All-valid scheduled Template 2 rows: 2817
-Submission-ready Template 2 rows: 242
+Submission-ready Template 2 rows: 111
 Template 2 invalid rows: 0
-Template 2 complete programme-years: 29
-Submission-ready programme-years: 22
-Template 2 readiness: PASS
+Qualifying submission-ready programme-years: 17
+Minimum required programme-year schedules: 20
+Template 2 readiness: FAIL
 ```
 
+- [ ] Do not proceed to release until qualifying submission-ready programme-years is at least `20` and Template 2 readiness is `PASS`.
 - [ ] Visual timetable validation matches:
 
 ```text

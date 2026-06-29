@@ -31,32 +31,33 @@ After the run completes, show:
 ## Suggested Narration
 
 ```text
-The final run contains 3562 recorded teaching occurrences. Of these, 3160 are schedulable after input validation and 402 are quarantined for staff review. The scheduler places 3070 schedulable occurrences, leaving 90 search failures visible rather than forcing invalid allocations.
+The current run contains 3562 recorded teaching occurrences. Of these, 3160 are schedulable after input validation and 402 are quarantined for staff review. The scheduler places 3046 schedulable occurrences, leaving 114 search failures visible rather than forcing invalid allocations.
 ```
 
 ```text
-The main safety result is that scheduled hard-constraint violations remain zero. The scheduling-performance coverage is 3070 out of 3160 schedulable occurrences, or 97.15%.
+The main safety result is that scheduled hard-constraint violations remain zero. The scheduling-performance coverage is 3046 out of 3160 schedulable occurrences, or 96.39%.
 ```
 
 ```text
-The lower 86.19% total-recorded-demand figure includes quarantined source records. We report it for transparency, but it is not the algorithm success rate.
+The lower 85.51% total-recorded-demand figure includes quarantined source records. We report it for transparency, but it is not the algorithm success rate.
 ```
 
 ## Template 2 Segment
 
 Point out:
 
-- proposed timetable rows: `2868`;
-- submission-ready Template 2 rows: `1183`;
+- proposed timetable rows: `2838`;
+- all-valid scheduled Template 2 rows: `2817`;
+- submission-ready Template 2 rows: `111`;
 - invalid Template 2 rows: `0`;
-- submission-ready programme-years: `23`;
+- qualifying submission-ready programme-years: `17`;
 - minimum required programme-year schedules: `20`;
-- Template 2 readiness: `PASS`.
+- Template 2 readiness: `FAIL`.
 
 Suggested narration:
 
 ```text
-The submission-ready Template 2 workbook is stricter than the proposed timetable. It includes only validated complete rows, while unresolved demand remains in exception reports.
+The submission-ready Template 2 workbook is stricter than the proposed timetable. The current completeness gate is not release-ready because only 17 programme-years qualify against the required 20; unresolved demand remains in exception reports instead of being hidden.
 ```
 
 ## Visual Timetable Segment

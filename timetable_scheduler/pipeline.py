@@ -635,6 +635,8 @@ def run_timetable_pipeline(
             final_schedule,
             rooms,
             options.template2_output_template_path,
+            all_valid_workbook_path=paths["template2_all_valid_timetable"],
+            quarantined_requirements=guarded_state.quarantined_requirements if guarded_state is not None else [],
         )
         export_template2_validation_report(template2_validation, paths["template2_submission_validation"])
         export_template2_programme_year_reconciliation(template2_validation, paths["template2_programme_year_reconciliation"])
@@ -656,9 +658,9 @@ def run_timetable_pipeline(
                 final_schedule,
                 guarded_state.quarantined_requirements,
                 submission_ready_programmes={
-                    str(row.get("Normalised Programme/Year"))
+                    str(row.get("Canonical programme-year"))
                     for row in template2_validation.programme_rows
-                    if row.get("Included In Submission") == "Yes"
+                    if row.get("Submission-Ready Status") == "PASS" and row.get("Canonical programme-year")
                 },
             )
             export_guarded_generation_report(

@@ -18,7 +18,7 @@ cd C:\Users\Admin\Documents\GitHub\itp_group5
 Expected result:
 
 ```text
-259 passed
+296 passed
 ```
 
 ## Engineering Demo Command
@@ -52,12 +52,14 @@ The `85.51%` total-recorded-demand figure includes quarantined input records. Th
 ```text
 Proposed timetable rows: 2838
 All-valid scheduled Template 2 rows: 2817
-Submission-ready Template 2 rows: 242
+Submission-ready Template 2 rows: 111
 Template 2 invalid rows: 0
-Template 2 complete programme-years: 29
-Submission-ready programme-years: 22
-Template 2 readiness: PASS
+Qualifying submission-ready programme-years: 17
+Minimum required programme-year schedules: 20
+Template 2 readiness: FAIL
 ```
+
+The saved submission-ready workbook is intentionally strict. This branch currently demonstrates safe scheduling and evidence reporting, but it is not release-ready because only `17` programme-years meet the full completeness gate.
 
 Open:
 

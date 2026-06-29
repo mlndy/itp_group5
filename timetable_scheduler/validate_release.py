@@ -20,15 +20,18 @@ from config import (
     DEFAULT_RUN_MANIFEST_FILE,
     DEFAULT_RUN_SUMMARY_FILE,
     DEFAULT_STAKEHOLDER_VIEWS_FILE,
+    DEFAULT_TEMPLATE2_PROGRAMME_YEAR_RECONCILIATION_FILE,
+    DEFAULT_TEMPLATE2_SUBMISSION_FILE,
     DEFAULT_TEMPLATE2_SUBMISSION_VALIDATION_FILE,
     DEFAULT_TIMETABLE_VISUALISATION_VALIDATION_FILE,
     DEFAULT_TUTOR_VISUALS_FILE,
     OUTPUT_DIR,
 )
+from output.submission_validator import saved_row_programme_year
 
 DEFAULT_TIMETABLE_FILE = OUTPUT_DIR / "final_timetable_engineering_cluster.xlsx"
 
-EXPECTED_MIN_TESTS = 291
+EXPECTED_MIN_TESTS = 296
 EXPECTED_TOTAL_TEACHING_OCCURRENCES = 3562
 EXPECTED_SCHEDULABLE_OCCURRENCES = 3160
 EXPECTED_QUARANTINED_OCCURRENCES = 402
@@ -36,9 +39,6 @@ EXPECTED_SCHEDULED_OCCURRENCES = 3046
 EXPECTED_SEARCH_FAILURE_OCCURRENCES = 114
 EXPECTED_SCHEDULED_HARD_VIOLATIONS = 0
 EXPECTED_PROPOSED_TIMETABLE_ROWS = 2838
-EXPECTED_TEMPLATE2_SUBMISSION_ROWS = 242
-EXPECTED_TEMPLATE2_COMPLETE_PROGRAMME_YEARS = 29
-EXPECTED_SUBMISSION_READY_PROGRAMME_YEARS = 22
 MIN_SUBMISSION_READY_PROGRAMME_YEARS = 20
 EXPECTED_PROGRAMME_VISUAL_SHEETS = 80
 EXPECTED_TUTOR_VISUAL_SHEETS = 221
@@ -77,6 +77,9 @@ REQUIRED_TEMPLATE2_VALIDATION_SHEETS = [
     "Source-to-Output Reconciliation",
     "Invalid Rows",
     "Missing Programme-Years",
+    "Identity Normalisation Audit",
+    "Incomplete Programme-Years",
+    "Saved Workbook Verification",
     "Submission Readiness",
 ]
 REQUIRED_VISUAL_VALIDATION_SHEETS = [
@@ -96,6 +99,15 @@ REQUIRED_FIXED_INTEGRITY_SHEETS = [
     "Quarantined Fixed Sources",
 ]
 REQUIRED_TIMETABLE_SHEETS = ["Timetable"]
+REQUIRED_TEMPLATE2_RECONCILIATION_SHEETS = [
+    "Summary",
+    "Programme-Year Reconciliation",
+    "Missing Programme-Years",
+    "Row-Level Reconciliation",
+    "Identity Normalisation Audit",
+    "Incomplete Programme-Years",
+    "Saved Workbook Verification",
+]
 REQUIRED_TIMETABLE_COLUMNS = [
     "Module",
     "Class Type",
@@ -141,6 +153,8 @@ class ReleaseEvidencePaths:
     run_manifest: Path = DEFAULT_RUN_MANIFEST_FILE
     guarded_report: Path = DEFAULT_GUARDED_GENERATION_REPORT_FILE
     template2_validation: Path = DEFAULT_TEMPLATE2_SUBMISSION_VALIDATION_FILE
+    template2_submission: Path = DEFAULT_TEMPLATE2_SUBMISSION_FILE
+    template2_reconciliation: Path = DEFAULT_TEMPLATE2_PROGRAMME_YEAR_RECONCILIATION_FILE
     visual_validation: Path = DEFAULT_TIMETABLE_VISUALISATION_VALIDATION_FILE
     fixed_integrity: Path = DEFAULT_FIXED_SESSION_INTEGRITY_FILE
     programme_visuals: Path = DEFAULT_PROGRAMME_VISUALS_FILE
@@ -169,6 +183,17 @@ def _sheet_dict(workbook: Workbook, sheet_name: str) -> dict[object, object]:
         for row in worksheet.iter_rows(min_row=2, values_only=True)
         if row and row[0] is not None
     }
+
+
+def _rows_as_dicts(workbook: Workbook, sheet_name: str) -> list[dict[str, object]]:
+    """Return worksheet rows as dictionaries keyed by header."""
+    worksheet = workbook[sheet_name]
+    headers = [cell.value for cell in worksheet[1]]
+    return [
+        {str(header): row[index] for index, header in enumerate(headers) if header is not None}
+        for row in worksheet.iter_rows(min_row=2, values_only=True)
+        if row and any(value not in (None, "") for value in row)
+    ]
 
 
 def _validation_statuses(workbook: Workbook) -> dict[object, object]:
@@ -267,7 +292,6 @@ def _check_guarded_report(workbook: Workbook, failures: list[str]) -> None:
     scheduled = summary.get("Scheduled occurrences")
     search_failures = summary.get("Unscheduled search failures")
     scheduled_hard = summary.get("Scheduled hard violations")
-    template_complete = summary.get("Template 2 complete programme-years")
     submission_ready = summary.get("Submission-ready programme-years")
 
     expected_values = {
@@ -277,8 +301,6 @@ def _check_guarded_report(workbook: Workbook, failures: list[str]) -> None:
         "Scheduled occurrences": (scheduled, EXPECTED_SCHEDULED_OCCURRENCES),
         "Unscheduled search failures": (search_failures, EXPECTED_SEARCH_FAILURE_OCCURRENCES),
         "Scheduled hard violations": (scheduled_hard, EXPECTED_SCHEDULED_HARD_VIOLATIONS),
-        "Template 2 complete programme-years": (template_complete, EXPECTED_TEMPLATE2_COMPLETE_PROGRAMME_YEARS),
-        "Submission-ready programme-years": (submission_ready, EXPECTED_SUBMISSION_READY_PROGRAMME_YEARS),
     }
     for label, (actual, expected) in expected_values.items():
         if actual != expected:
@@ -298,27 +320,110 @@ def _check_guarded_report(workbook: Workbook, failures: list[str]) -> None:
 def _check_template2_validation(workbook: Workbook, failures: list[str]) -> None:
     """Check submission-ready Template 2 validation metrics."""
     summary = _sheet_dict(workbook, "Summary")
-    rows = summary.get("Template 2 output rows")
     missing = summary.get("rows with missing required fields")
     mapping_errors = summary.get("rows with mapping errors")
-    complete = summary.get("complete programme-year schedules")
     submission_ready = summary.get("submission-ready programme-year schedules")
+    qualifying = summary.get("qualifying submission-ready programme-years")
+    minimum_status = summary.get("minimum programme-year status")
     status = summary.get("Template 2 readiness status")
     expected_values = {
-        "Template 2 output rows": (rows, EXPECTED_TEMPLATE2_SUBMISSION_ROWS),
         "rows with missing required fields": (missing, 0),
         "rows with mapping errors": (mapping_errors, 0),
-        "complete programme-year schedules": (complete, EXPECTED_TEMPLATE2_COMPLETE_PROGRAMME_YEARS),
-        "submission-ready programme-year schedules": (submission_ready, EXPECTED_SUBMISSION_READY_PROGRAMME_YEARS),
-        "Template 2 readiness status": (status, "PASS"),
     }
     for label, (actual, expected) in expected_values.items():
         if actual != expected:
             failures.append(f"{label} is {actual}, expected {expected}")
+    if submission_ready != qualifying:
+        failures.append(
+            f"submission-ready programme-year schedules ({submission_ready}) does not match qualifying count ({qualifying})"
+        )
+    if not isinstance(submission_ready, int) or submission_ready < MIN_SUBMISSION_READY_PROGRAMME_YEARS:
+        failures.append(
+            f"Fewer than {MIN_SUBMISSION_READY_PROGRAMME_YEARS} qualifying programme-years: {submission_ready}"
+        )
+    if minimum_status != "PASS":
+        failures.append(f"minimum programme-year status is {minimum_status}, expected PASS")
+    if status != "PASS":
+        failures.append(f"Template 2 readiness status is {status}, expected PASS")
     readiness = workbook["Submission Readiness"]
     statuses = [row[1] for row in readiness.iter_rows(min_row=2, values_only=True) if row and row[0]]
     if not statuses or any(status != "PASS" for status in statuses):
         failures.append("Submission Readiness sheet does not show PASS")
+    coverage = _rows_as_dicts(workbook, "Programme Schedule Coverage")
+    for row in coverage:
+        if row.get("Submission-Ready Status") == "PASS" and row.get("Complete Schedule Status") != "PASS":
+            failures.append(f"{row.get('Canonical programme-year')} is submission-ready but incomplete")
+        if row.get("Counts Toward Minimum 20") == "Yes" and not row.get("Canonical programme-year"):
+            failures.append("Ambiguous programme-year identity counted toward minimum")
+
+
+def _saved_template2_row_metrics(workbook: Workbook) -> tuple[int, int]:
+    """Return populated Timetable rows and distinct canonical programme-years."""
+    worksheet = workbook["Timetable"]
+    headers = [cell.value for cell in worksheet[1]]
+    row_count = 0
+    programme_years: set[str] = set()
+    for values in worksheet.iter_rows(min_row=2, values_only=True):
+        if not any(value not in (None, "") for value in values):
+            continue
+        row_count += 1
+        row = {str(header): values[index] for index, header in enumerate(headers) if header is not None}
+        programme_year = saved_row_programme_year(row)
+        if programme_year:
+            programme_years.add(programme_year)
+    return row_count, len(programme_years)
+
+
+def _check_saved_template2_submission(
+    workbook: Workbook,
+    validation_workbook: Workbook | None,
+    failures: list[str],
+) -> None:
+    """Check the saved strict Template 2 workbook against validation evidence."""
+    _check_required_sheets(workbook, ["Timetable"], "Template2_Submission_Ready.xlsx", failures)
+    if "Timetable" not in workbook.sheetnames:
+        return
+    row_count, distinct_programme_years = _saved_template2_row_metrics(workbook)
+    if validation_workbook is None or "Summary" not in validation_workbook.sheetnames:
+        return
+    summary = _sheet_dict(validation_workbook, "Summary")
+    expected_rows = summary.get("Actual saved Template 2 rows", summary.get("Template 2 output rows"))
+    expected_programmes = summary.get(
+        "programme-years represented in submission workbook",
+        summary.get("actual saved programme-year schedules"),
+    )
+    if expected_rows != row_count:
+        failures.append(f"Saved Template 2 row count is {row_count}, validation report says {expected_rows}")
+    if expected_programmes != distinct_programme_years:
+        failures.append(
+            "Saved Template 2 represented programme-years is "
+            f"{distinct_programme_years}, validation report says {expected_programmes}"
+        )
+
+
+def _check_template2_reconciliation(workbook: Workbook, validation_workbook: Workbook | None, failures: list[str]) -> None:
+    """Check programme-year reconciliation workbook exists and agrees with readiness summary."""
+    _check_required_sheets(
+        workbook,
+        REQUIRED_TEMPLATE2_RECONCILIATION_SHEETS,
+        "template2_programme_year_reconciliation.xlsx",
+        failures,
+    )
+    if validation_workbook is None or "Summary" not in workbook.sheetnames or "Summary" not in validation_workbook.sheetnames:
+        return
+    reconciliation_summary = _sheet_dict(workbook, "Summary")
+    validation_summary = _sheet_dict(validation_workbook, "Summary")
+    for metric in [
+        "submission-ready programme-year schedules",
+        "qualifying submission-ready programme-years",
+        "minimum programme-year status",
+        "Template 2 readiness status",
+    ]:
+        if reconciliation_summary.get(metric) != validation_summary.get(metric):
+            failures.append(
+                f"Template 2 reconciliation {metric} is {reconciliation_summary.get(metric)}, "
+                f"validation report says {validation_summary.get(metric)}"
+            )
 
 
 def _check_visual_validation(workbook: Workbook, failures: list[str]) -> None:
@@ -408,6 +513,8 @@ def validate_release(
     run_manifest_path: Path = DEFAULT_RUN_MANIFEST_FILE,
     guarded_report_path: Path = DEFAULT_GUARDED_GENERATION_REPORT_FILE,
     template2_validation_path: Path = DEFAULT_TEMPLATE2_SUBMISSION_VALIDATION_FILE,
+    template2_submission_path: Path = DEFAULT_TEMPLATE2_SUBMISSION_FILE,
+    template2_reconciliation_path: Path = DEFAULT_TEMPLATE2_PROGRAMME_YEAR_RECONCILIATION_FILE,
     visual_validation_path: Path = DEFAULT_TIMETABLE_VISUALISATION_VALIDATION_FILE,
     fixed_integrity_path: Path = DEFAULT_FIXED_SESSION_INTEGRITY_FILE,
     programme_visuals_path: Path = DEFAULT_PROGRAMME_VISUALS_FILE,
@@ -424,6 +531,8 @@ def validate_release(
     run_manifest = _load_workbook(run_manifest_path, failures)
     guarded_report = _load_workbook(guarded_report_path, failures)
     template2_validation = _load_workbook(template2_validation_path, failures)
+    template2_submission = _load_workbook(template2_submission_path, failures)
+    template2_reconciliation = _load_workbook(template2_reconciliation_path, failures)
     visual_validation = _load_workbook(visual_validation_path, failures)
     fixed_integrity = _load_workbook(fixed_integrity_path, failures)
     _load_workbook(programme_visuals_path, failures)
@@ -451,6 +560,12 @@ def validate_release(
         )
         if "Summary" in template2_validation.sheetnames and "Submission Readiness" in template2_validation.sheetnames:
             _check_template2_validation(template2_validation, failures)
+
+    if template2_submission is not None:
+        _check_saved_template2_submission(template2_submission, template2_validation, failures)
+
+    if template2_reconciliation is not None:
+        _check_template2_reconciliation(template2_reconciliation, template2_validation, failures)
 
     if visual_validation is not None:
         _check_required_sheets(
@@ -491,6 +606,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--run-manifest", type=Path, default=DEFAULT_RUN_MANIFEST_FILE)
     parser.add_argument("--guarded-report", type=Path, default=DEFAULT_GUARDED_GENERATION_REPORT_FILE)
     parser.add_argument("--template2-validation", type=Path, default=DEFAULT_TEMPLATE2_SUBMISSION_VALIDATION_FILE)
+    parser.add_argument("--template2-submission", type=Path, default=DEFAULT_TEMPLATE2_SUBMISSION_FILE)
+    parser.add_argument(
+        "--template2-reconciliation",
+        type=Path,
+        default=DEFAULT_TEMPLATE2_PROGRAMME_YEAR_RECONCILIATION_FILE,
+    )
     parser.add_argument("--visual-validation", type=Path, default=DEFAULT_TIMETABLE_VISUALISATION_VALIDATION_FILE)
     parser.add_argument("--fixed-session-integrity", type=Path, default=DEFAULT_FIXED_SESSION_INTEGRITY_FILE)
     parser.add_argument("--programme-visuals", type=Path, default=DEFAULT_PROGRAMME_VISUALS_FILE)
@@ -510,6 +631,8 @@ def main(argv: list[str] | None = None) -> int:
         args.run_manifest,
         args.guarded_report,
         args.template2_validation,
+        args.template2_submission,
+        args.template2_reconciliation,
         args.visual_validation,
         args.fixed_session_integrity,
         args.programme_visuals,

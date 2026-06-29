@@ -777,6 +777,8 @@ def main() -> None:
             final_schedule,
             rooms,
             DEFAULT_TEMPLATE2_FILE,
+            all_valid_workbook_path=DEFAULT_TEMPLATE2_ALL_VALID_FILE,
+            quarantined_requirements=guarded_state.quarantined_requirements if guarded_state is not None else [],
         )
         export_template2_validation_report(template2_validation, DEFAULT_TEMPLATE2_SUBMISSION_VALIDATION_FILE)
         export_template2_programme_year_reconciliation(template2_validation, DEFAULT_TEMPLATE2_PROGRAMME_YEAR_RECONCILIATION_FILE)
@@ -805,9 +807,9 @@ def main() -> None:
                 final_schedule,
                 guarded_state.quarantined_requirements,
                 submission_ready_programmes={
-                    str(row.get("Normalised Programme/Year"))
+                    str(row.get("Canonical programme-year"))
                     for row in template2_validation.programme_rows
-                    if row.get("Included In Submission") == "Yes"
+                    if row.get("Submission-Ready Status") == "PASS" and row.get("Canonical programme-year")
                 },
             )
             export_guarded_generation_report(

@@ -2,7 +2,7 @@
 
 ## Core Evidence Slide
 
-Use these as the final v1.1 headline figures:
+Use these as the current scheduling-safety headline figures:
 
 ```text
 Total teaching occurrences: 3562
@@ -26,12 +26,11 @@ The scheduler placed 96.39% of schedulable teaching demand while keeping schedul
 ```text
 Proposed timetable rows: 2838
 All-valid scheduled Template 2 rows: 2817
-Submission-ready Template 2 rows: 242
+Submission-ready Template 2 rows: 111
 Template 2 invalid rows: 0
-Template 2 complete programme-years: 29
-Submission-ready programme-years: 22
+Qualifying submission-ready programme-years: 17
 Minimum required programme-year schedules: 20
-Template 2 readiness: PASS
+Template 2 readiness: FAIL
 ```
 
 Key framing:
@@ -39,6 +38,7 @@ Key framing:
 - The proposed timetable contains valid scheduled rows for review.
 - The submission-ready workbook is stricter and excludes incomplete or unresolved programme-years.
 - Unresolved demand remains visible in reports rather than being hidden in Template 2.
+- The current completeness gate is not release-ready because `17` qualifying programme-years is below the required `20`.
 
 ## Visual Timetable Workbooks
 

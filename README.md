@@ -71,9 +71,9 @@ Main outputs:
 - `output_files/Tutor_Timetable_Visuals.xlsx`: tutor visual timetables.
 - `output_files/Room_Timetable_Visuals.xlsx`: room visual timetables.
 
-## Final Verified Results
+## Current Completeness-Gate Results
 
-Final v1.1 scheduling metrics:
+Current scheduling metrics:
 
 ```text
 Total teaching occurrences: 3562
@@ -93,13 +93,14 @@ Template 2 evidence:
 ```text
 Proposed timetable rows: 2838
 All-valid scheduled Template 2 rows: 2817
-Submission-ready Template 2 rows: 242
+Submission-ready Template 2 rows: 111
 Template 2 invalid rows: 0
-Template 2 complete programme-years: 29
-Submission-ready programme-years: 22
+Qualifying submission-ready programme-years: 17
 Minimum required programme-year schedules: 20
-Template 2 readiness: PASS
+Template 2 readiness: FAIL
 ```
+
+The stricter completeness gate requires at least `20` complete submission-ready programme-year schedules. The current branch has `17`, so it preserves safe scheduling evidence but is not release-ready.
 
 Visual timetable evidence:
 
@@ -130,7 +131,7 @@ cd C:\Users\Admin\Documents\GitHub\itp_group5
 Expected result:
 
 ```text
-259 passed
+296 passed
 ```
 
 Run release validation after generating evidence:
@@ -142,7 +143,7 @@ Run release validation after generating evidence:
 Expected result:
 
 ```text
-FINAL RELEASE VALIDATION: PASS
+FINAL RELEASE VALIDATION: FAIL
 ```
 
 ## Release ZIP

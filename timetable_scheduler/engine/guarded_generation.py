@@ -15,6 +15,7 @@ from data.fixed_sessions import FixedSessionLoaderReport
 from data.models import Assignment, Course, FixedSession
 from engine.demand_metrics import build_requirement_demands
 from engine.fixed_reconciliation import FixedReconciliationReport, normalise_programme_year
+from engine.programme_year import canonical_programme_year, programme_year_report_value
 
 
 class ValidationDisposition(Enum):
@@ -207,14 +208,14 @@ def build_programme_completeness_rows(
     fixed: Counter[str] = Counter()
     quarantined_counts: Counter[str] = Counter()
     for demand in build_requirement_demands(demand_courses, assignments):
-        programme = normalise_programme_year(demand.course.prog_yr)
+        programme = programme_year_report_value(demand.course.prog_yr)
         required[programme] += demand.required_week_count
         scheduled[programme] += demand.scheduled_week_count
     for assignment in assignments:
         if assignment.is_fixed and assignment.room is not None and assignment.timeslot is not None:
-            fixed[normalise_programme_year(assignment.course.prog_yr)] += 1
+            fixed[programme_year_report_value(assignment.course.prog_yr)] += 1
     for item in quarantined:
-        programme = normalise_programme_year(item.programme_year or "")
+        programme = programme_year_report_value(item.programme_year or "")
         quarantined_counts[programme] += item.affected_occurrences
     programmes = sorted(set(required) | set(scheduled) | set(quarantined_counts))
     submission_ready_programmes = submission_ready_programmes or set()
@@ -245,7 +246,7 @@ def build_programme_completeness_rows(
                 "Submission-Ready Status": "PASS" if programme in submission_ready_programmes else "FAIL",
                 "Reason for Incompleteness": _programme_reason(status),
                 "Status": status,
-                "Counts Toward Minimum 20": "Yes" if status in {"COMPLETE", "COMPLETE_WITH_WARNINGS"} and programme in submission_ready_programmes else "No",
+                "Counts Toward Minimum 20": "Yes" if status in {"COMPLETE", "COMPLETE_WITH_WARNINGS"} and programme in submission_ready_programmes and canonical_programme_year(programme) else "No",
             }
         )
     return rows
@@ -256,7 +257,7 @@ def complete_programme_set(programme_rows: list[dict[str, object]]) -> set[str]:
     return {
         str(row.get("Programme/Year"))
         for row in programme_rows
-        if row.get("Status") in {"COMPLETE", "COMPLETE_WITH_WARNINGS"}
+        if row.get("Status") in {"COMPLETE", "COMPLETE_WITH_WARNINGS"} and canonical_programme_year(row.get("Programme/Year"))
     }
 
 

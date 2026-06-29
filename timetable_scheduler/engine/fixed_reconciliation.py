@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from collections import defaultdict
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -11,6 +10,7 @@ import pandas as pd
 
 from data.fixed_sessions import FixedSessionLoaderReport
 from data.models import Course, FixedSession
+from engine.programme_year import normalise_programme_year
 from generator.fixed_scheduler import normalise_module_code
 
 SUMMARY_COLUMNS = ["Metric", "Value"]
@@ -66,14 +66,6 @@ class FixedReconciliationReport:
     def final_occurrence_total(self) -> int:
         """Return reconciled teaching-occurrence demand."""
         return self.original_nonfixed_occurrences - self.converted_occurrences + self.standalone_occurrences
-
-
-def normalise_programme_year(value: str) -> str:
-    """Normalise programme/year labels for conservative matching."""
-    text = re.sub(r"\s+", " ", str(value or "").upper().replace("YEAR", "Y").replace("YR", "Y")).strip()
-    text = text.replace(" / ", "/").replace(" /", "/").replace("/ ", "/")
-    text = re.sub(r"\bY\s*([0-9])\b", r"Y\1", text)
-    return text
 
 
 def _course_weeks(course: Course) -> set[int]:

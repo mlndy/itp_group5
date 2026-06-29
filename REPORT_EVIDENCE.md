@@ -1,8 +1,8 @@
 # Report Evidence
 
-## Final System Evidence
+## Current Completeness-Gate Evidence
 
-The final v1.1 evidence is produced by the Engineering guarded-generation run. It validates scheduling safety, fixed-session handling, Template 2 readiness and stakeholder visual timetable exports.
+The current evidence is produced by the Engineering guarded-generation run. It validates scheduling safety, fixed-session handling and stakeholder visual timetable exports, but the stricter Template 2 completeness gate is blocked.
 
 Final scheduling evidence:
 
@@ -24,13 +24,14 @@ The report should use `96.39%` as the scheduling-performance coverage because it
 ```text
 Proposed timetable rows: 2838
 All-valid scheduled Template 2 rows: 2817
-Submission-ready Template 2 rows: 242
+Submission-ready Template 2 rows: 111
 Template 2 invalid rows: 0
-Template 2 complete programme-years: 29
-Submission-ready programme-years: 22
+Qualifying submission-ready programme-years: 17
 Minimum required programme-year schedules: 20
-Template 2 readiness: PASS
+Template 2 readiness: FAIL
 ```
+
+The readiness failure is intentional evidence: unresolved demand is reported rather than hidden or forced into the upload workbook.
 
 Evidence workbooks:
 
@@ -79,13 +80,13 @@ Quarantined input occurrences: 402
 Scheduled occurrences: 3046
 Scheduler search failures: 114
 Scheduled hard-constraint violations: 0
-Submission-ready Template 2 rows: 242
-Submission-ready programme-years: 22
-Template 2 readiness: PASS
+Submission-ready Template 2 rows: 111
+Qualifying submission-ready programme-years: 17
+Template 2 readiness: FAIL
 Visual export status: PASS
 ```
 
-Final generated artefact hashes from the regenerated hotfix validation run:
+Generated artefact hashes from the earlier all-years hotfix validation run are historical and must be regenerated before release because the completeness gate changed the strict Template 2 readiness result:
 
 | Artefact | SHA-256 |
 | --- | --- |

@@ -11,8 +11,14 @@ import pandas as pd
 from openpyxl import load_workbook
 
 from data.models import Assignment, Course, FixedSession, Room
-from engine.demand_metrics import build_demand_metrics
-from engine.fixed_reconciliation import normalise_programme_year
+from engine.demand_metrics import build_demand_metrics, build_requirement_demands
+from engine.programme_year import (
+    canonical_programme_year,
+    clean_programme_year_text,
+    identify_programme_year,
+    normalise_programme_year,
+    programme_year_report_value,
+)
 from output.exporter import assignment_to_row, export_schedule
 
 REQUIRED_SUBMISSION_COLUMNS = [
@@ -47,6 +53,9 @@ class Template2ValidationResult:
     duplicate_rows: list[dict[str, object]] = field(default_factory=list)
     invalid_rows: list[dict[str, object]] = field(default_factory=list)
     missing_programme_year_rows: list[dict[str, object]] = field(default_factory=list)
+    identity_audit_rows: list[dict[str, object]] = field(default_factory=list)
+    incomplete_programme_year_rows: list[dict[str, object]] = field(default_factory=list)
+    saved_workbook_rows: list[dict[str, object]] = field(default_factory=list)
 
 
 def normalise_template2_year(value: object) -> str:
@@ -64,25 +73,35 @@ def normalise_template2_year(value: object) -> str:
 
 def normalise_template2_programme_year(value: object, fallback_programme: object = "") -> str:
     """Return <PROGRAMME>/Y<number>, or blank when the year is unknown."""
-    text = _clean_text(value)
-    slash_digit = re.fullmatch(r"(.+)/\s*([1-9])", text)
-    if slash_digit:
-        programme = _clean_programme(slash_digit.group(1))
-        return f"{programme}/Y{slash_digit.group(2)}" if programme else ""
-    year = normalise_template2_year(text)
-    if not year:
-        return ""
-    programme = _programme_before_year(text) or _clean_programme(fallback_programme)
-    return f"{programme}/{year}" if programme else ""
+    programme_year = canonical_programme_year(value)
+    if programme_year:
+        return programme_year
+    year = normalise_template2_year(value)
+    if year and fallback_programme:
+        return canonical_programme_year(f"{fallback_programme}/{year}") or ""
+    return ""
 
 
 def saved_row_programme_year(row: dict[str, object]) -> str:
     """Return canonical programme-year from one saved Template 2 row."""
-    for field in ("Programme/Year", "Group", "Activity Hostkey"):
-        programme_year = normalise_template2_programme_year(row.get(field))
+    for field, value in _saved_identity_candidates(row):
+        programme_year = normalise_template2_programme_year(value)
         if programme_year:
             return programme_year
     return ""
+
+
+def _saved_identity_candidates(row: dict[str, object]) -> list[tuple[str, object]]:
+    """Return saved-row identity candidates in evidence order."""
+    candidates: list[tuple[str, object]] = []
+    for field in ("Programme/Year", "Group"):
+        if row.get(field) not in (None, ""):
+            candidates.append((field, row.get(field)))
+    hostkey = row.get("Activity Hostkey")
+    if hostkey not in (None, ""):
+        text = str(hostkey)
+        candidates.append(("Activity Hostkey", text.split("/", 1)[1] if "/" in text else text))
+    return candidates
 
 
 def _clean_text(value: object) -> str:
@@ -166,7 +185,7 @@ def submission_assignments(
             continue
         if not _has_required_submission_values(assignment):
             continue
-        programme = normalise_programme_year(assignment.course.prog_yr)
+        programme = canonical_programme_year(assignment.course.prog_yr)
         if complete_programmes is not None and programme not in complete_programmes:
             continue
         if valid_room_ids is not None and assignment.room is not None and assignment.room.room_id not in valid_room_ids:
@@ -318,6 +337,34 @@ def _saved_programme_year_counts(
     return counts
 
 
+def _saved_workbook_verification_rows(
+    rows: list[dict[str, object]],
+    invalid_rows: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    """Return actual saved workbook rows with canonical identity evidence."""
+    invalid_numbers = _invalid_row_numbers(invalid_rows)
+    evidence: list[dict[str, object]] = []
+    for row in rows:
+        row_number = int(row.get("_row") or 0)
+        candidates = _saved_identity_candidates(row)
+        raw = next((str(value) for _, value in candidates if value not in (None, "")), "")
+        identity = identify_programme_year(raw)
+        canonical = saved_row_programme_year(row)
+        evidence.append(
+            {
+                "Saved Row": row_number,
+                "Module": row.get("Module"),
+                "Class Type": row.get("Class Type"),
+                "Raw identity": raw,
+                "Canonical programme-year": canonical,
+                "Normalisation rule": identity.rule,
+                "Identity status": "confident" if canonical else identity.status,
+                "Row validation status": "FAIL" if row_number in invalid_numbers else "PASS",
+            }
+        )
+    return evidence
+
+
 def _template2_assignment_id(assignment: Assignment) -> tuple[object, ...]:
     """Return a row identity matching the Template 2 saved row fields."""
     row = assignment_to_row(assignment)
@@ -363,7 +410,7 @@ def _assignment_exclusion_row(
     """Return one Template 2 exclusion audit row."""
     course = assignment.course
     return {
-        "Programme-Year": normalise_programme_year(course.prog_yr),
+        "Programme-Year": programme_year_report_value(course.prog_yr),
         "Module": course.module_code,
         "Activity": course.activity,
         "Scheduled Row ID": "/".join(str(part or "") for part in _template2_assignment_id(assignment)),
@@ -406,7 +453,7 @@ def build_template2_exclusion_audit_rows(
     valid_room_ids = _valid_rooms(rooms or []) if rooms is not None else None
     rows: list[dict[str, object]] = []
     for assignment in assignments:
-        programme = normalise_programme_year(assignment.course.prog_yr)
+        programme = canonical_programme_year(assignment.course.prog_yr)
         if not _is_submission_assignment(assignment):
             reason = "; ".join(assignment.hard_violations) if assignment.hard_violations else "Assignment is unscheduled."
             rows.append(_assignment_exclusion_row(assignment, "unscheduled-or-hard-invalid", reason))
@@ -462,45 +509,99 @@ def _programme_coverage(
     assignments: list[Assignment],
     submission_rows: list[dict[str, object]],
     invalid_rows: list[dict[str, object]] | None = None,
+    all_valid_rows: list[dict[str, object]] | None = None,
+    quarantined_requirements: list[object] | None = None,
 ) -> list[dict[str, object]]:
     """Build programme-year schedule coverage rows."""
-    required: dict[str, set[tuple[str, str, int]]] = defaultdict(set)
-    scheduled: dict[str, set[tuple[str, str, int]]] = defaultdict(set)
+    required: Counter[str] = Counter()
+    scheduled: Counter[str] = Counter()
     fixed_counts: Counter[str] = Counter()
-    for course in source_requirements:
-        programme = normalise_programme_year(course.prog_yr)
-        weeks = course.teaching_weeks
-        for week in weeks:
-            required[programme].add((course.module_code, course.activity, week))
+    hard_counts: Counter[str] = Counter()
+    quarantined_counts: Counter[str] = Counter()
+    raw_identities: dict[str, set[str]] = defaultdict(set)
+    input_requirements: Counter[str] = Counter()
+    for demand in build_requirement_demands(source_requirements, assignments):
+        programme = programme_year_report_value(demand.course.prog_yr)
+        raw_identities[programme].add(str(demand.course.prog_yr))
+        input_requirements[programme] += 1
+        required[programme] += demand.required_week_count
+        scheduled[programme] += demand.scheduled_week_count
     for assignment in assignments:
-        programme = normalise_programme_year(assignment.course.prog_yr)
+        programme = programme_year_report_value(assignment.course.prog_yr)
+        raw_identities[programme].add(str(assignment.course.prog_yr))
         if assignment.is_fixed:
             fixed_counts[programme] += 1
-        if _is_submission_assignment(assignment) and assignment.timeslot is not None:
-            scheduled[programme].add((assignment.course.module_code, assignment.course.activity, assignment.timeslot.week))
+        if assignment.room is not None and assignment.timeslot is not None:
+            hard_counts[programme] += len(assignment.hard_violations)
+    for item in quarantined_requirements or []:
+        raw_programme = getattr(item, "programme_year", "")
+        programme = programme_year_report_value(raw_programme)
+        raw_identities[programme].add(str(raw_programme))
+        quarantined_counts[programme] += int(getattr(item, "affected_occurrences", 0) or 0)
     submission_count = _saved_programme_year_counts(submission_rows, invalid_rows or [])
+    all_valid_count = _saved_programme_year_counts(all_valid_rows or [], [])
+    for programme in submission_count:
+        raw_identities[programme].add(programme)
+    for programme in all_valid_count:
+        raw_identities[programme].add(programme)
 
     rows: list[dict[str, object]] = []
-    for programme in sorted(set(required) | set(submission_count)):
-        required_count = len(required[programme])
-        scheduled_count = len(scheduled.get(programme, set()))
-        complete = required_count > 0 and required_count == scheduled_count
+    for programme in sorted(set(required) | set(submission_count) | set(all_valid_count) | set(quarantined_counts)):
+        required_count = required[programme]
+        scheduled_count = scheduled[programme]
+        quarantined_count = quarantined_counts[programme]
+        search_failures = max(required_count - scheduled_count - quarantined_count, 0)
+        hard_count = hard_counts[programme]
+        canonical = canonical_programme_year(programme)
+        complete = (
+            bool(canonical)
+            and required_count > 0
+            and quarantined_count == 0
+            and search_failures == 0
+            and scheduled_count == required_count
+            and hard_count == 0
+        )
         saved_rows = submission_count[programme]
+        submission_ready = complete and saved_rows > 0
+        failure_reasons: list[str] = []
+        if not canonical:
+            failure_reasons.append("Ambiguous or unknown programme-year identity")
+        if quarantined_count:
+            failure_reasons.append("Quarantined required occurrences remain")
+        if search_failures:
+            failure_reasons.append("Scheduler search-failure occurrences remain")
+        if scheduled_count != required_count:
+            failure_reasons.append("Scheduled occurrences do not equal recorded required occurrences")
+        if hard_count:
+            failure_reasons.append("Scheduled hard violations exist")
+        if not saved_rows:
+            failure_reasons.append("No valid rows in saved strict submission workbook")
         rows.append(
             {
-                "Normalised Programme/Year": programme,
-                "Required Assignments": required_count,
+                "Raw identities observed": "; ".join(sorted(raw_identities[programme])),
+                "Normalised Programme/Year": canonical or programme,
+                "Canonical programme-year": canonical,
+                "Required Assignments": input_requirements[programme],
                 "Required Teaching Occurrences": required_count,
+                "Recorded occurrences": required_count,
+                "Quarantined occurrences": quarantined_count,
+                "Schedulable occurrences": max(required_count - quarantined_count, 0),
                 "Fixed Assignments": fixed_counts[programme],
                 "Scheduled Assignments": scheduled_count,
+                "Scheduled occurrences": scheduled_count,
+                "Search failures": search_failures,
+                "Hard violations": hard_count,
                 "Unscheduled Assignments": max(required_count - scheduled_count, 0),
+                "All-valid rows": all_valid_count[programme],
                 "Submission Rows": saved_rows,
+                "Strict saved rows": saved_rows,
                 "Actual Saved Submission Rows": saved_rows,
                 "Completion Percentage": (scheduled_count / required_count * 100) if required_count else 0,
                 "Complete Schedule Status": "PASS" if complete else "FAIL",
                 "Included In Submission": "Yes" if saved_rows else "No",
-                "Submission-Ready Status": "PASS" if saved_rows else "FAIL",
-                "Exclusion Reason": "" if saved_rows else "No valid saved rows in submission workbook",
+                "Submission-Ready Status": "PASS" if submission_ready else "FAIL",
+                "Counts Toward Minimum 20": "Yes" if submission_ready else "No",
+                "Exclusion Reason": "" if submission_ready else "; ".join(failure_reasons),
             }
         )
     return rows
@@ -524,7 +625,7 @@ def _row_level_reconciliation(
         course = assignment.course
         row_id = _template2_assignment_id(assignment)
         saved_matches = saved_index.get(row_id, [])
-        programme = normalise_programme_year(course.prog_yr)
+        programme = programme_year_report_value(course.prog_yr)
         if saved_matches:
             status = "Saved in submission workbook"
             reason = ""
@@ -566,13 +667,43 @@ def _missing_programme_year_rows(programme_rows: list[dict[str, object]]) -> lis
             continue
         rows.append(
             {
-                "Programme-Year": row.get("Normalised Programme/Year"),
+                "Programme-Year": row.get("Canonical programme-year") or row.get("Normalised Programme/Year"),
                 "Scheduled Assignments": row.get("Scheduled Assignments"),
                 "Unscheduled Assignments": row.get("Unscheduled Assignments"),
                 "Exclusion Reason": row.get("Exclusion Reason"),
             }
         )
     return rows
+
+
+def _identity_audit_rows(values: list[object]) -> list[dict[str, object]]:
+    """Return raw-to-canonical programme-year normalisation evidence."""
+    rows: list[dict[str, object]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for value in values:
+        identity = identify_programme_year(value)
+        key = (str(value or ""), identity.canonical, identity.status)
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append(
+            {
+                "Raw value": str(value or ""),
+                "Canonical value": identity.canonical,
+                "Normalisation rule": identity.rule,
+                "Confidence/status": identity.status,
+            }
+        )
+    return rows
+
+
+def _incomplete_programme_rows(programme_rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Return programme-years failing the authoritative completeness gate."""
+    return [
+        row
+        for row in programme_rows
+        if row.get("Complete Schedule Status") != "PASS" or row.get("Submission-Ready Status") != "PASS"
+    ]
 
 
 def _fixed_accuracy(assignments: list[Assignment]) -> list[dict[str, object]]:
@@ -603,29 +734,60 @@ def validate_template2_submission(
     assignments: list[Assignment],
     rooms: list[Room],
     template2_path: Path,
+    all_valid_workbook_path: Path | None = None,
+    quarantined_requirements: list[object] | None = None,
 ) -> Template2ValidationResult:
     """Validate the actual saved submission-ready Template 2 workbook."""
     headers = _headers(workbook_path)
     template_headers = _headers(template2_path)
     rows = _row_dicts(workbook_path)
+    all_valid_rows = _row_dicts(all_valid_workbook_path) if all_valid_workbook_path is not None else []
     field_rows, invalid_rows = _required_field_validation(rows, rooms)
     duplicates = _duplicate_rows(rows)
-    programme_rows = _programme_coverage(source_requirements, assignments, rows, invalid_rows)
+    programme_rows = _programme_coverage(
+        source_requirements,
+        assignments,
+        rows,
+        invalid_rows,
+        all_valid_rows=all_valid_rows,
+        quarantined_requirements=quarantined_requirements,
+    )
     demand = build_demand_metrics(source_requirements, assignments, input_course_records=len(source_requirements))
-    complete_programmes = sum(1 for row in programme_rows if row["Complete Schedule Status"] == "PASS")
+    represented_programmes = {
+        str(row.get("Canonical programme-year"))
+        for row in programme_rows
+        if row.get("Canonical programme-year") and int(row.get("Strict saved rows") or 0) > 0
+    }
+    all_valid_programmes = {
+        str(row.get("Canonical programme-year"))
+        for row in programme_rows
+        if row.get("Canonical programme-year") and int(row.get("All-valid rows") or 0) > 0
+    }
+    complete_programmes = {
+        str(row.get("Canonical programme-year"))
+        for row in programme_rows
+        if row.get("Complete Schedule Status") == "PASS" and row.get("Canonical programme-year")
+    }
+    submission_ready_programmes = {
+        str(row.get("Canonical programme-year"))
+        for row in programme_rows
+        if row.get("Submission-Ready Status") == "PASS" and row.get("Canonical programme-year")
+    }
     saved_programme_year_counts = _saved_programme_year_counts(rows, invalid_rows)
     actual_saved_programmes = len(saved_programme_year_counts)
-    minimum_status = "PASS" if actual_saved_programmes >= REQUIRED_MIN_PROGRAMME_YEARS else "FAIL"
+    submission_ready_count = len(submission_ready_programmes)
+    minimum_status = "PASS" if submission_ready_count >= REQUIRED_MIN_PROGRAMME_YEARS else "FAIL"
     missing_columns = [column for column in REQUIRED_SUBMISSION_COLUMNS if column not in headers]
     extra_columns = [column for column in headers if column not in template_headers]
     ready = not missing_columns and not extra_columns and not invalid_rows and not duplicates and minimum_status == "PASS"
-    complete_programme_set = {
-        str(row.get("Normalised Programme/Year"))
-        for row in programme_rows
-        if row.get("Complete Schedule Status") == "PASS"
-    }
-    reconciliation = _row_level_reconciliation(assignments, rows, invalid_rows, complete_programme_set)
+    reconciliation = _row_level_reconciliation(assignments, rows, invalid_rows, complete_programmes)
     missing_programmes = _missing_programme_year_rows(programme_rows)
+    identity_values: list[object] = []
+    identity_values.extend(course.prog_yr for course in source_requirements)
+    identity_values.extend(assignment.course.prog_yr for assignment in assignments)
+    identity_values.extend(getattr(item, "programme_year", "") for item in quarantined_requirements or [])
+    for row in [*rows, *all_valid_rows]:
+        identity_values.extend(value for _, value in _saved_identity_candidates(row))
     summary = {
         "fixed source rows": len(fixed_sessions),
         "valid fixed assignments": sum(1 for item in assignments if item.is_fixed),
@@ -639,12 +801,16 @@ def validate_template2_submission(
         "total unscheduled occurrences": demand.unscheduled_teaching_occurrences,
         "Template 2 output rows": len(rows),
         "Actual saved Template 2 rows": len(rows),
+        "All-valid Template 2 rows": len(all_valid_rows),
         "rows with missing required fields": sum(1 for row in invalid_rows if "Missing" in row["Issues"]),
         "rows with mapping errors": len(invalid_rows),
         "distinct programme-year schedules": actual_saved_programmes,
+        "programme-years represented in submission workbook": len(represented_programmes),
+        "programme-years represented in all-valid workbook": len(all_valid_programmes),
         "actual saved programme-year schedules": actual_saved_programmes,
-        "complete programme-year schedules": complete_programmes,
-        "submission-ready programme-year schedules": actual_saved_programmes,
+        "complete programme-year schedules": len(complete_programmes),
+        "submission-ready programme-year schedules": submission_ready_count,
+        "qualifying submission-ready programme-years": submission_ready_count,
         "required minimum programme-year schedules": REQUIRED_MIN_PROGRAMME_YEARS,
         "minimum programme-year status": minimum_status,
         "Template 2 readiness status": "PASS" if ready else "FAIL",
@@ -661,6 +827,9 @@ def validate_template2_submission(
         duplicate_rows=duplicates,
         invalid_rows=invalid_rows,
         missing_programme_year_rows=missing_programmes,
+        identity_audit_rows=_identity_audit_rows(identity_values),
+        incomplete_programme_year_rows=_incomplete_programme_rows(programme_rows),
+        saved_workbook_rows=_saved_workbook_verification_rows(rows, invalid_rows),
     )
 
 
@@ -681,12 +850,15 @@ def export_template2_validation_report(result: Template2ValidationResult, output
         pd.DataFrame(result.duplicate_rows).to_excel(writer, sheet_name="Duplicate Check", index=False)
         pd.DataFrame(result.invalid_rows).to_excel(writer, sheet_name="Invalid Rows", index=False)
         pd.DataFrame(result.missing_programme_year_rows).to_excel(writer, sheet_name="Missing Programme-Years", index=False)
+        pd.DataFrame(result.identity_audit_rows).to_excel(writer, sheet_name="Identity Normalisation Audit", index=False)
+        pd.DataFrame(result.incomplete_programme_year_rows).to_excel(writer, sheet_name="Incomplete Programme-Years", index=False)
+        pd.DataFrame(result.saved_workbook_rows).to_excel(writer, sheet_name="Saved Workbook Verification", index=False)
         pd.DataFrame(
             [
                 {
                     "Check": "Submission readiness",
                     "Status": "PASS" if result.ready else "FAIL",
-                    "Notes": "Requires valid saved rows, valid mappings, no duplicates, and at least 20 actual saved programme-year schedules.",
+                    "Notes": "Requires complete programme-years, valid saved rows, valid mappings, no duplicates, and at least 20 qualifying submission-ready programme-years.",
                 }
             ]
         ).to_excel(writer, sheet_name="Submission Readiness", index=False)
@@ -697,15 +869,19 @@ def export_template2_programme_year_reconciliation(result: Template2ValidationRe
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     summary_keys = [
+        "programme-years represented in all-valid workbook",
+        "programme-years represented in submission workbook",
+        "complete programme-year schedules",
+        "submission-ready programme-year schedules",
+        "qualifying submission-ready programme-years",
+        "required minimum programme-year schedules",
+        "minimum programme-year status",
         "total required teaching occurrences",
         "total scheduled occurrences",
         "total unscheduled occurrences",
         "Template 2 output rows",
+        "All-valid Template 2 rows",
         "actual saved programme-year schedules",
-        "complete programme-year schedules",
-        "submission-ready programme-year schedules",
-        "required minimum programme-year schedules",
-        "minimum programme-year status",
         "Template 2 readiness status",
     ]
     summary_values = getattr(result, "summary", {})
@@ -715,3 +891,6 @@ def export_template2_programme_year_reconciliation(result: Template2ValidationRe
         pd.DataFrame(getattr(result, "programme_rows", [])).to_excel(writer, sheet_name="Programme-Year Reconciliation", index=False)
         pd.DataFrame(getattr(result, "missing_programme_year_rows", [])).to_excel(writer, sheet_name="Missing Programme-Years", index=False)
         pd.DataFrame(getattr(result, "source_reconciliation_rows", [])).to_excel(writer, sheet_name="Row-Level Reconciliation", index=False)
+        pd.DataFrame(getattr(result, "identity_audit_rows", [])).to_excel(writer, sheet_name="Identity Normalisation Audit", index=False)
+        pd.DataFrame(getattr(result, "incomplete_programme_year_rows", [])).to_excel(writer, sheet_name="Incomplete Programme-Years", index=False)
+        pd.DataFrame(getattr(result, "saved_workbook_rows", [])).to_excel(writer, sheet_name="Saved Workbook Verification", index=False)

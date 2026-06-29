@@ -4,9 +4,9 @@
 
 The final validated scope is the SIT Engineering Cluster, including DSC. The prototype operates between consolidated scheduling requirements and the proposed Template 2 timetable output used by timetabling staff for review and upload preparation.
 
-The final validated branch also includes guarded fixed-session handling and programme, tutor and room visual timetable exports.
+The current completeness-gate branch also includes guarded fixed-session handling and programme, tutor and room visual timetable exports.
 
-## Final v1.1 Scheduling Metrics
+## Current Completeness-Gate Scheduling Metrics
 
 ```text
 Total teaching occurrences: 3562
@@ -38,15 +38,14 @@ Quarantined input records are not hidden and are not counted as algorithm search
 ```text
 Proposed timetable rows: 2838
 All-valid scheduled Template 2 rows: 2817
-Submission-ready Template 2 rows: 242
+Submission-ready Template 2 rows: 111
 Template 2 invalid rows: 0
-Template 2 complete programme-years: 29
-Submission-ready programme-years: 22
+Qualifying submission-ready programme-years: 17
 Minimum required programme-year schedules: 20
-Template 2 readiness: PASS
+Template 2 readiness: FAIL
 ```
 
-`Template 2 complete programme-years` counts programme-year schedules that are complete in the generated coverage analysis. `Submission-ready programme-years` is stricter: it counts valid programme-years from the actual saved `Template2_Submission_Ready.xlsx` Timetable sheet.
+`Qualifying submission-ready programme-years` is the strict completeness-gate count from the actual saved `Template2_Submission_Ready.xlsx` Timetable sheet after excluding programme-years with quarantined demand, search failures, invalid rows or ambiguous identity. This branch is not release-ready because `17` is below the required minimum of `20`.
 
 ## Visualisation Metrics
 
@@ -115,16 +114,16 @@ The live demonstration should use the non-optimised Engineering command because 
 
 ## Testing And Release Validation
 
-Final expected test result:
+Current expected test result:
 
 ```text
-259 passed
+296 passed
 ```
 
-Release validation result after generating final Engineering evidence:
+Release validation result after generating completeness-gate Engineering evidence:
 
 ```text
-FINAL RELEASE VALIDATION: PASS
+FINAL RELEASE VALIDATION: FAIL
 ```
 
 Run from the repository root:

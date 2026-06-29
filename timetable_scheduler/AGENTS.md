@@ -12,7 +12,7 @@ Treat this as an operations and supply chain resource-allocation prototype, not 
 
 ## Current Phase
 
-Current phase: **Final Integration and Release v1.1**
+Current phase: **Template 2 completeness-gate reconciliation**
 
 Main deliverable: generate a usable Engineering cluster timetable, including DSC.
 
@@ -34,10 +34,10 @@ The core prototype is complete through:
 8. Demand-metric audit, resource audit, online-delivery semantics, optimiser validation, and release validation
 9. Deterministic remarks interpretation, multi-room scheduling support, hybrid/flexible-delivery handling, and special-request review reporting
 
-Current validated v1.1 result:
+Current completeness-gate result:
 
-- Tests: `291 passed`
-- Release validator: `PASS`
+- Tests: `296 passed`
+- Release validator: `FAIL` because the stricter Template 2 completeness gate finds fewer than `20` qualifying programme-year schedules
 - Engineering controlled demo: runs successfully with `0` scheduled hard-constraint violations
 - Total teaching occurrences: `3562`
 - Schedulable occurrences: `3160`
@@ -47,11 +47,12 @@ Current validated v1.1 result:
 - Coverage of schedulable demand: `96.39%`
 - Coverage of total recorded demand: `85.51%`
 - Proposed timetable rows: `2838`
-- Submission-ready Template 2 populated rows: `242`
+- All-valid scheduled Template 2 rows: `2817`
+- Submission-ready Template 2 populated rows: `111`
 - Template 2 invalid rows: `0`
-- Template 2 complete programme-years: `29`
-- Submission-ready programme-years: `22`
-- Template 2 readiness: `PASS`
+- Qualifying submission-ready programme-years: `17`
+- Minimum required programme-year schedules: `20`
+- Template 2 readiness: `FAIL`
 - Programme visual sheets: `80`
 - Tutor visual sheets: `221`
 - Room visual sheets: `43`
@@ -63,7 +64,7 @@ The `85.51%` total-recorded-demand coverage includes quarantined source records 
 
 The earlier pre-fixed-session v1.0 baseline had `2777` required occurrences, `2747` scheduled occurrences, `30` unscheduled occurrences, and `98.92%` coverage. Treat those values as historical development evidence only.
 
-Preflight, run summary, guarded-generation, Template 2 validation, Template 2 programme-year reconciliation, Template 2 exclusion audit, run manifest and visualisation validation reports should be preserved.
+Preflight, run summary, guarded-generation, Template 2 validation, Template 2 programme-year reconciliation, Template 2 exclusion audit, run manifest and visualisation validation reports should be preserved. Do not present this branch as release-ready until the qualifying programme-year count reaches the required minimum without weakening hard constraints.
 
 ## Additional DSC2204 Requirements - June 26
 
@@ -149,7 +150,7 @@ Preflight, run summary, guarded-generation, Template 2 validation, Template 2 pr
 - Excel sheet names must remain within `31` characters.
 - Generated visual workbooks remain ignored release outputs unless intentionally packaged.
 - Current visualisation validation:
-  - Tests: `291 passed`
+  - Tests: `296 passed`
   - Programme visual sheets: `80`
   - Tutor visual sheets: `221`
   - Room visual sheets: `43`
@@ -159,11 +160,12 @@ Preflight, run summary, guarded-generation, Template 2 validation, Template 2 pr
 
 ## Final Integration and Release v1.1
 
+- This section is superseded by the stricter Template 2 completeness-gate evidence recorded above.
 - The validated visualisation branch includes the fixed-session compliance implementation.
 - Final scheduling metrics must not change during documentation and release work.
 - Scheduled hard violations must remain zero.
-- Template 2 readiness must remain `PASS`.
-- At least `20` submission-ready programme-year schedules must remain available.
+- Template 2 readiness is currently `FAIL` under the completeness gate because only `17` qualifying programme-years are submission-ready.
+- At least `20` submission-ready programme-year schedules are still required before release.
 - Visual exports are supplementary outputs and must not change the official Template 2 workbook.
 - Quarantined input demand and scheduler search failures must remain reported separately.
 - Generated output workbooks remain ignored from source control.
@@ -172,7 +174,7 @@ Preflight, run summary, guarded-generation, Template 2 validation, Template 2 pr
 - All project ownership and decisions must be presented as team-based.
 - Do not present one student as the sole project owner.
 - Do not delete existing branches or tags.
-- Final v1.1 metrics:
+- Current completeness-gate metrics:
   - Total teaching occurrences: `3562`
   - Schedulable occurrences: `3160`
   - Quarantined input occurrences: `402`
@@ -182,8 +184,9 @@ Preflight, run summary, guarded-generation, Template 2 validation, Template 2 pr
   - Coverage of schedulable demand: `96.39%`
   - Coverage of total recorded demand: `85.51%`
   - Proposed timetable rows: `2838`
-  - Submission-ready Template 2 populated rows: `242`
-  - Submission-ready programme-years: `22`
+  - Submission-ready Template 2 populated rows: `111`
+  - Qualifying submission-ready programme-years: `17`
+  - Template 2 readiness: `FAIL`
   - Visual export status: `PASS`
   - Fixed-session integrity status: `PASS`
   - Microsoft Excel desktop open check: `PASS`
@@ -246,6 +249,23 @@ For Engineering scope:
 - Year formats must be normalised consistently.
 - Template 2 readiness cannot pass unless the actual saved workbook contains at least `20` valid programme-year schedules.
 - No release is allowed until the saved workbook is inspected directly.
+
+## Template 2 Programme-Year Completeness Gate
+
+- The actual saved `Template2_Submission_Ready.xlsx` is the source of truth for exported rows.
+- Saved rows alone do not prove that a programme-year schedule is complete.
+- Programme-year identity must be normalised once and reused throughout the pipeline.
+- A programme-year counts toward the minimum `20` only when it is complete and has valid saved submission rows.
+- Quarantined input occurrences and scheduler search failures must be attributed to the same canonical programme-year identity.
+- Incomplete programme-years may appear in the all-valid workbook but must not count toward the strict submission minimum.
+- Reports must distinguish:
+  - represented in saved workbook;
+  - complete schedule;
+  - submission-ready and counts toward minimum `20`.
+- The validator must fail when fewer than `20` qualifying programme-years exist.
+- No hard constraints may be weakened to increase the count.
+- Do not hard-code a count of `22`, `20`, `13` or `11`.
+- Current audited result: `17` qualifying submission-ready programme-years from `111` strict saved rows, so release readiness is `FAIL`.
 
 ## Explainable Remarks Interpretation
 
@@ -481,9 +501,9 @@ For Engineering scope:
 ## Report and Presentation Phase
 
 - Prototype feature development is complete.
-- Historical phase metrics have been superseded by the final v1.1 release result recorded above.
-- Release validator: `PASS`.
-- Final v1.1 Engineering result:
+- Historical phase metrics have been superseded by the completeness-gate result recorded above.
+- Release validator: `FAIL` under the strict Template 2 completeness gate.
+- Current Engineering scheduling result:
   - Total teaching occurrences: `3562`
   - Schedulable occurrences: `3160`
   - Quarantined input occurrences: `402`
@@ -492,7 +512,7 @@ For Engineering scope:
   - Coverage of schedulable demand: `96.39%`
   - Coverage of total recorded demand: `85.51%`
   - Scheduled hard-constraint violations: `0`
-  - Template 2 readiness: `PASS`
+  - Template 2 readiness: `FAIL`
   - Visual export status: `PASS`
   - Fixed-session integrity status: `PASS`
   - Microsoft Excel desktop open check: `PASS`
@@ -505,7 +525,7 @@ For Engineering scope:
   - Runtime: approximately `1047` seconds
 - Use the non-optimised command for the live demo.
 - Do not change validated figures unless a new full release run proves different results.
-- All future work should focus on report writing, AI usage documentation, presentation content, screenshots, and demo rehearsal.
+- Report and presentation work must frame this branch as blocked for release until the Template 2 minimum is satisfied without weakening hard constraints.
 
 ## Repository Reconciliation Before Final Submission
 
@@ -681,7 +701,7 @@ py -m pytest -q
 Expected result:
 
 ```text
-283 passed
+296 passed
 ```
 
 Run DSC demo:
@@ -702,7 +722,7 @@ Run Engineering remarks-aware final test:
 python main.py --scope eng --skip-optimisation --max-candidate-patterns 300 --max-retry-assignments 50 --skip-unscheduled-diagnostics --progress-interval 25 --audit-demand-metrics
 ```
 
-Expected key result for the final v1.1 run:
+Expected key result for the current completeness-gate run:
 
 ```text
 Total teaching occurrences: 3562
@@ -711,7 +731,7 @@ Quarantined input occurrences: 402
 Scheduled occurrences: 3046
 Scheduler search failures: 114
 Scheduled hard-constraint violations: 0
-Template 2 readiness: PASS
+Template 2 readiness: FAIL
 Visual export status: PASS
 Fixed-session integrity status: PASS
 Microsoft Excel desktop open check: PASS

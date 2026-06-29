@@ -1,11 +1,11 @@
 # Assessment Evidence Package
 
-This package contains generated output workbooks from the final v1.1 Engineering Timetable Scheduler validation run.
+This package contains generated output workbooks from the current Engineering Timetable Scheduler completeness-gate validation run.
 
 ## Official Timetable Outputs
 
 - `final_timetable_engineering_cluster.xlsx`: proposed Engineering cluster timetable containing the valid generated assignments from the validated schedule.
-- `Template2_Submission_Ready.xlsx`: official submission-ready Template 2 workbook containing only validated rows from complete submission-ready programme-year schedules.
+- `Template2_Submission_Ready.xlsx`: strict Template 2 workbook containing only validated rows from complete submission-ready programme-year schedules.
 
 ## Supplementary Visual Timetables
 
@@ -22,9 +22,9 @@ The visual workbooks are supplementary. They are generated from validated schedu
 - `template2_submission_validation.xlsx`: Template 2 field validation, source-to-output reconciliation, programme schedule coverage and readiness status.
 - `timetable_visualisation_validation.xlsx`: reconciliation checks confirming that visual workbooks contain expected scheduled entries with no missing entries, unexpected entries or invalid overlaps.
 
-Template 2 readiness and visual export validation both passed in the final v1.1 validation run.
+Visual export validation passed. Template 2 readiness is currently blocked by the stricter programme-year completeness gate.
 
-## Final v1.1 Metrics
+## Current Completeness-Gate Metrics
 
 ```text
 Total teaching occurrences: 3562
@@ -44,12 +44,11 @@ The `85.51%` total-recorded-demand coverage includes quarantined source records.
 ```text
 Proposed timetable rows: 2838
 All-valid scheduled Template 2 rows: 2817
-Submission-ready Template 2 rows: 242
+Submission-ready Template 2 rows: 111
 Template 2 invalid rows: 0
-Template 2 complete programme-years: 29
-Submission-ready programme-years: 22
+Qualifying submission-ready programme-years: 17
 Minimum required programme-year schedules: 20
-Template 2 readiness: PASS
+Template 2 readiness: FAIL
 ```
 
 ## Known Limitations
