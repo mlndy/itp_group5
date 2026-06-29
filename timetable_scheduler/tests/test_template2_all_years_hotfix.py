@@ -9,8 +9,8 @@ from openpyxl import load_workbook
 
 from config import DEFAULT_TEMPLATE2_FILE
 from data.models import Assignment, Course, Room, TimeSlot
-from engine.programme_year import canonical_programme_year
-from output.exporter import export_schedule
+from engine.programme_year import canonical_programme_year, canonical_programme_year_from_source
+from output.exporter import assignment_to_row, export_schedule
 from output.submission_validator import (
     build_template2_exclusion_audit_rows,
     export_all_valid_scheduled_schedule,
@@ -92,6 +92,28 @@ def test_template2_year_normalisation_preserves_later_years() -> None:
     assert canonical_programme_year("Y2/Y3") == ""
     assert normalise_template2_programme_year("METS/2022") == ""
     assert normalise_template2_programme_year("EDE, EPE, ESE, SBE") == ""
+    assert canonical_programme_year("CBWL ESE/Yr 4") == "ESE/Y4"
+    assert canonical_programme_year("MEC Yr 2 -Design-") == "MEC/Y2"
+    assert canonical_programme_year("EPE Y1 - 80 pax") == ""
+    assert canonical_programme_year("EEE and ISE CBE/Yr 1") == ""
+
+
+def test_source_file_evidence_recovers_mets_cohort_year() -> None:
+    """METS cohort labels need the source workbook year to become countable."""
+    assert canonical_programme_year("METS/2022") == ""
+    assert canonical_programme_year_from_source("METS/2022", "METS_Year 4.xlsx") == "METS/Y4"
+    assert canonical_programme_year_from_source("METS/2024", "METS_Year 2.xlsx") == "METS/Y2"
+    assert canonical_programme_year_from_source("METS/2024", "Unrelated_Year 2.xlsx") == ""
+
+
+def test_template2_row_uses_source_recovered_programme_year() -> None:
+    """Template 2 rows should expose source-recovered programme-year identity."""
+    assignment = make_assignment(1, prog_yr="METS/2024", group_ids=["METS/2024"], source_file="METS_Year 2.xlsx")
+
+    row = assignment_to_row(assignment)
+
+    assert row["Programme/Year"] == "METS/Y2"
+    assert saved_row_programme_year(row) == "METS/Y2"
 
 
 def test_saved_row_programme_year_uses_actual_template2_fields() -> None:

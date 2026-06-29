@@ -267,6 +267,20 @@ For Engineering scope:
 - Do not hard-code a count of `22`, `20`, `13` or `11`.
 - Current audited result: `17` qualifying submission-ready programme-years from `111` strict saved rows, so release readiness is `FAIL`.
 
+## Targeted Programme-Year Recovery Phase
+
+- The current truthful baseline is `17` qualifying submission-ready programme-years.
+- The minimum required is `20` qualifying programme-years.
+- The goal is to recover at least three additional programme-years only through evidence-based corrections.
+- Hard constraints must remain unchanged.
+- Fixed sessions must remain unchanged.
+- Required demand must not be removed from completeness calculations.
+- Missing data must not be invented.
+- Programme-years must remain incomplete when unresolved required demand exists.
+- Any improvement must show the exact blocker removed and the evidence supporting the correction.
+- Changes must be small, isolated and regression-tested.
+- Stop once the minimum `20` is truthfully achieved and all release gates pass.
+
 ## Explainable Remarks Interpretation
 
 - Remarks are free-text scheduling requests from programme submissions.

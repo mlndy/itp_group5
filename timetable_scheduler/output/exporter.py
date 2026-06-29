@@ -14,6 +14,7 @@ from openpyxl.utils import get_column_letter
 from config import ACTIVITY_TYPE_CODES, DAY_ABBREVIATIONS, DEFAULT_TEMPLATE2_FILE, ENABLE_REMARK_INTERPRETATION
 from data.models import Assignment
 from engine.constraint_checker import annotate_schedule_violations, assignment_end_time
+from engine.programme_year import programme_year_report_value_from_source
 from engine.remarks_interpreter import assignment_room_ids, assignment_rooms
 
 
@@ -94,6 +95,9 @@ def _template_row_values(assignment: Assignment) -> dict[str, object]:
 
     room_id = _room_id(assignment)
     room2_id = _room2_id(assignment)
+    programme_year = programme_year_report_value_from_source(course.prog_yr, course.source_file)
+    if programme_year.startswith("UNRESOLVED"):
+        programme_year = course.prog_yr
     return {
         "Module": course.module_code,
         "Class Type": course.activity,
@@ -127,7 +131,7 @@ def _template_row_values(assignment: Assignment) -> dict[str, object]:
         "Location Suitability ID": "#N/A",
         "Location Hostkey": room_id,
         "Location Hostkey.1": room_id,
-        "Programme/Year": course.prog_yr,
+        "Programme/Year": programme_year,
         "Delivery Mode": assignment.selected_delivery_mode or course.delivery_mode,
         "Status": assignment.status,
     }

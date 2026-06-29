@@ -636,6 +636,47 @@ def test_max_candidate_patterns_can_leave_course_unscheduled() -> None:
     assert scheduler.MAX_CANDIDATE_PATTERN_LIMIT_REASON in schedule[0].hard_violations
 
 
+def test_candidate_limit_uses_weekly_fallback_when_safe(monkeypatch) -> None:
+    """A capped full-pattern search should still try the existing weekly fallback."""
+    from generator import scheduler
+
+    course = make_course(module_code="DSC5502", teaching_weeks=[1], duration_hrs=1)
+    room = Room("R1", 100, "physical")
+    fallback_assignment = Assignment(course, room, TimeSlot("Monday", "09:00", 1))
+
+    monkeypatch.setattr(
+        scheduler,
+        "schedule_course",
+        lambda *args, **kwargs: [Assignment(course, None, None, hard_violations=[scheduler.MAX_CANDIDATE_PATTERN_LIMIT_REASON])],
+    )
+    monkeypatch.setattr(scheduler, "schedule_course_for_weeks", lambda *args, **kwargs: [fallback_assignment])
+
+    schedule = scheduler.generate_schedule([course], [room], max_candidate_patterns=1)
+
+    assert schedule == [fallback_assignment]
+    assert sum(len(check_hard_constraints(item, [])) for item in schedule) == 0
+
+
+def test_candidate_limit_ignores_fast_precheck_rejections(monkeypatch) -> None:
+    """Obviously occupied candidates should not consume the candidate-pattern budget."""
+    from generator import scheduler
+
+    monkeypatch.setattr(scheduler, "VALID_DAYS", ["Monday"])
+    monkeypatch.setattr(scheduler, "VALID_START_TIMES", ["09:00"])
+
+    first = make_course(module_code="DSC5503", prog_yr="DSC/YR 1", staff_ids=["S001"])
+    second = make_course(module_code="DSC5504", prog_yr="DSC/YR 2", staff_ids=["S002"])
+    rooms = [Room("R1", 100, "physical"), Room("R2", 100, "physical")]
+
+    schedule = scheduler.generate_schedule([first, second], rooms, max_candidate_patterns=1)
+
+    scheduled = [item for item in schedule if item.room is not None and item.timeslot is not None]
+    assert len(scheduled) == 2
+    assert scheduled[0].room.room_id == "R1"
+    assert scheduled[1].room.room_id == "R2"
+    assert count_hard_violations(schedule) == 0
+
+
 def test_retry_budget_skips_candidate_limit_placeholders(monkeypatch) -> None:
     """Candidate-limit placeholders should not consume capped retry slots."""
     from generator import scheduler

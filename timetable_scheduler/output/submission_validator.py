@@ -14,10 +14,12 @@ from data.models import Assignment, Course, FixedSession, Room
 from engine.demand_metrics import build_demand_metrics, build_requirement_demands
 from engine.programme_year import (
     canonical_programme_year,
+    canonical_programme_year_from_source,
     clean_programme_year_text,
     identify_programme_year,
     normalise_programme_year,
     programme_year_report_value,
+    programme_year_report_value_from_source,
 )
 from output.exporter import assignment_to_row, export_schedule
 
@@ -185,7 +187,7 @@ def submission_assignments(
             continue
         if not _has_required_submission_values(assignment):
             continue
-        programme = canonical_programme_year(assignment.course.prog_yr)
+        programme = canonical_programme_year_from_source(assignment.course.prog_yr, assignment.course.source_file)
         if complete_programmes is not None and programme not in complete_programmes:
             continue
         if valid_room_ids is not None and assignment.room is not None and assignment.room.room_id not in valid_room_ids:
@@ -410,7 +412,7 @@ def _assignment_exclusion_row(
     """Return one Template 2 exclusion audit row."""
     course = assignment.course
     return {
-        "Programme-Year": programme_year_report_value(course.prog_yr),
+        "Programme-Year": programme_year_report_value_from_source(course.prog_yr, course.source_file),
         "Module": course.module_code,
         "Activity": course.activity,
         "Scheduled Row ID": "/".join(str(part or "") for part in _template2_assignment_id(assignment)),
@@ -453,7 +455,7 @@ def build_template2_exclusion_audit_rows(
     valid_room_ids = _valid_rooms(rooms or []) if rooms is not None else None
     rows: list[dict[str, object]] = []
     for assignment in assignments:
-        programme = canonical_programme_year(assignment.course.prog_yr)
+        programme = canonical_programme_year_from_source(assignment.course.prog_yr, assignment.course.source_file)
         if not _is_submission_assignment(assignment):
             reason = "; ".join(assignment.hard_violations) if assignment.hard_violations else "Assignment is unscheduled."
             rows.append(_assignment_exclusion_row(assignment, "unscheduled-or-hard-invalid", reason))
@@ -521,13 +523,13 @@ def _programme_coverage(
     raw_identities: dict[str, set[str]] = defaultdict(set)
     input_requirements: Counter[str] = Counter()
     for demand in build_requirement_demands(source_requirements, assignments):
-        programme = programme_year_report_value(demand.course.prog_yr)
+        programme = programme_year_report_value_from_source(demand.course.prog_yr, demand.course.source_file)
         raw_identities[programme].add(str(demand.course.prog_yr))
         input_requirements[programme] += 1
         required[programme] += demand.required_week_count
         scheduled[programme] += demand.scheduled_week_count
     for assignment in assignments:
-        programme = programme_year_report_value(assignment.course.prog_yr)
+        programme = programme_year_report_value_from_source(assignment.course.prog_yr, assignment.course.source_file)
         raw_identities[programme].add(str(assignment.course.prog_yr))
         if assignment.is_fixed:
             fixed_counts[programme] += 1
@@ -535,7 +537,7 @@ def _programme_coverage(
             hard_counts[programme] += len(assignment.hard_violations)
     for item in quarantined_requirements or []:
         raw_programme = getattr(item, "programme_year", "")
-        programme = programme_year_report_value(raw_programme)
+        programme = programme_year_report_value_from_source(raw_programme, getattr(item, "source_file", ""))
         raw_identities[programme].add(str(raw_programme))
         quarantined_counts[programme] += int(getattr(item, "affected_occurrences", 0) or 0)
     submission_count = _saved_programme_year_counts(submission_rows, invalid_rows or [])
@@ -625,7 +627,7 @@ def _row_level_reconciliation(
         course = assignment.course
         row_id = _template2_assignment_id(assignment)
         saved_matches = saved_index.get(row_id, [])
-        programme = programme_year_report_value(course.prog_yr)
+        programme = programme_year_report_value_from_source(course.prog_yr, course.source_file)
         if saved_matches:
             status = "Saved in submission workbook"
             reason = ""
