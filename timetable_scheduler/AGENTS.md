@@ -281,6 +281,40 @@ For Engineering scope:
 - Changes must be small, isolated and regression-tested.
 - Stop once the minimum `20` is truthfully achieved and all release gates pass.
 
+## Final Programme-Year Completion Policy
+
+### Official fixed sessions are authoritative
+
+- When a session comes from the official fixed-session workbook `Requirements Template_Lab (ENG) - AY25 Tri 1.xlsx`, its supplied day, start time, end time, duration, teaching weeks, room or venue, staff and group must be treated as authoritative.
+- The scheduler must anchor an official fixed session exactly when the source data is internally valid.
+
+### Generic operating-hour and lunch rules must not invalidate an official fixed session
+
+- An official fixed session must not be quarantined solely because it spans the normal lunch period, starts before a preferred operating window, ends after `18:00`, or runs for a long continuous duration such as `09:00-18:00`.
+- These are permitted exceptions only for authoritative fixed sessions.
+- Official fixed sessions must still satisfy no tutor clash, no group clash, no room clash, valid teaching weeks, valid academic-calendar day, valid delivery mode and exact fixed-session placement.
+
+### Non-fixed sessions retain normal scheduling policies
+
+- Non-fixed classes must still obey the configured normal operating window, lunch policy, duration rules, candidate-slot rules and hard constraints.
+- Do not extend the general scheduler operating day merely to improve coverage.
+
+### Explicit remarks are not automatically fixed sessions
+
+- A free-text instruction such as `9AM-6PM` must retain its full duration.
+- If a timing instruction is not backed by the official fixed-session workbook, do not shorten it, do not silently move it, schedule it only where valid, and otherwise leave it unresolved for review.
+
+### Venue and exam-seating mappings must be authoritative
+
+- A missing venue or exam-seating room may be recovered only when an exact, unambiguous mapping exists in the official Template 2 support sheets, the venue workbook, the fixed-session source, or another authoritative supplied data file.
+- Do not create a location host key.
+- Do not use fuzzy matching for submission-critical room identities.
+- If an exact mapping does not exist, keep the requirement quarantined.
+
+### Completeness remains strict
+
+- A programme-year counts only when recorded required occurrences are greater than `0`, quarantined occurrences are `0`, scheduler search failures are `0`, scheduled occurrences equal recorded required occurrences, scheduled hard violations are `0`, all required Template 2 mappings are valid, and strict saved Template 2 rows exist.
+
 ## Explainable Remarks Interpretation
 
 - Remarks are free-text scheduling requests from programme submissions.

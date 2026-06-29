@@ -220,6 +220,8 @@ def check_time_window(assignment: Assignment) -> list[str]:
     violations: list[str] = []
     if day not in VALID_DAYS:
         violations.append(f"Invalid teaching day: {day}")
+    if _is_authoritative_fixed_assignment(assignment):
+        return violations
     if start_minutes < EARLIEST_START_HOUR * 60:
         violations.append("Class starts before 09:00")
     if end_minutes > LATEST_END_HOUR * 60:
@@ -250,7 +252,7 @@ def check_blocked_time(assignment: Assignment) -> list[str]:
     blocked = BLOCKED_START_TIMES.get(day, set())
     occupied = occupied_start_times(assignment)
     violations: list[str] = []
-    if occupied & blocked:
+    if not _is_authoritative_fixed_assignment(assignment) and occupied & blocked:
         violations.append(f"Blocked time used on {day}: {sorted(occupied & blocked)}")
     violations.extend(check_blocked_week(assignment))
     return violations
@@ -377,6 +379,8 @@ def check_lunch_break(assignment: Assignment, existing: list[Assignment]) -> lis
     """Check flexible lunch break for every affected student group."""
     if assignment.timeslot is None:
         return []
+    if _is_authoritative_fixed_assignment(assignment):
+        return []
     combined = existing + [assignment]
     violations: list[str] = []
     for group in sorted(course_groups(assignment.course)):
@@ -409,6 +413,38 @@ def check_hard_constraints(
     violations.extend(check_group_clash(assignment, existing))
     violations.extend(check_lunch_break(assignment, existing))
     return violations
+
+
+def fixed_window_exception_violations(assignment: Assignment, existing: list[Assignment]) -> list[str]:
+    """Return generic window/lunch findings accepted only for official fixed sessions."""
+    if not _is_authoritative_fixed_assignment(assignment) or assignment.timeslot is None:
+        return []
+    violations: list[str] = []
+    start_minutes = time_to_minutes(assignment.timeslot.start_time)
+    end_minutes = assignment_end_minutes(assignment)
+    if start_minutes < EARLIEST_START_HOUR * 60:
+        violations.append("Class starts before 09:00")
+    if end_minutes > LATEST_END_HOUR * 60:
+        violations.append("Class ends after 18:00")
+    blocked = BLOCKED_START_TIMES.get(assignment.timeslot.day, set())
+    occupied = occupied_start_times(assignment)
+    if occupied & blocked:
+        violations.append(f"Blocked time used on {assignment.timeslot.day}: {sorted(occupied & blocked)}")
+    combined = existing + [assignment]
+    for group in sorted(course_groups(assignment.course)):
+        if not _has_lunch_break(combined, group, assignment.timeslot.week, assignment.timeslot.day):
+            violations.append(f"Student group {group} has no free lunch block between 11:00 and 14:00")
+    return violations
+
+
+def _is_authoritative_fixed_assignment(assignment: Assignment) -> bool:
+    """Return True for assignments anchored by the official fixed-session source."""
+    return bool(
+        assignment.is_fixed
+        or assignment.fixed_source
+        or getattr(assignment.course, "is_fixed_requirement", False)
+        or getattr(assignment.course, "fixed_source", None)
+    )
 
 
 def check_room_utilisation(assignment: Assignment) -> list[str]:
