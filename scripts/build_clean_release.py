@@ -12,6 +12,7 @@ DEFAULT_OUTPUT_PATH = PROJECT_ROOT / "dist" / "itp_group5_prototype_v1.1.0.zip"
 
 EXCLUDED_DIR_NAMES = {
     ".git",
+    ".tmp",
     ".venv",
     "venv",
     "env",

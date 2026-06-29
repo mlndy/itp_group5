@@ -65,6 +65,7 @@ def test_clean_release_zip_excludes_runtime_and_development_folders(tmp_path: Pa
     create_required_release_tree(tmp_path)
     for path in [
         ".git/config",
+        ".tmp/session/cache.txt",
         ".venv/Scripts/python.exe",
         "venv/bin/python",
         "env/bin/python",
@@ -95,6 +96,7 @@ def test_clean_release_zip_excludes_runtime_and_development_folders(tmp_path: Pa
     assert "Data/Requirements_ENG/2510_DSC.xlsx" in names
     assert "Data/Upload template_System (Template 2).xlsx" in names
     assert not any(name.startswith(".git/") for name in names)
+    assert not any(name.startswith(".tmp/") for name in names)
     assert not any(".venv/" in name or name.startswith("venv/") or name.startswith("env/") for name in names)
     assert not any("__pycache__/" in name or ".pytest_cache/" in name for name in names)
     assert not any("generated/" in name or "output_files/" in name for name in names)

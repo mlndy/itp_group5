@@ -36,35 +36,35 @@ The core prototype is complete through:
 
 Current completeness-gate result:
 
-- Tests: `296 passed`
-- Release validator: `FAIL` because the stricter Template 2 completeness gate finds fewer than `20` qualifying programme-year schedules
+- Tests: `304 passed`
+- Release validator: `PASS` because the strict Template 2 completeness gate finds `23` qualifying programme-year schedules
 - Engineering controlled demo: runs successfully with `0` scheduled hard-constraint violations
 - Total teaching occurrences: `3562`
-- Schedulable occurrences: `3160`
-- Quarantined input occurrences: `402`
-- Scheduled occurrences: `3046`
-- Scheduler search failures: `114`
-- Coverage of schedulable demand: `96.39%`
-- Coverage of total recorded demand: `85.51%`
-- Proposed timetable rows: `2838`
-- All-valid scheduled Template 2 rows: `2817`
-- Submission-ready Template 2 populated rows: `111`
+- Schedulable occurrences: `3323`
+- Quarantined input occurrences: `239`
+- Scheduled occurrences: `3214`
+- Scheduler search failures: `109`
+- Coverage of schedulable demand: `96.72%`
+- Coverage of total recorded demand: `90.23%`
+- Proposed timetable rows: `3006`
+- All-valid scheduled Template 2 rows: `2980`
+- Submission-ready Template 2 populated rows: `212`
 - Template 2 invalid rows: `0`
-- Qualifying submission-ready programme-years: `17`
+- Qualifying submission-ready programme-years: `23`
 - Minimum required programme-year schedules: `20`
-- Template 2 readiness: `FAIL`
-- Programme visual sheets: `80`
-- Tutor visual sheets: `221`
-- Room visual sheets: `43`
+- Template 2 readiness: `PASS`
+- Programme visual sheets: `86`
+- Tutor visual sheets: `235`
+- Room visual sheets: `48`
 - Visual export status: `PASS`
 - Fixed-session integrity status: `PASS`
 - Microsoft Excel desktop open check: `PASS`
 
-The `85.51%` total-recorded-demand coverage includes quarantined source records and must not be presented as the algorithm's scheduling success rate. The primary scheduling-performance metric is `96.39%` coverage of schedulable demand.
+The `90.23%` total-recorded-demand coverage includes quarantined source records and must not be presented as the algorithm's scheduling success rate. The primary scheduling-performance metric is `96.72%` coverage of schedulable demand.
 
 The earlier pre-fixed-session v1.0 baseline had `2777` required occurrences, `2747` scheduled occurrences, `30` unscheduled occurrences, and `98.92%` coverage. Treat those values as historical development evidence only.
 
-Preflight, run summary, guarded-generation, Template 2 validation, Template 2 programme-year reconciliation, Template 2 exclusion audit, run manifest and visualisation validation reports should be preserved. Do not present this branch as release-ready until the qualifying programme-year count reaches the required minimum without weakening hard constraints.
+Preflight, run summary, guarded-generation, Template 2 validation, Template 2 programme-year reconciliation, Template 2 exclusion audit, run manifest and visualisation validation reports should be preserved. Present release readiness only with the latest evidence showing at least 20 qualifying programme-years without weakening hard constraints.
 
 ## Additional DSC2204 Requirements - June 26
 
@@ -150,10 +150,10 @@ Preflight, run summary, guarded-generation, Template 2 validation, Template 2 pr
 - Excel sheet names must remain within `31` characters.
 - Generated visual workbooks remain ignored release outputs unless intentionally packaged.
 - Current visualisation validation:
-  - Tests: `296 passed`
-  - Programme visual sheets: `80`
-  - Tutor visual sheets: `221`
-  - Room visual sheets: `43`
+  - Tests: `304 passed`
+  - Programme visual sheets: `86`
+  - Tutor visual sheets: `235`
+  - Room visual sheets: `48`
   - Visual export status: `PASS`
   - Scheduled hard violations remain `0`
   - Microsoft Excel desktop open check: `PASS`
@@ -164,8 +164,8 @@ Preflight, run summary, guarded-generation, Template 2 validation, Template 2 pr
 - The validated visualisation branch includes the fixed-session compliance implementation.
 - Final scheduling metrics must not change during documentation and release work.
 - Scheduled hard violations must remain zero.
-- Template 2 readiness is currently `FAIL` under the completeness gate because only `17` qualifying programme-years are submission-ready.
-- At least `20` submission-ready programme-year schedules are still required before release.
+- Template 2 readiness is currently `PASS` under the completeness gate because `23` qualifying programme-years are submission-ready.
+- At least `20` submission-ready programme-year schedules are required for release, and the current evidence satisfies this gate.
 - Visual exports are supplementary outputs and must not change the official Template 2 workbook.
 - Quarantined input demand and scheduler search failures must remain reported separately.
 - Generated output workbooks remain ignored from source control.
@@ -176,17 +176,18 @@ Preflight, run summary, guarded-generation, Template 2 validation, Template 2 pr
 - Do not delete existing branches or tags.
 - Current completeness-gate metrics:
   - Total teaching occurrences: `3562`
-  - Schedulable occurrences: `3160`
-  - Quarantined input occurrences: `402`
-  - Scheduled occurrences: `3046`
-  - Scheduler search failures: `114`
+  - Schedulable occurrences: `3323`
+  - Quarantined input occurrences: `239`
+  - Scheduled occurrences: `3214`
+  - Scheduler search failures: `109`
   - Scheduled hard-constraint violations: `0`
-  - Coverage of schedulable demand: `96.39%`
-  - Coverage of total recorded demand: `85.51%`
-  - Proposed timetable rows: `2838`
-  - Submission-ready Template 2 populated rows: `111`
-  - Qualifying submission-ready programme-years: `17`
-  - Template 2 readiness: `FAIL`
+  - Coverage of schedulable demand: `96.72%`
+  - Coverage of total recorded demand: `90.23%`
+  - Proposed timetable rows: `3006`
+  - All-valid scheduled Template 2 rows: `2980`
+  - Submission-ready Template 2 populated rows: `212`
+  - Qualifying submission-ready programme-years: `23`
+  - Template 2 readiness: `PASS`
   - Visual export status: `PASS`
   - Fixed-session integrity status: `PASS`
   - Microsoft Excel desktop open check: `PASS`
@@ -265,13 +266,13 @@ For Engineering scope:
 - The validator must fail when fewer than `20` qualifying programme-years exist.
 - No hard constraints may be weakened to increase the count.
 - Do not hard-code a count of `22`, `20`, `13` or `11`.
-- Current audited result: `17` qualifying submission-ready programme-years from `111` strict saved rows, so release readiness is `FAIL`.
+- Current audited result: `23` qualifying submission-ready programme-years from `212` strict saved rows, so release readiness is `PASS`.
 
 ## Targeted Programme-Year Recovery Phase
 
-- The current truthful baseline is `17` qualifying submission-ready programme-years.
+- This historical phase started from `17` qualifying submission-ready programme-years.
 - The minimum required is `20` qualifying programme-years.
-- The goal is to recover at least three additional programme-years only through evidence-based corrections.
+- The current validated release evidence reaches `23` qualifying programme-years through evidence-based corrections.
 - Hard constraints must remain unchanged.
 - Fixed sessions must remain unchanged.
 - Required demand must not be removed from completeness calculations.
@@ -279,7 +280,7 @@ For Engineering scope:
 - Programme-years must remain incomplete when unresolved required demand exists.
 - Any improvement must show the exact blocker removed and the evidence supporting the correction.
 - Changes must be small, isolated and regression-tested.
-- Stop once the minimum `20` is truthfully achieved and all release gates pass.
+- Stop further scheduler changes now that the minimum `20` is truthfully achieved and all release gates pass.
 
 ## Final Programme-Year Completion Policy
 
@@ -550,17 +551,17 @@ For Engineering scope:
 
 - Prototype feature development is complete.
 - Historical phase metrics have been superseded by the completeness-gate result recorded above.
-- Release validator: `FAIL` under the strict Template 2 completeness gate.
+- Release validator: `PASS` under the strict Template 2 completeness gate.
 - Current Engineering scheduling result:
   - Total teaching occurrences: `3562`
-  - Schedulable occurrences: `3160`
-  - Quarantined input occurrences: `402`
-  - Scheduled occurrences: `3046`
-  - Scheduler search failures: `114`
-  - Coverage of schedulable demand: `96.39%`
-  - Coverage of total recorded demand: `85.51%`
+  - Schedulable occurrences: `3323`
+  - Quarantined input occurrences: `239`
+  - Scheduled occurrences: `3214`
+  - Scheduler search failures: `109`
+  - Coverage of schedulable demand: `96.72%`
+  - Coverage of total recorded demand: `90.23%`
   - Scheduled hard-constraint violations: `0`
-  - Template 2 readiness: `FAIL`
+  - Template 2 readiness: `PASS`
   - Visual export status: `PASS`
   - Fixed-session integrity status: `PASS`
   - Microsoft Excel desktop open check: `PASS`
@@ -573,7 +574,7 @@ For Engineering scope:
   - Runtime: approximately `1047` seconds
 - Use the non-optimised command for the live demo.
 - Do not change validated figures unless a new full release run proves different results.
-- Report and presentation work must frame this branch as blocked for release until the Template 2 minimum is satisfied without weakening hard constraints.
+- Report and presentation work must frame this branch as release-ready under the current evidence because the Template 2 minimum is satisfied without weakening hard constraints.
 
 ## Repository Reconciliation Before Final Submission
 
@@ -749,7 +750,7 @@ py -m pytest -q
 Expected result:
 
 ```text
-296 passed
+304 passed
 ```
 
 Run DSC demo:
@@ -774,12 +775,12 @@ Expected key result for the current completeness-gate run:
 
 ```text
 Total teaching occurrences: 3562
-Schedulable occurrences: 3160
-Quarantined input occurrences: 402
-Scheduled occurrences: 3046
-Scheduler search failures: 114
+Schedulable occurrences: 3323
+Quarantined input occurrences: 239
+Scheduled occurrences: 3214
+Scheduler search failures: 109
 Scheduled hard-constraint violations: 0
-Template 2 readiness: FAIL
+Template 2 readiness: PASS
 Visual export status: PASS
 Fixed-session integrity status: PASS
 Microsoft Excel desktop open check: PASS

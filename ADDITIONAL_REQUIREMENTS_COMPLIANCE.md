@@ -19,8 +19,8 @@ Current completeness-gate evidence:
 
 ```text
 Total teaching occurrences: 3562
-Schedulable occurrences: 3160
-Quarantined input occurrences: 402
+Schedulable occurrences: 3323
+Quarantined input occurrences: 239
 ```
 
 The quarantined occurrences are deliberately excluded from valid scheduled rows and remain visible for staff review.
@@ -61,16 +61,16 @@ Evidence:
 Current completeness-gate output evidence:
 
 ```text
-Proposed timetable rows: 2838
-All-valid scheduled Template 2 rows: 2817
-Submission-ready Template 2 rows: 111
+Proposed timetable rows: 3006
+All-valid scheduled Template 2 rows: 2980
+Submission-ready Template 2 rows: 212
 Template 2 invalid rows: 0
-Qualifying submission-ready programme-years: 17
+Qualifying submission-ready programme-years: 23
 Minimum required programme-year schedules: 20
-Template 2 readiness: FAIL
+Template 2 readiness: PASS
 ```
 
-Invalid, incomplete or unresolved rows do not appear in the submission-ready Template 2 workbook. They remain in exception and validation reports. The current branch is blocked for release because the strict qualifying count is below the required `20`.
+Invalid, incomplete or unresolved rows do not appear in the submission-ready Template 2 workbook. They remain in exception and validation reports. The current branch passes the release gate because the strict qualifying count is at least the required `20`.
 
 ## 4. Process Improvement
 
@@ -88,12 +88,12 @@ Evidence:
 Current completeness-gate visual evidence:
 
 ```text
-Programme visual sheets: 80
-Tutor visual sheets: 221
-Room visual sheets: 43
-Programme visual entries: 608
-Tutor visual entries: 554
-Room visual entries: 471
+Programme visual sheets: 86
+Tutor visual sheets: 235
+Room visual sheets: 48
+Programme visual entries: 680
+Tutor visual entries: 616
+Room visual entries: 535
 Missing visual entries: 0
 Unexpected visual entries: 0
 Invalid overlaps: 0

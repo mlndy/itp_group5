@@ -8,27 +8,27 @@ Final scheduling evidence:
 
 ```text
 Total teaching occurrences: 3562
-Schedulable occurrences: 3160
-Quarantined input occurrences: 402
-Scheduled occurrences: 3046
-Scheduler search failures: 114
+Schedulable occurrences: 3323
+Quarantined input occurrences: 239
+Scheduled occurrences: 3214
+Scheduler search failures: 109
 Scheduled hard-constraint violations: 0
-Coverage of schedulable demand: 96.39%
-Coverage of total recorded demand: 85.51%
+Coverage of schedulable demand: 96.72%
+Coverage of total recorded demand: 90.23%
 ```
 
-The report should use `96.39%` as the scheduling-performance coverage because it measures scheduled occurrences against schedulable demand. The `85.51%` total-recorded-demand figure includes quarantined input records and should be explained as an input-quality and readiness measure.
+The report should use `96.72%` as the scheduling-performance coverage because it measures scheduled occurrences against schedulable demand. The `90.23%` total-recorded-demand figure includes quarantined input records and should be explained as an input-quality and readiness measure.
 
 ## Template 2 Evidence
 
 ```text
-Proposed timetable rows: 2838
-All-valid scheduled Template 2 rows: 2817
-Submission-ready Template 2 rows: 111
+Proposed timetable rows: 3006
+All-valid scheduled Template 2 rows: 2980
+Submission-ready Template 2 rows: 212
 Template 2 invalid rows: 0
-Qualifying submission-ready programme-years: 17
+Qualifying submission-ready programme-years: 23
 Minimum required programme-year schedules: 20
-Template 2 readiness: FAIL
+Template 2 readiness: PASS
 ```
 
 The readiness failure is intentional evidence: unresolved demand is reported rather than hidden or forced into the upload workbook.
@@ -48,12 +48,12 @@ Evidence workbooks:
 The scheduler exports calendar-style programme, tutor and room views from validated scheduled assignments. This is an output feature only; it does not reinterpret requirements, rerun the scheduler, change fixed-session handling or modify Template 2.
 
 ```text
-Programme visual sheets: 80
-Tutor visual sheets: 221
-Room visual sheets: 43
-Programme visual entries: 608
-Tutor visual entries: 554
-Room visual entries: 471
+Programme visual sheets: 86
+Tutor visual sheets: 235
+Room visual sheets: 48
+Programme visual entries: 680
+Tutor visual entries: 616
+Room visual entries: 535
 Missing visual entries: 0
 Unexpected visual entries: 0
 Invalid overlaps: 0
@@ -75,14 +75,14 @@ The Template 2 all-years hotfix branch was tested with a regenerated guarded Eng
 
 ```text
 Total teaching occurrences: 3562
-Schedulable occurrences: 3160
-Quarantined input occurrences: 402
-Scheduled occurrences: 3046
-Scheduler search failures: 114
+Schedulable occurrences: 3323
+Quarantined input occurrences: 239
+Scheduled occurrences: 3214
+Scheduler search failures: 109
 Scheduled hard-constraint violations: 0
-Submission-ready Template 2 rows: 111
-Qualifying submission-ready programme-years: 17
-Template 2 readiness: FAIL
+Submission-ready Template 2 rows: 212
+Qualifying submission-ready programme-years: 23
+Template 2 readiness: PASS
 Visual export status: PASS
 ```
 

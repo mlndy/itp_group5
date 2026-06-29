@@ -22,33 +22,33 @@ The visual workbooks are supplementary. They are generated from validated schedu
 - `template2_submission_validation.xlsx`: Template 2 field validation, source-to-output reconciliation, programme schedule coverage and readiness status.
 - `timetable_visualisation_validation.xlsx`: reconciliation checks confirming that visual workbooks contain expected scheduled entries with no missing entries, unexpected entries or invalid overlaps.
 
-Visual export validation passed. Template 2 readiness is currently blocked by the stricter programme-year completeness gate.
+Visual export validation passed. Template 2 readiness now passes the stricter programme-year completeness gate.
 
 ## Current Completeness-Gate Metrics
 
 ```text
 Total teaching occurrences: 3562
-Schedulable occurrences: 3160
-Quarantined input occurrences: 402
-Scheduled occurrences: 3046
-Scheduler search failures: 114
+Schedulable occurrences: 3323
+Quarantined input occurrences: 239
+Scheduled occurrences: 3214
+Scheduler search failures: 109
 Scheduled hard-constraint violations: 0
-Coverage of schedulable demand: 3046 / 3160 = 96.39%
-Coverage of total recorded demand: 3046 / 3562 = 85.51%
+Coverage of schedulable demand: 3214 / 3323 = 96.72%
+Coverage of total recorded demand: 3214 / 3562 = 90.23%
 ```
 
-The `85.51%` total-recorded-demand coverage includes quarantined source records. The primary scheduling-performance measure is `96.39%` coverage of schedulable demand.
+The `90.23%` total-recorded-demand coverage includes quarantined source records. The primary scheduling-performance measure is `96.72%` coverage of schedulable demand.
 
 ## Template 2 Metrics
 
 ```text
-Proposed timetable rows: 2838
-All-valid scheduled Template 2 rows: 2817
-Submission-ready Template 2 rows: 111
+Proposed timetable rows: 3006
+All-valid scheduled Template 2 rows: 2980
+Submission-ready Template 2 rows: 212
 Template 2 invalid rows: 0
-Qualifying submission-ready programme-years: 17
+Qualifying submission-ready programme-years: 23
 Minimum required programme-year schedules: 20
-Template 2 readiness: FAIL
+Template 2 readiness: PASS
 ```
 
 ## Known Limitations

@@ -116,7 +116,9 @@ def _create_template2_validation(path: Path, *, readiness: str = "PASS", invalid
         workbook,
         "Summary",
         [
-            ("Template 2 output rows", 111),
+            ("Template 2 output rows", validate_release.EXPECTED_TEMPLATE2_SUBMISSION_ROWS),
+            ("Actual saved Template 2 rows", validate_release.EXPECTED_TEMPLATE2_SUBMISSION_ROWS),
+            ("All-valid Template 2 rows", validate_release.EXPECTED_ALL_VALID_TEMPLATE2_ROWS),
             ("rows with missing required fields", invalid_rows),
             ("rows with mapping errors", invalid_rows),
             ("programme-years represented in submission workbook", ready_count),
@@ -138,20 +140,35 @@ def _create_template2_validation(path: Path, *, readiness: str = "PASS", invalid
                 created.append(["Canonical programme-year", "Complete Schedule Status", "Submission-Ready Status", "Counts Toward Minimum 20"])
                 for index in range(ready_count):
                     created.append([f"P{index:02d}/Y1", "PASS", "PASS", "Yes"])
+            elif sheet == "Invalid Rows":
+                created.append(["Row", "Issue"])
+                for index in range(invalid_rows):
+                    created.append([index + 2, "Invalid saved row"])
             else:
                 created.append(["Value"])
     path.parent.mkdir(parents=True, exist_ok=True)
     workbook.save(path)
 
 
-def _create_template2_submission(path: Path, *, row_count: int = 111, ready_count: int = 21) -> None:
+def _create_template2_submission(
+    path: Path,
+    *,
+    row_count: int = validate_release.EXPECTED_TEMPLATE2_SUBMISSION_ROWS,
+    ready_count: int = 21,
+) -> None:
     """Create a saved Template 2 workbook with countable programme-year rows."""
     workbook = Workbook()
-    sheet = _replace_default_sheet(workbook, "Timetable")
-    sheet.append(validate_release.REQUIRED_TIMETABLE_COLUMNS)
+    sheet = _replace_default_sheet(workbook, validate_release.OFFICIAL_TEMPLATE2_SHEETS[0])
+    for sheet_name in validate_release.OFFICIAL_TEMPLATE2_SHEETS[1:]:
+        workbook.create_sheet(sheet_name)
+    sheet.append(validate_release.OFFICIAL_TIMETABLE_COLUMNS)
+    group_index = validate_release.OFFICIAL_TIMETABLE_COLUMNS.index("Group")
     for index in range(row_count):
         programme_year = f"P{index % ready_count:02d}/Y1"
-        row = ["ENG1001", "LEC", programme_year] + [""] * (len(validate_release.REQUIRED_TIMETABLE_COLUMNS) - 3)
+        row = [""] * len(validate_release.OFFICIAL_TIMETABLE_COLUMNS)
+        row[0] = "ENG1001"
+        row[1] = "LEC"
+        row[group_index] = programme_year
         sheet.append(row)
     path.parent.mkdir(parents=True, exist_ok=True)
     workbook.save(path)
@@ -166,13 +183,22 @@ def _create_template2_reconciliation(path: Path, *, readiness: str = "PASS", rea
         [
             ("submission-ready programme-year schedules", ready_count),
             ("qualifying submission-ready programme-years", ready_count),
+            ("actual saved programme-year schedules", ready_count),
+            ("Template 2 output rows", validate_release.EXPECTED_TEMPLATE2_SUBMISSION_ROWS),
+            ("All-valid Template 2 rows", validate_release.EXPECTED_ALL_VALID_TEMPLATE2_ROWS),
             ("minimum programme-year status", readiness),
             ("Template 2 readiness status", readiness),
         ],
     )
     for sheet in validate_release.REQUIRED_TEMPLATE2_RECONCILIATION_SHEETS:
         if sheet not in workbook.sheetnames:
-            workbook.create_sheet(sheet).append(["Value"])
+            created = workbook.create_sheet(sheet)
+            if sheet == "Programme-Year Reconciliation":
+                created.append(["Canonical programme-year", "Counts Toward Minimum 20"])
+                for index in range(ready_count):
+                    created.append([f"P{index:02d}/Y1", "Yes"])
+            else:
+                created.append(["Value"])
     path.parent.mkdir(parents=True, exist_ok=True)
     workbook.save(path)
 
@@ -185,12 +211,12 @@ def _create_visual_validation(path: Path, *, status: str = "PASS", missing: int 
         "Summary",
         [
             ("scheduled assignments received", validate_release.EXPECTED_SCHEDULED_OCCURRENCES),
-            ("programme visual entries", validate_release.EXPECTED_PROGRAMME_VISUAL_ENTRIES),
-            ("tutor visual entries", validate_release.EXPECTED_TUTOR_VISUAL_ENTRIES),
-            ("room visual entries", validate_release.EXPECTED_ROOM_VISUAL_ENTRIES),
-            ("programme sheets", validate_release.EXPECTED_PROGRAMME_VISUAL_SHEETS),
-            ("tutor sheets", validate_release.EXPECTED_TUTOR_VISUAL_SHEETS),
-            ("room sheets", validate_release.EXPECTED_ROOM_VISUAL_SHEETS),
+            ("programme visual entries", 680),
+            ("tutor visual entries", 616),
+            ("room visual entries", 535),
+            ("programme sheets", 86),
+            ("tutor sheets", 235),
+            ("room sheets", 48),
             ("missing entries", missing),
             ("unexpected entries", 0),
             ("invalid overlaps", 0),
@@ -240,7 +266,7 @@ def _create_timetable(path: Path) -> None:
     sheet = _replace_default_sheet(workbook, "Timetable")
     sheet.append(validate_release.REQUIRED_TIMETABLE_COLUMNS)
     row = ["ENG1001"] + [""] * (len(validate_release.REQUIRED_TIMETABLE_COLUMNS) - 1)
-    for _ in range(validate_release.EXPECTED_PROPOSED_TIMETABLE_ROWS):
+    for _ in range(3006):
         sheet.append(row)
     path.parent.mkdir(parents=True, exist_ok=True)
     workbook.save(path)
@@ -354,6 +380,28 @@ def test_release_validator_passes_with_valid_temporary_workbooks(tmp_path: Path)
     assert result.failures == []
 
 
+def test_run_dir_resolution_uses_one_complete_evidence_folder(tmp_path: Path) -> None:
+    """A run directory should resolve every validator workbook from that folder."""
+    paths = _create_release_workbooks(tmp_path)
+
+    resolution = validate_release.resolve_evidence_paths(run_dir=tmp_path, test_root=Path(__file__).resolve().parent)
+
+    assert resolution.paths.run_id == tmp_path.name
+    assert resolution.paths.run_summary == paths["run_summary"].resolve()
+    assert "Resolved run ID" in resolution.message
+
+
+def test_saved_template2_programmes_must_match_reconciliation(tmp_path: Path) -> None:
+    """The validator should not pass if saved rows and reconciliation count different programme-years."""
+    paths = _create_release_workbooks(tmp_path)
+    _create_template2_reconciliation(paths["template2_reconciliation"], ready_count=20)
+
+    result = _validate(paths)
+
+    assert not result.passed
+    assert any("programme-years do not match reconciliation" in failure for failure in result.failures)
+
+
 def test_missing_workbook_produces_fail(tmp_path: Path) -> None:
     """A missing workbook should fail validation."""
     paths = _create_release_workbooks(tmp_path)
@@ -419,7 +467,7 @@ def test_guarded_schedulable_split_must_match_v1_1_metrics(tmp_path: Path) -> No
     result = _validate(paths)
 
     assert not result.passed
-    assert any("Unscheduled search failures" in failure for failure in result.failures)
+    assert any("search failures" in failure or "Schedulable split" in failure for failure in result.failures)
 
 
 def test_template2_readiness_failure_produces_fail(tmp_path: Path) -> None:
