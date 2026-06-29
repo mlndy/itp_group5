@@ -18,7 +18,7 @@ cd C:\Users\Admin\Documents\GitHub\itp_group5
 Expected result:
 
 ```text
-259 passed
+296 passed
 ```
 
 ## Engineering Demo Command
@@ -36,33 +36,39 @@ cd C:\Users\Admin\Documents\GitHub\itp_group5\timetable_scheduler
 Total teaching occurrences: 3562
 Schedulable occurrences: 3160
 Quarantined input occurrences: 402
-Scheduled occurrences: 3070
-Scheduler search failures: 90
+Scheduled occurrences: 3046
+Scheduler search failures: 114
 Scheduled hard-constraint violations: 0
-Coverage of schedulable demand: 97.15%
-Coverage of total recorded demand: 86.19%
+Coverage of schedulable demand: 96.39%
+Coverage of total recorded demand: 85.51%
 ```
 
-The main feasibility success metric is `0` scheduled hard-constraint violations. The primary scheduling-performance metric is `97.15%` coverage of schedulable demand.
+The main feasibility success metric is `0` scheduled hard-constraint violations. The primary scheduling-performance metric is `96.39%` coverage of schedulable demand.
 
-The `86.19%` total-recorded-demand figure includes quarantined input records. Those records are deliberately reported for staff review and are not hidden as scheduled classes.
+The `85.51%` total-recorded-demand figure includes quarantined input records. Those records are deliberately reported for staff review and are not hidden as scheduled classes.
 
 ## Template 2 Evidence
 
 ```text
-Proposed timetable rows: 2868
-Submission-ready Template 2 rows: 1183
+Proposed timetable rows: 2838
+All-valid scheduled Template 2 rows: 2817
+Submission-ready Template 2 rows: 111
 Template 2 invalid rows: 0
-Template 2 complete programme-years: 30
-Submission-ready programme-years: 23
-Template 2 readiness: PASS
+Qualifying submission-ready programme-years: 17
+Minimum required programme-year schedules: 20
+Template 2 readiness: FAIL
 ```
+
+The saved submission-ready workbook is intentionally strict. This branch currently demonstrates safe scheduling and evidence reporting, but it is not release-ready because only `17` programme-years meet the full completeness gate.
 
 Open:
 
 - `timetable_scheduler/output_files/final_timetable_engineering_cluster.xlsx`
+- `timetable_scheduler/output_files/Template2_All_Valid_Scheduled_Rows.xlsx`
 - `timetable_scheduler/output_files/Template2_Submission_Ready.xlsx`
 - `timetable_scheduler/generated/template2_submission_validation.xlsx`
+- `timetable_scheduler/generated/template2_programme_year_reconciliation.xlsx`
+- `timetable_scheduler/generated/template2_exclusion_audit.xlsx`
 
 ## Visual Timetable Outputs
 
@@ -78,8 +84,8 @@ These are supplementary operational outputs:
 Expected visual evidence:
 
 ```text
-Programme visual sheets: 81
-Tutor visual sheets: 225
+Programme visual sheets: 80
+Tutor visual sheets: 221
 Room visual sheets: 43
 Missing visual entries: 0
 Unexpected visual entries: 0

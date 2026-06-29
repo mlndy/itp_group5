@@ -14,6 +14,7 @@ from data.loader import (
     load_consolidated_schedule,
     load_courses_from_folder,
     load_courses_from_requirements,
+    parse_teaching_weeks,
     workbook_appears_template2_output,
 )
 
@@ -118,6 +119,17 @@ def test_successful_workbook_parsing_supports_column_variations(tmp_path: Path) 
     assert diagnostic.rows_parsed == 1
     assert diagnostic.rows_skipped == 0
     assert diagnostic.reason == "Workbook parsed successfully"
+
+
+def test_teaching_week_parser_keeps_clear_parenthesised_week_list() -> None:
+    """Values such as '7 (14 Nov), 11 (11 Nov)' mean weeks 7 and 11."""
+    assert parse_teaching_weeks("7 (14 Nov), 11 (11 Nov)") == [7, 11]
+
+
+def test_teaching_week_parser_does_not_parse_calendar_dates_as_weeks() -> None:
+    """Explicit date/time values should not silently become teaching weeks."""
+    assert parse_teaching_weeks("10 Sep 2025, 8.30am-12pm", strict_dates=True) == []
+    assert parse_teaching_weeks("22 Oct (Wed), 1.30pm-5pm", strict_dates=True) == []
 
 
 def test_consolidated_schedule_loader_converts_template1_rows_to_courses(tmp_path: Path) -> None:

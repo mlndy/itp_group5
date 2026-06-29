@@ -33,6 +33,7 @@ from data.loader import (
 )
 from engine.fixed_reconciliation import export_fixed_reconciliation_report, reconcile_fixed_sessions
 from engine.fixed_issue_analysis import export_fixed_issue_workbooks
+from engine.fixed_scope import filter_fixed_sessions_to_selected_scope
 from engine.guarded_generation import build_guarded_generation_state
 from engine.input_readiness import build_input_readiness_result, export_input_readiness_report
 from generator.fixed_scheduler import create_fixed_assignments, validate_fixed_assignments
@@ -75,7 +76,12 @@ OUTPUT_ACTIONS: dict[str, OutputAction] = {
     "proposed_timetable": OutputAction(
         label="Open Proposed Timetable",
         description="View the generated timetable ready for review.",
-        output_key="proposed_template2",
+        output_key="proposed_timetable",
+    ),
+    "submission_ready_timetable": OutputAction(
+        label="Open Submission-Ready Timetable",
+        description="Open the validated Template 2 upload workbook for complete schedules.",
+        output_key="submission_ready_timetable",
     ),
     "timetable_views": OutputAction(
         label="View Timetable Views",
@@ -135,6 +141,7 @@ def build_default_ui_options(consolidated_schedule_path: Path) -> PipelineOption
     return PipelineOptions(
         scope="eng",
         consolidated_schedule_path=consolidated_schedule_path,
+        input_mode="selected_workbook",
         room_path=None,
         run_optimisation=True,
         max_iterations=5,
@@ -170,7 +177,11 @@ class TimetableUIController:
 
         try:
             common_modules = load_common_modules(DEFAULT_COMMON_MODULE_FILE)
-            courses = load_consolidated_schedule(consolidated_schedule_path, common_modules=common_modules)
+            courses = load_consolidated_schedule(
+                consolidated_schedule_path,
+                common_modules=common_modules,
+                strict_teaching_week_dates=True,
+            )
         except ConsolidatedScheduleValidationError as exc:
             return ValidationResult(False, str(exc))
         except Exception:
@@ -188,6 +199,11 @@ class TimetableUIController:
         try:
             rooms = load_rooms_from_csv(DEFAULT_ROOM_FILE)
             fixed_sessions, fixed_loader_report = load_fixed_sessions(DEFAULT_FIXED_SESSION_FILE)
+            fixed_sessions, fixed_loader_report, _scope_rows = filter_fixed_sessions_to_selected_scope(
+                fixed_sessions,
+                fixed_loader_report,
+                courses,
+            )
             export_fixed_sessions_audit(fixed_loader_report, DEFAULT_FIXED_SESSIONS_AUDIT_FILE)
             reconciliation_report = reconcile_fixed_sessions(fixed_sessions, courses, fixed_loader_report)
             export_fixed_reconciliation_report(reconciliation_report, DEFAULT_FIXED_RECONCILIATION_FILE)
@@ -249,26 +265,24 @@ class TimetableUIController:
             return ControllerRunResult(False, str(exc))
         except Exception as exc:  # pragma: no cover - varied user files should still show concise messages
             return ControllerRunResult(False, f"Scheduling failed: {exc}")
+        if not result.validation_passed:
+            return ControllerRunResult(False, "Scheduling finished, but one or more output workbooks failed integrity validation.")
         return ControllerRunResult(True, "Timetable generation completed.", result)
 
     def display_values(self, result: PipelineResult) -> dict[str, str]:
         """Map pipeline result values to concise completion-screen text."""
-        hard_conflicts = (
-            "No hard-constraint conflicts"
-            if result.scheduled_hard_violations == 0
-            else str(result.scheduled_hard_violations)
-        )
-        review_text = (
-            f"{result.unscheduled_occurrences} teaching occurrences require review"
-            if result.unscheduled_occurrences
-            else "0 teaching occurrences require review"
-        )
+        hard_conflicts = str(result.scheduled_hard_violations)
+        coverage = result.selected_schedulable_coverage_percent or result.coverage_percent
+        scheduled = result.scheduled_teaching_occurrences or result.selected_scheduled_occurrences or result.scheduled_occurrences
+        review_rows = result.assignments_needing_review or result.input_rows_needing_review or 0
+        search_failures = result.scheduler_search_failures if result.scheduler_search_failures else result.selected_search_failures
         return {
-            "Coverage": f"{result.coverage_percent:.2f}%",
-            "Scheduled classes": str(result.scheduled_occurrences),
-            "Classes needing review": review_text,
+            "Coverage of schedulable teaching occurrences": f"{coverage:.2f}% of schedulable teaching occurrences",
+            "Scheduled teaching occurrences": f"{scheduled} teaching occurrences",
+            "Scheduling requirements needing review": f"{review_rows} scheduling requirements",
+            "Scheduler placement failures": f"{search_failures} teaching occurrences",
             "Hard conflicts": hard_conflicts,
-            "Visual timetables": "Visual timetable files created"
+            "Visual timetable status": "Visual timetable files created"
             if {"programme_visuals", "tutor_visuals", "room_visuals"} <= set(result.output_paths)
             else "Not created",
         }

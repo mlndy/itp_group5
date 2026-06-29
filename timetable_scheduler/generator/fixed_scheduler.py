@@ -7,11 +7,14 @@ from collections import defaultdict
 from pathlib import Path
 
 from data.models import Assignment, Course, FixedSession, Room, TimeSlot
-from engine.constraint_checker import check_hard_constraints
+from engine.constraint_checker import check_hard_constraints, fixed_window_exception_violations
 from engine.location_mapping import classify_location, room_from_location_evidence
 from engine.remarks_interpreter import assignment_room_ids
 
 FIXED_ISSUE_COLUMNS = ["severity", "source", "sheet", "row", "field", "problem", "recommendation"]
+AUTHORITATIVE_FIXED_WINDOW_EXCEPTION = "AUTHORITATIVE_FIXED_WINDOW_EXCEPTION"
+AUTHORITATIVE_FIXED_LUNCH_SPAN = "AUTHORITATIVE_FIXED_LUNCH_SPAN"
+AUTHORITATIVE_FIXED_AFTER_1800 = "AUTHORITATIVE_FIXED_AFTER_1800"
 
 
 def normalise_module_code(module_code: str) -> str:
@@ -359,8 +362,28 @@ def validate_fixed_assignments(assignments: list[Assignment]) -> list[dict[str, 
     accepted: list[Assignment] = []
     for assignment in assignments:
         violations = check_hard_constraints(assignment, accepted, enable_remark_interpretation=False)
+        exceptions = _authoritative_fixed_exceptions(
+            fixed_window_exception_violations(assignment, accepted)
+        )
+        assignment.hard_violations = violations
+        if exceptions:
+            source = assignment.fixed_source or ""
+            source_file, sheet, row = _split_fixed_source(source)
+            issues.append(
+                {
+                    "severity": "warning",
+                    "source": source_file,
+                    "source refs": source,
+                    "related source refs": "",
+                    "conflict group id": "",
+                    "sheet": sheet,
+                    "row": row,
+                    "field": "fixed placement",
+                    "problem": "; ".join(f"{code}: {violation}" for code, violation in exceptions),
+                    "recommendation": "Accepted as an authoritative fixed-session placement exception; verify source approval is retained.",
+                }
+            )
         if violations:
-            assignment.hard_violations = violations
             source = assignment.fixed_source or ""
             related = _related_conflict_sources(assignment, accepted)
             source_file, sheet, row = _split_fixed_source(source)
@@ -382,12 +405,34 @@ def validate_fixed_assignments(assignments: list[Assignment]) -> list[dict[str, 
     return issues
 
 
+def _authoritative_fixed_exceptions(violations: list[str]) -> list[tuple[str, str]]:
+    """Return auditable source-authoritative window exceptions."""
+    exceptions: list[tuple[str, str]] = []
+    for violation in violations:
+        code = _authoritative_fixed_exception_code(violation)
+        if code:
+            exceptions.append((code, violation))
+    return exceptions
+
+
+def _authoritative_fixed_exception_code(violation: str) -> str:
+    """Return the audit code for a generic rule that official fixed sessions may override."""
+    text = violation.casefold()
+    if "no free lunch block" in text:
+        return AUTHORITATIVE_FIXED_LUNCH_SPAN
+    if "class ends after 18:00" in text:
+        return AUTHORITATIVE_FIXED_AFTER_1800
+    if "class starts before 09:00" in text or "blocked time used" in text:
+        return AUTHORITATIVE_FIXED_WINDOW_EXCEPTION
+    return ""
+
+
 def _related_conflict_sources(assignment: Assignment, accepted: list[Assignment]) -> list[str]:
     """Return accepted fixed sources that clash with this assignment."""
     related: list[str] = []
     for existing in accepted:
         violations = check_hard_constraints(assignment, [existing], enable_remark_interpretation=False)
-        if any("clash" in violation.casefold() or "lunch block" in violation.casefold() for violation in violations):
+        if any("clash" in violation.casefold() for violation in violations):
             if existing.fixed_source:
                 related.append(existing.fixed_source)
     return related

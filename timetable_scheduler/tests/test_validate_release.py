@@ -98,8 +98,8 @@ def _create_guarded_report(
             ("Scheduled occurrences", scheduled),
             ("Unscheduled search failures", search_failures),
             ("Scheduled hard violations", validate_release.EXPECTED_SCHEDULED_HARD_VIOLATIONS),
-            ("Template 2 complete programme-years", validate_release.EXPECTED_TEMPLATE2_COMPLETE_PROGRAMME_YEARS),
-            ("Submission-ready programme-years", validate_release.EXPECTED_SUBMISSION_READY_PROGRAMME_YEARS),
+            ("Template 2 complete programme-years", 21),
+            ("Submission-ready programme-years", 21),
         ],
     )
     for sheet in validate_release.REQUIRED_GUARDED_SHEETS:
@@ -109,18 +109,22 @@ def _create_guarded_report(
     workbook.save(path)
 
 
-def _create_template2_validation(path: Path, *, readiness: str = "PASS", invalid_rows: int = 0) -> None:
+def _create_template2_validation(path: Path, *, readiness: str = "PASS", invalid_rows: int = 0, ready_count: int = 21) -> None:
     """Create a minimal Template 2 validation workbook."""
     workbook = Workbook()
     _add_metric_sheet(
         workbook,
         "Summary",
         [
-            ("Template 2 output rows", validate_release.EXPECTED_TEMPLATE2_SUBMISSION_ROWS),
+            ("Template 2 output rows", 111),
             ("rows with missing required fields", invalid_rows),
             ("rows with mapping errors", invalid_rows),
-            ("complete programme-year schedules", validate_release.EXPECTED_TEMPLATE2_COMPLETE_PROGRAMME_YEARS),
-            ("submission-ready programme-year schedules", validate_release.EXPECTED_SUBMISSION_READY_PROGRAMME_YEARS),
+            ("programme-years represented in submission workbook", ready_count),
+            ("actual saved programme-year schedules", ready_count),
+            ("complete programme-year schedules", ready_count),
+            ("submission-ready programme-year schedules", ready_count),
+            ("qualifying submission-ready programme-years", ready_count),
+            ("minimum programme-year status", readiness),
             ("Template 2 readiness status", readiness),
         ],
     )
@@ -130,8 +134,45 @@ def _create_template2_validation(path: Path, *, readiness: str = "PASS", invalid
             if sheet == "Submission Readiness":
                 created.append(["Check", "Status", "Notes"])
                 created.append(["Submission readiness", readiness, ""])
+            elif sheet == "Programme Schedule Coverage":
+                created.append(["Canonical programme-year", "Complete Schedule Status", "Submission-Ready Status", "Counts Toward Minimum 20"])
+                for index in range(ready_count):
+                    created.append([f"P{index:02d}/Y1", "PASS", "PASS", "Yes"])
             else:
                 created.append(["Value"])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    workbook.save(path)
+
+
+def _create_template2_submission(path: Path, *, row_count: int = 111, ready_count: int = 21) -> None:
+    """Create a saved Template 2 workbook with countable programme-year rows."""
+    workbook = Workbook()
+    sheet = _replace_default_sheet(workbook, "Timetable")
+    sheet.append(validate_release.REQUIRED_TIMETABLE_COLUMNS)
+    for index in range(row_count):
+        programme_year = f"P{index % ready_count:02d}/Y1"
+        row = ["ENG1001", "LEC", programme_year] + [""] * (len(validate_release.REQUIRED_TIMETABLE_COLUMNS) - 3)
+        sheet.append(row)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    workbook.save(path)
+
+
+def _create_template2_reconciliation(path: Path, *, readiness: str = "PASS", ready_count: int = 21) -> None:
+    """Create a minimal programme-year reconciliation workbook."""
+    workbook = Workbook()
+    _add_metric_sheet(
+        workbook,
+        "Summary",
+        [
+            ("submission-ready programme-year schedules", ready_count),
+            ("qualifying submission-ready programme-years", ready_count),
+            ("minimum programme-year status", readiness),
+            ("Template 2 readiness status", readiness),
+        ],
+    )
+    for sheet in validate_release.REQUIRED_TEMPLATE2_RECONCILIATION_SHEETS:
+        if sheet not in workbook.sheetnames:
+            workbook.create_sheet(sheet).append(["Value"])
     path.parent.mkdir(parents=True, exist_ok=True)
     workbook.save(path)
 
@@ -164,6 +205,31 @@ def _create_visual_validation(path: Path, *, status: str = "PASS", missing: int 
                 created.append(["Programme_Timetable_Visuals.xlsx", status, ""])
             else:
                 created.append(["Value"])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    workbook.save(path)
+
+
+def _create_fixed_integrity(path: Path, *, status: str = "PASS", mismatches: int = 0) -> None:
+    """Create a minimal fixed-session integrity workbook."""
+    workbook = Workbook()
+    _add_metric_sheet(
+        workbook,
+        "Summary",
+        [
+            ("fixed source rows", validate_release.EXPECTED_FIXED_SOURCE_ROWS),
+            ("expected fixed teaching occurrences", validate_release.EXPECTED_FIXED_SOURCE_OCCURRENCES),
+            ("anchored fixed teaching occurrences", validate_release.EXPECTED_ANCHORED_FIXED_SOURCE_OCCURRENCES),
+            ("quarantined fixed teaching occurrences", validate_release.EXPECTED_QUARANTINED_FIXED_SOURCE_OCCURRENCES),
+            ("missing fixed teaching occurrences", 0),
+            ("placement mismatches", mismatches),
+            ("scheduled hard violations on fixed assignments", 0),
+            ("fixed-session integrity status", status),
+        ],
+    )
+    for sheet in validate_release.REQUIRED_FIXED_INTEGRITY_SHEETS:
+        if sheet not in workbook.sheetnames:
+            created = workbook.create_sheet(sheet)
+            created.append(["Value"])
     path.parent.mkdir(parents=True, exist_ok=True)
     workbook.save(path)
 
@@ -234,7 +300,10 @@ def _create_release_workbooks(tmp_path: Path) -> dict[str, Path]:
         "run_manifest": tmp_path / "run_manifest.xlsx",
         "guarded_report": tmp_path / "guarded_generation_report.xlsx",
         "template2_validation": tmp_path / "template2_submission_validation.xlsx",
+        "template2_submission": tmp_path / "Template2_Submission_Ready.xlsx",
+        "template2_reconciliation": tmp_path / "template2_programme_year_reconciliation.xlsx",
         "visual_validation": tmp_path / "timetable_visualisation_validation.xlsx",
+        "fixed_integrity": tmp_path / "fixed_session_integrity_validation.xlsx",
         "programme_visuals": tmp_path / "Programme_Timetable_Visuals.xlsx",
         "tutor_visuals": tmp_path / "Tutor_Timetable_Visuals.xlsx",
         "room_visuals": tmp_path / "Room_Timetable_Visuals.xlsx",
@@ -245,7 +314,10 @@ def _create_release_workbooks(tmp_path: Path) -> dict[str, Path]:
     _create_run_manifest(paths["run_manifest"])
     _create_guarded_report(paths["guarded_report"])
     _create_template2_validation(paths["template2_validation"])
+    _create_template2_submission(paths["template2_submission"])
+    _create_template2_reconciliation(paths["template2_reconciliation"])
     _create_visual_validation(paths["visual_validation"])
+    _create_fixed_integrity(paths["fixed_integrity"])
     _create_workbook(paths["programme_visuals"])
     _create_workbook(paths["tutor_visuals"])
     _create_workbook(paths["room_visuals"])
@@ -261,7 +333,10 @@ def _validate(paths: dict[str, Path], *, test_root: Path | None = None) -> valid
         paths["run_manifest"],
         paths["guarded_report"],
         paths["template2_validation"],
+        paths["template2_submission"],
+        paths["template2_reconciliation"],
         paths["visual_validation"],
+        paths["fixed_integrity"],
         paths["programme_visuals"],
         paths["tutor_visuals"],
         paths["room_visuals"],
@@ -367,6 +442,17 @@ def test_visual_validation_failure_produces_fail(tmp_path: Path) -> None:
 
     assert not result.passed
     assert any("visual export status" in failure or "missing entries" in failure for failure in result.failures)
+
+
+def test_fixed_integrity_failure_produces_fail(tmp_path: Path) -> None:
+    """Fixed-session integrity evidence must pass."""
+    paths = _create_release_workbooks(tmp_path)
+    _create_fixed_integrity(paths["fixed_integrity"], status="FAIL", mismatches=1)
+
+    result = _validate(paths)
+
+    assert not result.passed
+    assert any("fixed-session integrity status" in failure or "placement mismatches" in failure for failure in result.failures)
 
 
 def test_normal_test_suite_size_is_checked(tmp_path: Path) -> None:

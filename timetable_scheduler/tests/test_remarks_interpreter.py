@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from data.models import Assignment, Course, Room, TimeSlot
 from engine.remarks_interpreter import (
     RemarkConfidence,
     RemarkEnforcement,
+    course_remark_requirements,
+    fixed_session_override_rows,
     hard_enforceable_interpretations,
     interpret_remarks,
     is_hard_enforceable,
@@ -236,3 +239,138 @@ def test_explicit_fixed_day_time_request_is_hard_enforceable() -> None:
     assert requirements.fixed_days == ("Thursday",)
     assert requirements.fixed_start_times == ("14:00",)
     assert hard_enforceable_interpretations(requirements)
+
+
+def test_complete_day_time_range_is_hard_enforceable() -> None:
+    """A clear day and time range should be applied as a hard fixed request."""
+    requirements = interpret_remarks("Monday, 10am-12pm")
+
+    assert requirements.fixed_days == ("Monday",)
+    assert requirements.fixed_start_times == ("10:00",)
+    assert requirements.fixed_end_times == ("12:00",)
+    assert requirements.fixed_time_ranges == (("10:00", "12:00"),)
+    assert requirements.duration_override_hours == 2
+    assert hard_enforceable_interpretations(requirements)
+
+
+def test_plural_day_time_range_is_normalised() -> None:
+    """Plural weekday wording should still create the expected fixed day."""
+    requirements = interpret_remarks("Tuesdays, 9am-11am")
+
+    assert requirements.fixed_days == ("Tuesday",)
+    assert requirements.fixed_start_times == ("09:00",)
+    assert requirements.fixed_end_times == ("11:00",)
+
+
+def test_explicit_date_time_range_captures_date_and_weekday() -> None:
+    """Dated remarks should keep the date evidence and compute a weekday when possible."""
+    requirements = interpret_remarks("10 Sep 2025, 8.30am-12pm")
+
+    assert requirements.explicit_dates == ("10 Sep 2025",)
+    assert requirements.fixed_days == ("Wednesday",)
+    assert requirements.fixed_start_times == ("08:30",)
+    assert requirements.fixed_end_times == ("12:00",)
+    assert requirements.duration_override_hours == 3.5
+
+
+def test_parenthesised_weekday_date_time_range_is_hard() -> None:
+    """A date plus parenthesised weekday should enforce the weekday and time."""
+    requirements = interpret_remarks("7 Nov (Friday), 2-4pm")
+
+    assert requirements.explicit_dates == ("7 Nov",)
+    assert requirements.fixed_days == ("Friday",)
+    assert requirements.fixed_time_ranges == (("14:00", "16:00"),)
+
+
+def test_time_range_without_day_preserves_full_duration() -> None:
+    """A long explicit time range must not collapse to a two-hour class."""
+    requirements = interpret_remarks("9AM-6PM")
+
+    assert requirements.fixed_start_times == ("09:00",)
+    assert requirements.fixed_end_times == ("18:00",)
+    assert requirements.duration_override_hours == 9
+    assert hard_enforceable_interpretations(requirements)
+
+
+def test_fixed_duration_conflict_requires_review() -> None:
+    """A fixed structured duration conflict should not be silently enforced."""
+    course = Course(
+        module_code="MET2602",
+        activity="Laboratory",
+        prog_yr="DSC/YR 2",
+        class_size=40,
+        delivery_mode="f2f",
+        teaching_weeks=[1],
+        week_pattern="CUSTOM",
+        staff_ids=["T1"],
+        duration_hrs=2,
+        remarks="9AM-6PM",
+        is_fixed_requirement=True,
+        fixed_source="fixed.xlsx:DSC:5",
+        remark_requirements=interpret_remarks("9AM-6PM"),
+    )
+
+    requirements = course_remark_requirements(course)
+
+    assert requirements.needs_manual_review is True
+    assert "authoritative structured duration" in requirements.review_reason
+    assert not hard_enforceable_interpretations(requirements)
+
+
+def test_fixed_session_override_rows_show_authoritative_precedence() -> None:
+    """Official fixed placements that override remarks should be visible."""
+    source_course = Course(
+        module_code="MET2602",
+        activity="Laboratory",
+        prog_yr="DSC/YR 2",
+        class_size=40,
+        delivery_mode="f2f",
+        teaching_weeks=[8],
+        week_pattern="CUSTOM",
+        staff_ids=["AF"],
+        duration_hrs=2,
+        remarks="Tuesdays, 9am-11am",
+        source_file="2510_DSC.xlsx",
+        source_sheet="Module",
+        source_row=12,
+        remark_requirements=interpret_remarks("Tuesdays, 9am-11am"),
+    )
+    fixed_course = Course(
+        module_code="MET2602",
+        activity="Laboratory",
+        prog_yr="DSC/YR 2",
+        class_size=40,
+        delivery_mode="f2f",
+        teaching_weeks=[8],
+        week_pattern="CUSTOM",
+        staff_ids=["AF"],
+        duration_hrs=2,
+        is_fixed_requirement=True,
+        fixed_source="fixed.xlsx:DSC:5",
+    )
+    assignment = Assignment(
+        course=fixed_course,
+        room=Room("R1", 80, "physical"),
+        timeslot=TimeSlot("Friday", "09:00", 8),
+        is_fixed=True,
+        fixed_source="fixed.xlsx:DSC:5",
+    )
+
+    rows = fixed_session_override_rows([source_course], [assignment])
+
+    assert rows
+    assert rows[0]["applied status"] == "FIXED_SESSION_OVERRIDES_REMARK"
+    assert rows[0]["instruction treatment"] == "OVERRIDDEN_BY_STRUCTURED_FIXED_SESSION"
+    assert rows[0]["requested placement"] == "day Tuesday; time range 09:00-11:00"
+    assert rows[0]["override source"] == "fixed.xlsx:DSC:5"
+
+
+def test_multi_session_time_ranges_preserve_all_starts() -> None:
+    """Multiple explicit ranges should not be reduced to the final start time."""
+    requirements = interpret_remarks("AF can only teach on Fridays, 2-4pm (T1) and 4-6pm (T2)")
+
+    assert requirements.fixed_days == ("Friday",)
+    assert requirements.fixed_start_times == ("14:00", "16:00")
+    assert requirements.fixed_end_times == ("16:00", "18:00")
+    assert requirements.fixed_time_ranges == (("14:00", "16:00"), ("16:00", "18:00"))
+    assert requirements.needs_manual_review is True

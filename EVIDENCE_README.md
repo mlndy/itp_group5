@@ -1,11 +1,11 @@
 # Assessment Evidence Package
 
-This package contains generated output workbooks from the final v1.1 Engineering Timetable Scheduler validation run.
+This package contains generated output workbooks from the current Engineering Timetable Scheduler completeness-gate validation run.
 
 ## Official Timetable Outputs
 
 - `final_timetable_engineering_cluster.xlsx`: proposed Engineering cluster timetable containing the valid generated assignments from the validated schedule.
-- `Template2_Submission_Ready.xlsx`: official submission-ready Template 2 workbook containing only validated rows from complete submission-ready programme-year schedules.
+- `Template2_Submission_Ready.xlsx`: strict Template 2 workbook containing only validated rows from complete submission-ready programme-year schedules.
 
 ## Supplementary Visual Timetables
 
@@ -22,33 +22,33 @@ The visual workbooks are supplementary. They are generated from validated schedu
 - `template2_submission_validation.xlsx`: Template 2 field validation, source-to-output reconciliation, programme schedule coverage and readiness status.
 - `timetable_visualisation_validation.xlsx`: reconciliation checks confirming that visual workbooks contain expected scheduled entries with no missing entries, unexpected entries or invalid overlaps.
 
-Template 2 readiness and visual export validation both passed in the final v1.1 validation run.
+Visual export validation passed. Template 2 readiness is currently blocked by the stricter programme-year completeness gate.
 
-## Final v1.1 Metrics
+## Current Completeness-Gate Metrics
 
 ```text
 Total teaching occurrences: 3562
 Schedulable occurrences: 3160
 Quarantined input occurrences: 402
-Scheduled occurrences: 3070
-Scheduler search failures: 90
+Scheduled occurrences: 3046
+Scheduler search failures: 114
 Scheduled hard-constraint violations: 0
-Coverage of schedulable demand: 3070 / 3160 = 97.15%
-Coverage of total recorded demand: 3070 / 3562 = 86.19%
+Coverage of schedulable demand: 3046 / 3160 = 96.39%
+Coverage of total recorded demand: 3046 / 3562 = 85.51%
 ```
 
-The `86.19%` total-recorded-demand coverage includes quarantined source records. The primary scheduling-performance measure is `97.15%` coverage of schedulable demand.
+The `85.51%` total-recorded-demand coverage includes quarantined source records. The primary scheduling-performance measure is `96.39%` coverage of schedulable demand.
 
 ## Template 2 Metrics
 
 ```text
-Proposed timetable rows: 2868
-Submission-ready Template 2 rows: 1183
+Proposed timetable rows: 2838
+All-valid scheduled Template 2 rows: 2817
+Submission-ready Template 2 rows: 111
 Template 2 invalid rows: 0
-Template 2 complete programme-years: 30
-Submission-ready programme-years: 23
+Qualifying submission-ready programme-years: 17
 Minimum required programme-year schedules: 20
-Template 2 readiness: PASS
+Template 2 readiness: FAIL
 ```
 
 ## Known Limitations

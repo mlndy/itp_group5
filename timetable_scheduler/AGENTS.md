@@ -12,7 +12,7 @@ Treat this as an operations and supply chain resource-allocation prototype, not 
 
 ## Current Phase
 
-Current phase: **Final Integration and Release v1.1**
+Current phase: **Template 2 completeness-gate reconciliation**
 
 Main deliverable: generate a usable Engineering cluster timetable, including DSC.
 
@@ -34,34 +34,37 @@ The core prototype is complete through:
 8. Demand-metric audit, resource audit, online-delivery semantics, optimiser validation, and release validation
 9. Deterministic remarks interpretation, multi-room scheduling support, hybrid/flexible-delivery handling, and special-request review reporting
 
-Current validated v1.1 result:
+Current completeness-gate result:
 
-- Tests: `259 passed`
-- Release validator: `PASS`
+- Tests: `296 passed`
+- Release validator: `FAIL` because the stricter Template 2 completeness gate finds fewer than `20` qualifying programme-year schedules
 - Engineering controlled demo: runs successfully with `0` scheduled hard-constraint violations
 - Total teaching occurrences: `3562`
 - Schedulable occurrences: `3160`
 - Quarantined input occurrences: `402`
-- Scheduled occurrences: `3070`
-- Scheduler search failures: `90`
-- Coverage of schedulable demand: `97.15%`
-- Coverage of total recorded demand: `86.19%`
-- Proposed timetable rows: `2868`
-- Submission-ready Template 2 rows: `1183`
+- Scheduled occurrences: `3046`
+- Scheduler search failures: `114`
+- Coverage of schedulable demand: `96.39%`
+- Coverage of total recorded demand: `85.51%`
+- Proposed timetable rows: `2838`
+- All-valid scheduled Template 2 rows: `2817`
+- Submission-ready Template 2 populated rows: `111`
 - Template 2 invalid rows: `0`
-- Template 2 complete programme-years: `30`
-- Submission-ready programme-years: `23`
-- Template 2 readiness: `PASS`
-- Programme visual sheets: `81`
-- Tutor visual sheets: `225`
+- Qualifying submission-ready programme-years: `17`
+- Minimum required programme-year schedules: `20`
+- Template 2 readiness: `FAIL`
+- Programme visual sheets: `80`
+- Tutor visual sheets: `221`
 - Room visual sheets: `43`
 - Visual export status: `PASS`
+- Fixed-session integrity status: `PASS`
+- Microsoft Excel desktop open check: `PASS`
 
-The `86.19%` total-recorded-demand coverage includes quarantined source records and must not be presented as the algorithm's scheduling success rate. The primary scheduling-performance metric is `97.15%` coverage of schedulable demand.
+The `85.51%` total-recorded-demand coverage includes quarantined source records and must not be presented as the algorithm's scheduling success rate. The primary scheduling-performance metric is `96.39%` coverage of schedulable demand.
 
 The earlier pre-fixed-session v1.0 baseline had `2777` required occurrences, `2747` scheduled occurrences, `30` unscheduled occurrences, and `98.92%` coverage. Treat those values as historical development evidence only.
 
-Preflight, run summary, guarded-generation, Template 2 validation, run manifest and visualisation validation reports should be preserved.
+Preflight, run summary, guarded-generation, Template 2 validation, Template 2 programme-year reconciliation, Template 2 exclusion audit, run manifest and visualisation validation reports should be preserved. Do not present this branch as release-ready until the qualifying programme-year count reaches the required minimum without weakening hard constraints.
 
 ## Additional DSC2204 Requirements - June 26
 
@@ -147,20 +150,22 @@ Preflight, run summary, guarded-generation, Template 2 validation, run manifest 
 - Excel sheet names must remain within `31` characters.
 - Generated visual workbooks remain ignored release outputs unless intentionally packaged.
 - Current visualisation validation:
-  - Tests: `259 passed`
-  - Programme visual sheets: `81`
-  - Tutor visual sheets: `225`
+  - Tests: `296 passed`
+  - Programme visual sheets: `80`
+  - Tutor visual sheets: `221`
   - Room visual sheets: `43`
   - Visual export status: `PASS`
   - Scheduled hard violations remain `0`
+  - Microsoft Excel desktop open check: `PASS`
 
 ## Final Integration and Release v1.1
 
+- This section is superseded by the stricter Template 2 completeness-gate evidence recorded above.
 - The validated visualisation branch includes the fixed-session compliance implementation.
 - Final scheduling metrics must not change during documentation and release work.
 - Scheduled hard violations must remain zero.
-- Template 2 readiness must remain `PASS`.
-- At least `20` submission-ready programme-year schedules must remain available.
+- Template 2 readiness is currently `FAIL` under the completeness gate because only `17` qualifying programme-years are submission-ready.
+- At least `20` submission-ready programme-year schedules are still required before release.
 - Visual exports are supplementary outputs and must not change the official Template 2 workbook.
 - Quarantined input demand and scheduler search failures must remain reported separately.
 - Generated output workbooks remain ignored from source control.
@@ -169,19 +174,22 @@ Preflight, run summary, guarded-generation, Template 2 validation, run manifest 
 - All project ownership and decisions must be presented as team-based.
 - Do not present one student as the sole project owner.
 - Do not delete existing branches or tags.
-- Final v1.1 metrics:
+- Current completeness-gate metrics:
   - Total teaching occurrences: `3562`
   - Schedulable occurrences: `3160`
   - Quarantined input occurrences: `402`
-  - Scheduled occurrences: `3070`
-  - Scheduler search failures: `90`
+  - Scheduled occurrences: `3046`
+  - Scheduler search failures: `114`
   - Scheduled hard-constraint violations: `0`
-  - Coverage of schedulable demand: `97.15%`
-  - Coverage of total recorded demand: `86.19%`
-  - Proposed timetable rows: `2868`
-  - Submission-ready Template 2 rows: `1183`
-  - Submission-ready programme-years: `23`
+  - Coverage of schedulable demand: `96.39%`
+  - Coverage of total recorded demand: `85.51%`
+  - Proposed timetable rows: `2838`
+  - Submission-ready Template 2 populated rows: `111`
+  - Qualifying submission-ready programme-years: `17`
+  - Template 2 readiness: `FAIL`
   - Visual export status: `PASS`
+  - Fixed-session integrity status: `PASS`
+  - Microsoft Excel desktop open check: `PASS`
 
 ## Coding Rules
 
@@ -230,6 +238,82 @@ For Engineering scope:
 - Do not claim improvement using scheduled count alone unless the total assignment pool is the same.
 - Preserve `preflight_report.xlsx` and `run_summary.xlsx`.
 - Scenario comparison is still on hold.
+
+## Template 2 All-Years Completeness Hotfix
+
+- Template 2 must contain all valid scheduled programme-year rows, not only Year 1.
+- One unresolved requirement must not silently remove all other valid rows from that programme-year.
+- Programme-year readiness and row export are separate decisions.
+- The actual saved `Timetable` sheet is the source of truth for programme-year counts.
+- Validation must not count programme-years from proposed timetable data, visual sheets, support sheets or internal records.
+- Year formats must be normalised consistently.
+- Template 2 readiness cannot pass unless the actual saved workbook contains at least `20` valid programme-year schedules.
+- No release is allowed until the saved workbook is inspected directly.
+
+## Template 2 Programme-Year Completeness Gate
+
+- The actual saved `Template2_Submission_Ready.xlsx` is the source of truth for exported rows.
+- Saved rows alone do not prove that a programme-year schedule is complete.
+- Programme-year identity must be normalised once and reused throughout the pipeline.
+- A programme-year counts toward the minimum `20` only when it is complete and has valid saved submission rows.
+- Quarantined input occurrences and scheduler search failures must be attributed to the same canonical programme-year identity.
+- Incomplete programme-years may appear in the all-valid workbook but must not count toward the strict submission minimum.
+- Reports must distinguish:
+  - represented in saved workbook;
+  - complete schedule;
+  - submission-ready and counts toward minimum `20`.
+- The validator must fail when fewer than `20` qualifying programme-years exist.
+- No hard constraints may be weakened to increase the count.
+- Do not hard-code a count of `22`, `20`, `13` or `11`.
+- Current audited result: `17` qualifying submission-ready programme-years from `111` strict saved rows, so release readiness is `FAIL`.
+
+## Targeted Programme-Year Recovery Phase
+
+- The current truthful baseline is `17` qualifying submission-ready programme-years.
+- The minimum required is `20` qualifying programme-years.
+- The goal is to recover at least three additional programme-years only through evidence-based corrections.
+- Hard constraints must remain unchanged.
+- Fixed sessions must remain unchanged.
+- Required demand must not be removed from completeness calculations.
+- Missing data must not be invented.
+- Programme-years must remain incomplete when unresolved required demand exists.
+- Any improvement must show the exact blocker removed and the evidence supporting the correction.
+- Changes must be small, isolated and regression-tested.
+- Stop once the minimum `20` is truthfully achieved and all release gates pass.
+
+## Final Programme-Year Completion Policy
+
+### Official fixed sessions are authoritative
+
+- When a session comes from the official fixed-session workbook `Requirements Template_Lab (ENG) - AY25 Tri 1.xlsx`, its supplied day, start time, end time, duration, teaching weeks, room or venue, staff and group must be treated as authoritative.
+- The scheduler must anchor an official fixed session exactly when the source data is internally valid.
+
+### Generic operating-hour and lunch rules must not invalidate an official fixed session
+
+- An official fixed session must not be quarantined solely because it spans the normal lunch period, starts before a preferred operating window, ends after `18:00`, or runs for a long continuous duration such as `09:00-18:00`.
+- These are permitted exceptions only for authoritative fixed sessions.
+- Official fixed sessions must still satisfy no tutor clash, no group clash, no room clash, valid teaching weeks, valid academic-calendar day, valid delivery mode and exact fixed-session placement.
+
+### Non-fixed sessions retain normal scheduling policies
+
+- Non-fixed classes must still obey the configured normal operating window, lunch policy, duration rules, candidate-slot rules and hard constraints.
+- Do not extend the general scheduler operating day merely to improve coverage.
+
+### Explicit remarks are not automatically fixed sessions
+
+- A free-text instruction such as `9AM-6PM` must retain its full duration.
+- If a timing instruction is not backed by the official fixed-session workbook, do not shorten it, do not silently move it, schedule it only where valid, and otherwise leave it unresolved for review.
+
+### Venue and exam-seating mappings must be authoritative
+
+- A missing venue or exam-seating room may be recovered only when an exact, unambiguous mapping exists in the official Template 2 support sheets, the venue workbook, the fixed-session source, or another authoritative supplied data file.
+- Do not create a location host key.
+- Do not use fuzzy matching for submission-critical room identities.
+- If an exact mapping does not exist, keep the requirement quarantined.
+
+### Completeness remains strict
+
+- A programme-year counts only when recorded required occurrences are greater than `0`, quarantined occurrences are `0`, scheduler search failures are `0`, scheduled occurrences equal recorded required occurrences, scheduled hard violations are `0`, all required Template 2 mappings are valid, and strict saved Template 2 rows exist.
 
 ## Explainable Remarks Interpretation
 
@@ -465,19 +549,21 @@ For Engineering scope:
 ## Report and Presentation Phase
 
 - Prototype feature development is complete.
-- Historical phase metrics have been superseded by the final v1.1 release result recorded above.
-- Release validator: `PASS`.
-- Final v1.1 Engineering result:
+- Historical phase metrics have been superseded by the completeness-gate result recorded above.
+- Release validator: `FAIL` under the strict Template 2 completeness gate.
+- Current Engineering scheduling result:
   - Total teaching occurrences: `3562`
   - Schedulable occurrences: `3160`
   - Quarantined input occurrences: `402`
-  - Scheduled occurrences: `3070`
-  - Scheduler search failures: `90`
-  - Coverage of schedulable demand: `97.15%`
-  - Coverage of total recorded demand: `86.19%`
+  - Scheduled occurrences: `3046`
+  - Scheduler search failures: `114`
+  - Coverage of schedulable demand: `96.39%`
+  - Coverage of total recorded demand: `85.51%`
   - Scheduled hard-constraint violations: `0`
-  - Template 2 readiness: `PASS`
+  - Template 2 readiness: `FAIL`
   - Visual export status: `PASS`
+  - Fixed-session integrity status: `PASS`
+  - Microsoft Excel desktop open check: `PASS`
 - DSC inclusion: `PASS`.
 - Quarantined input records and scheduler search failures must remain visible.
 - Controlled optimiser evidence:
@@ -487,7 +573,7 @@ For Engineering scope:
   - Runtime: approximately `1047` seconds
 - Use the non-optimised command for the live demo.
 - Do not change validated figures unless a new full release run proves different results.
-- All future work should focus on report writing, AI usage documentation, presentation content, screenshots, and demo rehearsal.
+- Report and presentation work must frame this branch as blocked for release until the Template 2 minimum is satisfied without weakening hard constraints.
 
 ## Repository Reconciliation Before Final Submission
 
@@ -591,6 +677,66 @@ Initial pre-reconciliation findings recorded for that task:
 - The final release must come from `main`.
 - The final release tag should be `v1.1.0` unless that tag already exists.
 
+## UI Scope, Output Integrity and Run Isolation Hotfix
+
+- The selected consolidated schedule defines the scope of a UI run.
+- Selecting one requirements workbook must not silently schedule the entire bundled Engineering dataset.
+- Fixed sessions may be included only when they belong to the selected scope.
+- The UI and CLI must use identical pipeline options and scope rules.
+- No hidden fallback to the full Engineering folder is allowed when a valid file was selected.
+- Coverage displayed by the UI must be calculated from the selected run only.
+- Proposed Timetable and Submission-Ready Template 2 are separate outputs.
+- Each UI button must open the exact path returned by the current pipeline run.
+- The UI must never use stale files found through broad filename searches.
+- Every run must have a unique run ID and isolated output directory.
+- Workbooks must be written atomically and reopened successfully before being reported as created.
+- An open or locked workbook must not cause a partially written or corrupted file.
+- Visual timetable exports must be limited to the current selected run.
+- Requirements and output workbooks must be detected structurally, not by filename.
+- The workbook with a `Module` requirements sheet is input.
+- The workbook with `Timetable`, `Course Code`, `Location`, `Staff`, and `Group` sheets is the Template 2 output template.
+- Do not mark a run successful until all reported output files pass integrity validation.
+
+## Final Output Quality and Scheduling Instruction Accuracy
+
+- Recurring teaching occurrences with identical placement must be aggregated before visual layout.
+- Teaching weeks should be displayed inside one visual block rather than one lane per week.
+- Visual lanes are only for genuinely simultaneous, overlapping assignments.
+- Explicit day and time instructions must be parsed conservatively and enforced when complete.
+- A recognised explicit timing instruction must not be treated only as a soft remark.
+- Duration ranges must be preserved where representable.
+- Unresolved input rows must be reported even when they represent zero parsed teaching occurrences.
+- UI review counts must distinguish requirement rows from teaching occurrences.
+- Scheduled hard violations must remain zero.
+- Template 2 structure and selected-workbook scope isolation must remain unchanged.
+
+## Final Metric Semantics and Instruction Conflict Handling
+
+- Input course records, scheduling assignments and teaching occurrences are different units.
+- UI labels must never use these units interchangeably.
+- Explicit timing remarks that conflict with structured fields must not be silently ignored.
+- Authoritative fixed-session placements take precedence over free-text remarks.
+- Any such precedence decision must be visible in the audit.
+- A recognised explicit duration must either be enforced or produce a review issue.
+- Scheduled output must never contradict a recognised hard instruction without explanation.
+
+## Final Engineering Validation and Release Freeze
+
+- The final assessment result must come from the full Engineering dataset.
+- The selected DSC workbook is a functional smoke test, not the primary project result.
+- Full Engineering validation must use the latest remark, duration and fixed-session logic.
+- Old Engineering metrics must not be assumed unchanged.
+- Fixed sessions must remain at their authoritative day, time, duration, weeks, room and staff.
+- Free-text remarks cannot override official structured fixed sessions.
+- Any fixed-session override must remain visible in audit evidence.
+- Scheduled hard violations must remain zero.
+- Quarantined input, unresolved requirement rows and scheduler placement failures must remain separate metrics.
+- Template 2 must preserve its official workbook structure.
+- At least `20` submission-ready programme-year schedules are mandatory.
+- Visual outputs are supplementary and must reconcile with the final scheduled assignments.
+- No release is permitted until the final workbooks open successfully in Microsoft Excel.
+- After this phase, freeze scheduler behaviour and move to academic deliverables.
+
 ## Important Commands
 
 Run tests from inside the `timetable_scheduler` folder:
@@ -603,7 +749,7 @@ py -m pytest -q
 Expected result:
 
 ```text
-259 passed
+296 passed
 ```
 
 Run DSC demo:
@@ -624,17 +770,19 @@ Run Engineering remarks-aware final test:
 python main.py --scope eng --skip-optimisation --max-candidate-patterns 300 --max-retry-assignments 50 --skip-unscheduled-diagnostics --progress-interval 25 --audit-demand-metrics
 ```
 
-Expected key result for the final v1.1 run:
+Expected key result for the current completeness-gate run:
 
 ```text
 Total teaching occurrences: 3562
 Schedulable occurrences: 3160
 Quarantined input occurrences: 402
-Scheduled occurrences: 3070
-Scheduler search failures: 90
+Scheduled occurrences: 3046
+Scheduler search failures: 114
 Scheduled hard-constraint violations: 0
-Template 2 readiness: PASS
+Template 2 readiness: FAIL
 Visual export status: PASS
+Fixed-session integrity status: PASS
+Microsoft Excel desktop open check: PASS
 ```
 
 These v1.1 metrics must remain stable during release documentation and packaging. If a new full validation run changes them, stop and explain the evidence before updating any report.

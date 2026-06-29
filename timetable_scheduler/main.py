@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 from time import perf_counter
 
 from config import (
@@ -15,6 +16,7 @@ from config import (
     DEFAULT_FIXED_RESOLUTION_TEMPLATE_FILE,
     DEFAULT_FIXED_ROOT_CAUSE_FILE,
     DEFAULT_FIXED_SESSION_FILE,
+    DEFAULT_FIXED_SESSION_INTEGRITY_FILE,
     DEFAULT_FIXED_SESSIONS_AUDIT_FILE,
     DEFAULT_GUARDED_GENERATION_REPORT_FILE,
     DEFAULT_INPUT_READINESS_REPORT_FILE,
@@ -32,6 +34,9 @@ from config import (
     DEFAULT_STAKEHOLDER_VIEWS_FILE,
     DEFAULT_SUPERVISOR_CLARIFICATION_PACK_FILE,
     DEFAULT_SUPERVISOR_FIXED_QUERIES_FILE,
+    DEFAULT_TEMPLATE2_ALL_VALID_FILE,
+    DEFAULT_TEMPLATE2_EXCLUSION_AUDIT_FILE,
+    DEFAULT_TEMPLATE2_PROGRAMME_YEAR_RECONCILIATION_FILE,
     DEFAULT_TEMPLATE2_SUBMISSION_FILE,
     DEFAULT_TEMPLATE2_SUBMISSION_VALIDATION_FILE,
     DEFAULT_TEMPLATE2_FILE,
@@ -67,7 +72,7 @@ from engine.guarded_generation import (
 from engine.input_readiness import build_input_readiness_result, export_input_readiness_report
 from engine.preflight_validator import run_preflight_checks
 from engine.remarks_comparison import export_remarks_coverage_comparison
-from engine.remarks_interpreter import export_remarks_audit
+from engine.remarks_interpreter import courses_with_effective_remark_durations, export_remarks_audit
 from engine.resource_audit import audit_resources
 from engine.unscheduled_diagnostics import (
     UnscheduledDiagnosticsReport,
@@ -78,9 +83,13 @@ from generator.scheduler import generate_schedule
 from generator.fixed_scheduler import create_fixed_assignments, validate_fixed_assignments
 from optimiser.local_search import optimise_schedule, optimise_schedule_with_stats
 from output.exporter import export_schedule, export_violations
+from output.fixed_session_integrity import export_fixed_session_integrity_report
 from output.report_exporter import export_preflight_report, export_run_manifest, export_run_summary, export_stakeholder_views
 from output.submission_validator import (
+    export_all_valid_scheduled_schedule,
     export_submission_ready_schedule,
+    export_template2_exclusion_audit,
+    export_template2_programme_year_reconciliation,
     export_template2_validation_report,
     submission_assignments,
     validate_template2_submission,
@@ -417,13 +426,16 @@ def export_outputs(
     scope: str,
     template2_path=None,
     enable_remark_interpretation: bool = True,
+    output_dir=None,
+    timetable_filename: str | None = None,
 ) -> dict[str, object]:
     """Export timetable and violation reports for the selected scope."""
     template2_path = template2_path or DEFAULT_TEMPLATE2_FILE
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    target_dir = Path(output_dir) if output_dir is not None else OUTPUT_DIR
+    target_dir.mkdir(parents=True, exist_ok=True)
     suffix = "engineering_cluster" if scope == "eng" else "dsc"
-    timetable_path = OUTPUT_DIR / f"final_timetable_{suffix}.xlsx"
-    violation_path = OUTPUT_DIR / f"violation_report_{suffix}.xlsx"
+    timetable_path = target_dir / (timetable_filename or f"final_timetable_{suffix}.xlsx")
+    violation_path = target_dir / f"violation_report_{suffix}.xlsx"
     export_schedule(
         submission_assignments(assignments),
         timetable_path,
@@ -436,7 +448,7 @@ def export_outputs(
         enable_remark_interpretation=enable_remark_interpretation,
     )
     # Keep the original filenames for demo convenience when running DSC mode.
-    if scope == "dsc":
+    if scope == "dsc" and output_dir is None:
         export_schedule(
             submission_assignments(assignments),
             OUTPUT_DIR / "final_timetable.xlsx",
@@ -567,6 +579,19 @@ def main() -> None:
 
     print("\nGenerating initial schedule...")
     remarks_enabled = _remark_interpretation_enabled(args)
+    schedule_courses = courses_with_effective_remark_durations(
+        schedule_courses,
+        enabled=remarks_enabled,
+    )
+    demand_courses = [
+        *schedule_courses,
+        *_fixed_requirement_courses(fixed_assignments),
+        *(
+            quarantined_requirement_courses(guarded_state.quarantined_requirements)
+            if guarded_state is not None
+            else []
+        ),
+    ]
 
     def _progress(position: int, total: int, course: Course) -> None:
         if args.scope == "eng":
@@ -639,11 +664,12 @@ def main() -> None:
         DEFAULT_RUN_SUMMARY_FILE,
         metadata=_run_metadata(args),
         demand_courses=demand_courses,
-        input_course_records=len(demand_courses),
+        input_course_records=len(courses),
         rooms=rooms,
         room_source_path=DEFAULT_ROOM_FILE,
         optimisation_summary=optimisation_metrics,
         enable_remark_interpretation=remarks_enabled,
+        source_courses=courses,
     )
     print(f"Saved: {DEFAULT_RUN_SUMMARY_FILE}")
     export_stakeholder_views(
@@ -653,7 +679,7 @@ def main() -> None:
         enable_remark_interpretation=remarks_enabled,
     )
     print(f"Saved: {DEFAULT_STAKEHOLDER_VIEWS_FILE}")
-    export_remarks_audit(demand_courses, DEFAULT_REMARKS_AUDIT_FILE)
+    export_remarks_audit(courses, DEFAULT_REMARKS_AUDIT_FILE, assignments=final_schedule)
     print(f"Saved: {DEFAULT_REMARKS_AUDIT_FILE}")
     if args.audit_demand_metrics:
         _print_demand_audit(demand_courses, final_schedule)
@@ -686,7 +712,7 @@ def main() -> None:
             baseline_schedule,
             final_schedule,
             DEFAULT_REMARKS_COMPARISON_FILE,
-            input_course_records=len(demand_courses),
+            input_course_records=len(courses),
             scheduler_metadata={
                 "scope": args.scope,
                 "skip_optimisation": args.skip_optimisation,
@@ -729,6 +755,13 @@ def main() -> None:
             guarded_state.quarantined_requirements if guarded_state is not None else [],
         )
         complete_programmes = complete_programme_set(programme_completeness_rows)
+        export_all_valid_scheduled_schedule(
+            final_schedule,
+            DEFAULT_TEMPLATE2_ALL_VALID_FILE,
+            template2_path=DEFAULT_TEMPLATE2_FILE,
+            enable_remark_interpretation=remarks_enabled,
+            rooms=rooms,
+        )
         export_submission_ready_schedule(
             final_schedule,
             DEFAULT_TEMPLATE2_SUBMISSION_FILE,
@@ -744,10 +777,29 @@ def main() -> None:
             final_schedule,
             rooms,
             DEFAULT_TEMPLATE2_FILE,
+            all_valid_workbook_path=DEFAULT_TEMPLATE2_ALL_VALID_FILE,
+            quarantined_requirements=guarded_state.quarantined_requirements if guarded_state is not None else [],
         )
         export_template2_validation_report(template2_validation, DEFAULT_TEMPLATE2_SUBMISSION_VALIDATION_FILE)
+        export_template2_programme_year_reconciliation(template2_validation, DEFAULT_TEMPLATE2_PROGRAMME_YEAR_RECONCILIATION_FILE)
+        export_template2_exclusion_audit(
+            final_schedule,
+            DEFAULT_TEMPLATE2_EXCLUSION_AUDIT_FILE,
+            complete_programmes=complete_programmes,
+            rooms=rooms,
+        )
+        export_fixed_session_integrity_report(
+            fixed_sessions,
+            final_schedule,
+            DEFAULT_FIXED_SESSION_INTEGRITY_FILE,
+            guarded_state.quarantined_requirements if guarded_state is not None else [],
+        )
+        print(f"Saved: {DEFAULT_TEMPLATE2_ALL_VALID_FILE}")
         print(f"Saved: {DEFAULT_TEMPLATE2_SUBMISSION_FILE}")
         print(f"Saved: {DEFAULT_TEMPLATE2_SUBMISSION_VALIDATION_FILE}")
+        print(f"Saved: {DEFAULT_TEMPLATE2_PROGRAMME_YEAR_RECONCILIATION_FILE}")
+        print(f"Saved: {DEFAULT_TEMPLATE2_EXCLUSION_AUDIT_FILE}")
+        print(f"Saved: {DEFAULT_FIXED_SESSION_INTEGRITY_FILE}")
         print(f"Template 2 submission readiness: {'PASS' if template2_validation.ready else 'FAIL'}")
         if guarded_state is not None:
             programme_completeness_rows = build_programme_completeness_rows(
@@ -755,9 +807,9 @@ def main() -> None:
                 final_schedule,
                 guarded_state.quarantined_requirements,
                 submission_ready_programmes={
-                    str(row.get("Normalised Programme/Year"))
+                    str(row.get("Canonical programme-year"))
                     for row in template2_validation.programme_rows
-                    if row.get("Included In Submission") == "Yes"
+                    if row.get("Submission-Ready Status") == "PASS" and row.get("Canonical programme-year")
                 },
             )
             export_guarded_generation_report(
@@ -773,7 +825,11 @@ def main() -> None:
             )
             print(f"Saved: {DEFAULT_GUARDED_GENERATION_REPORT_FILE}")
         output_paths["submission_ready_timetable"] = DEFAULT_TEMPLATE2_SUBMISSION_FILE
+        output_paths["template2_all_valid_timetable"] = DEFAULT_TEMPLATE2_ALL_VALID_FILE
         output_paths["template2_submission_validation"] = DEFAULT_TEMPLATE2_SUBMISSION_VALIDATION_FILE
+        output_paths["template2_programme_year_reconciliation"] = DEFAULT_TEMPLATE2_PROGRAMME_YEAR_RECONCILIATION_FILE
+        output_paths["template2_exclusion_audit"] = DEFAULT_TEMPLATE2_EXCLUSION_AUDIT_FILE
+        output_paths["fixed_session_integrity"] = DEFAULT_FIXED_SESSION_INTEGRITY_FILE
         output_paths["guarded_generation_report"] = DEFAULT_GUARDED_GENERATION_REPORT_FILE
     output_paths.update(
         {

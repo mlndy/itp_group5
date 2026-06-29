@@ -15,7 +15,7 @@ Evidence:
 - Input readiness messages are built in `timetable_scheduler/engine/input_readiness.py` and exported to `timetable_scheduler/generated/input_readiness_report.xlsx`.
 - Quarantined and invalid records are excluded from scheduled output and reported in `timetable_scheduler/generated/guarded_generation_report.xlsx`.
 
-Final v1.1 evidence:
+Current completeness-gate evidence:
 
 ```text
 Total teaching occurrences: 3562
@@ -58,19 +58,19 @@ Evidence:
 - The official proposed timetable is `timetable_scheduler/output_files/final_timetable_engineering_cluster.xlsx`.
 - The submission-ready workbook is `timetable_scheduler/output_files/Template2_Submission_Ready.xlsx`.
 
-Final v1.1 output evidence:
+Current completeness-gate output evidence:
 
 ```text
-Proposed timetable rows: 2868
-Submission-ready Template 2 rows: 1183
+Proposed timetable rows: 2838
+All-valid scheduled Template 2 rows: 2817
+Submission-ready Template 2 rows: 111
 Template 2 invalid rows: 0
-Template 2 complete programme-years: 30
-Submission-ready programme-years: 23
+Qualifying submission-ready programme-years: 17
 Minimum required programme-year schedules: 20
-Template 2 readiness: PASS
+Template 2 readiness: FAIL
 ```
 
-Invalid, incomplete or unresolved rows do not appear in the submission-ready Template 2 workbook. They remain in exception and validation reports.
+Invalid, incomplete or unresolved rows do not appear in the submission-ready Template 2 workbook. They remain in exception and validation reports. The current branch is blocked for release because the strict qualifying count is below the required `20`.
 
 ## 4. Process Improvement
 
@@ -85,15 +85,15 @@ Evidence:
 - Visual programme, tutor and room timetables are implemented in `timetable_scheduler/output/timetable_visualizer.py`.
 - Release validation is implemented in `timetable_scheduler/validate_release.py` with a repository-root wrapper at `validate_release.py`.
 
-Final v1.1 visual evidence:
+Current completeness-gate visual evidence:
 
 ```text
-Programme visual sheets: 81
-Tutor visual sheets: 225
+Programme visual sheets: 80
+Tutor visual sheets: 221
 Room visual sheets: 43
-Programme visual entries: 3454
-Tutor visual entries: 4255
-Room visual entries: 2367
+Programme visual entries: 608
+Tutor visual entries: 554
+Room visual entries: 471
 Missing visual entries: 0
 Unexpected visual entries: 0
 Invalid overlaps: 0

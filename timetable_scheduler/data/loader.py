@@ -306,7 +306,7 @@ def _clean_int(value: object, default: int = 0) -> int:
     return int(match.group()) if match else default
 
 
-def parse_teaching_weeks(value: object) -> list[int]:
+def parse_teaching_weeks(value: object, strict_dates: bool = False) -> list[int]:
     """Parse teaching weeks from values like '1,2,3' or '1-6,8,9'."""
     if value is None or (isinstance(value, float) and math.isnan(value)):
         return TERM_WEEKS.copy()
@@ -318,6 +318,27 @@ def parse_teaching_weeks(value: object) -> list[int]:
     text = str(value).strip()
     if not text:
         return TERM_WEEKS.copy()
+    lowered = text.casefold()
+    month_tokens = (
+        "jan",
+        "feb",
+        "mar",
+        "apr",
+        "may",
+        "jun",
+        "jul",
+        "aug",
+        "sep",
+        "oct",
+        "nov",
+        "dec",
+    )
+    has_month = any(month in lowered for month in month_tokens)
+    has_time = bool(re.search(r"\b\d{1,2}(?:[:.]\d{2})?\s*(?:am|pm)\b", lowered))
+    if strict_dates and (
+        has_time or (has_month and not re.fullmatch(r"\s*\d{1,2}\s*\([^)]*\)(?:\s*,\s*\d{1,2}\s*\([^)]*\))*\s*", text))
+    ):
+        return []
 
     weeks: set[int] = set()
     for part in re.split(r"[,;/\s]+", text):
@@ -467,6 +488,7 @@ def load_courses_from_requirements(
     path: str | Path,
     common_modules: Optional[set[str]] = None,
     sheet_name: str = "Module",
+    strict_teaching_week_dates: bool = False,
 ) -> tuple[list[Course], WorkbookDiagnostic]:
     """Load course activities from a requirements workbook."""
     path = Path(path)
@@ -541,7 +563,7 @@ def load_courses_from_requirements(
             skipped_rows += 1
             continue
 
-        weeks = parse_teaching_weeks(row.get(weeks_col))
+        weeks = parse_teaching_weeks(row.get(weeks_col), strict_dates=strict_teaching_week_dates)
         class_size = _clean_int(row.get(size_col), default=1)
         staff_ids = _collect_staff_ids(row, df)
         staff_names = _collect_staff_names(row, df)
@@ -597,6 +619,7 @@ def load_courses_from_requirements(
 def load_consolidated_schedule_with_report(
     workbook_path: str | Path,
     common_modules: Optional[set[str]] = None,
+    strict_teaching_week_dates: bool = False,
 ) -> tuple[list[Course], WorkbookDiagnostic]:
     """Load one consolidated Template 1 workbook into course requirements."""
     path = Path(workbook_path)
@@ -605,7 +628,12 @@ def load_consolidated_schedule_with_report(
     if sheet_name is None:
         raise ConsolidatedScheduleValidationError(TEMPLATE1_VALIDATION_MESSAGE)
 
-    courses, diagnostic = load_courses_from_requirements(path, common_modules=common_modules, sheet_name=sheet_name)
+    courses, diagnostic = load_courses_from_requirements(
+        path,
+        common_modules=common_modules,
+        sheet_name=sheet_name,
+        strict_teaching_week_dates=strict_teaching_week_dates,
+    )
     if diagnostic.reason == "Missing required columns":
         raise ConsolidatedScheduleValidationError(TEMPLATE1_VALIDATION_MESSAGE)
     if not courses:
@@ -613,9 +641,17 @@ def load_consolidated_schedule_with_report(
     return courses, diagnostic
 
 
-def load_consolidated_schedule(workbook_path: str | Path, common_modules: Optional[set[str]] = None) -> list[Course]:
+def load_consolidated_schedule(
+    workbook_path: str | Path,
+    common_modules: Optional[set[str]] = None,
+    strict_teaching_week_dates: bool = False,
+) -> list[Course]:
     """Load one consolidated Template 1 workbook into existing Course objects."""
-    courses, _diagnostic = load_consolidated_schedule_with_report(workbook_path, common_modules=common_modules)
+    courses, _diagnostic = load_consolidated_schedule_with_report(
+        workbook_path,
+        common_modules=common_modules,
+        strict_teaching_week_dates=strict_teaching_week_dates,
+    )
     return courses
 
 

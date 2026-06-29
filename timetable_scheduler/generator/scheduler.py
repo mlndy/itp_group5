@@ -22,6 +22,7 @@ from engine.constraint_checker import check_hard_constraints, course_groups, is_
 from engine.remarks_interpreter import (
     RemarkRequirements,
     assignment_rooms,
+    course_with_effective_remark_duration,
     effective_remark_requirements,
     interpret_remarks,
     remark_unscheduled_reason,
@@ -481,6 +482,7 @@ def schedule_course(
             )
         ]
     requirements = _remarks_for_course(course, enable_remark_interpretation)
+    course = course_with_effective_remark_duration(course, enabled=enable_remark_interpretation)
     if requirements.required_room_count > 2:
         return [
             _manual_review_assignment(
@@ -495,9 +497,6 @@ def schedule_course(
         selected_delivery_mode = _selected_delivery_mode(course, room_group, requirements)
         for day in _candidate_days(requirements):
             for start_time in _candidate_start_times(requirements):
-                if _reached_candidate_limit(checked_patterns, max_candidate_patterns):
-                    return [_candidate_limit_assignment(course)]
-                checked_patterns += 1
                 candidates = make_weekly_assignments(
                     course,
                     room,
@@ -506,7 +505,12 @@ def schedule_course(
                     additional_rooms=additional_rooms,
                     selected_delivery_mode=selected_delivery_mode,
                 )
-                if can_place_assignments(candidates, index) and _validate_candidate_pattern(
+                if not can_place_assignments(candidates, index):
+                    continue
+                if _reached_candidate_limit(checked_patterns, max_candidate_patterns):
+                    return [_candidate_limit_assignment(course)]
+                checked_patterns += 1
+                if _validate_candidate_pattern(
                     candidates,
                     existing,
                     enable_remark_interpretation=enable_remark_interpretation,
@@ -535,6 +539,7 @@ def schedule_course_for_weeks(
             )
         ]
     requirements = _remarks_for_course(course, enable_remark_interpretation)
+    course = course_with_effective_remark_duration(course, enabled=enable_remark_interpretation)
     if requirements.required_room_count > 2:
         return [
             _manual_review_assignment(
@@ -555,10 +560,6 @@ def schedule_course_for_weeks(
             selected_delivery_mode = _selected_delivery_mode(course, room_group, requirements)
             for day in _candidate_days(requirements):
                 for start_time in _candidate_start_times(requirements):
-                    if _reached_candidate_limit(checked_patterns, max_candidate_patterns):
-                        placed.append(_candidate_limit_assignment(course))
-                        return placed
-                    checked_patterns += 1
                     candidate = Assignment(
                         course=course,
                         room=room,
@@ -568,6 +569,10 @@ def schedule_course_for_weeks(
                     )
                     if _candidate_precheck(candidate, staged_index):
                         continue
+                    if _reached_candidate_limit(checked_patterns, max_candidate_patterns):
+                        placed.append(_candidate_limit_assignment(course))
+                        return placed
+                    checked_patterns += 1
                     violations = check_hard_constraints(
                         candidate,
                         staged,
@@ -745,8 +750,7 @@ def generate_schedule(
             max_candidate_patterns=max_candidate_patterns,
             enable_remark_interpretation=enable_remark_interpretation,
         )
-        stopped_by_limit = placed and MAX_CANDIDATE_PATTERN_LIMIT_REASON in placed[0].hard_violations
-        if allow_weekly_fallback and placed and placed[0].hard_violations and not stopped_by_limit:
+        if allow_weekly_fallback and placed and placed[0].hard_violations:
             placed = schedule_course_for_weeks(
                 course,
                 course.teaching_weeks,

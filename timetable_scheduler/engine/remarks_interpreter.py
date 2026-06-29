@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -67,6 +68,9 @@ class RemarkRequirements:
     requires_recording_room: bool = False
     fixed_days: tuple[str, ...] = ()
     fixed_start_times: tuple[str, ...] = ()
+    fixed_end_times: tuple[str, ...] = ()
+    fixed_time_ranges: tuple[tuple[str, str], ...] = ()
+    explicit_dates: tuple[str, ...] = ()
     fixed_venues: tuple[str, ...] = ()
     duration_override_hours: float | None = None
     same_day_sessions: bool = False
@@ -105,6 +109,32 @@ DAY_NAMES = {
     "wednesday": "Wednesday",
     "thursday": "Thursday",
     "friday": "Friday",
+}
+MONTH_NAMES = {
+    "jan": 1,
+    "january": 1,
+    "feb": 2,
+    "february": 2,
+    "mar": 3,
+    "march": 3,
+    "apr": 4,
+    "april": 4,
+    "may": 5,
+    "jun": 6,
+    "june": 6,
+    "jul": 7,
+    "july": 7,
+    "aug": 8,
+    "august": 8,
+    "sep": 9,
+    "sept": 9,
+    "september": 9,
+    "oct": 10,
+    "october": 10,
+    "nov": 11,
+    "november": 11,
+    "dec": 12,
+    "december": 12,
 }
 
 SOFT_WORDS = ("prefer", "preferred", "if possible", "ideally")
@@ -408,56 +438,207 @@ def _detect_room_type(raw: str, text: str, req: RemarkRequirements, items: list[
     items[-1].parameters.update({"explicit": enforcement == RemarkEnforcement.HARD, "complete": True, "representable": True})
 
 
-def _detect_fixed_time(raw: str, text: str, req: RemarkRequirements, items: list[RemarkInterpretation]) -> None:
-    """Detect explicit fixed day and start-time requests."""
-    days = tuple(day for key, day in DAY_NAMES.items() if re.search(rf"\b{key}\b", text))
-    has_day = bool(days)
-    times: list[str] = []
-    for match in re.finditer(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b", text):
-        if match.group(2) is None and match.group(3) is None:
-            continue
-        hour = int(match.group(1))
-        minute = int(match.group(2) or "00")
-        suffix = match.group(3)
-        if suffix == "pm" and hour < 12:
-            hour += 12
-        if suffix == "am" and hour == 12:
-            hour = 0
-        if 0 <= hour <= 23 and minute in {0, 30}:
-            times.append(f"{hour:02d}:{minute:02d}")
+def _detected_weekdays(text: str) -> tuple[str, ...]:
+    """Return weekdays named in a remark, including plural forms."""
+    days = [day for key, day in DAY_NAMES.items() if re.search(rf"\b{key}s?\b", text)]
+    return tuple(dict.fromkeys(days))
 
-    explicit_request = _has_hard_word(text) or "fixed" in text or "only available" in text
-    if _has_soft_word(text) and has_day:
+
+def _explicit_date_info(text: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Return explicit date labels and computed weekdays where possible."""
+    month_pattern = "|".join(sorted((re.escape(key) for key in MONTH_NAMES), key=len, reverse=True))
+    dates: list[str] = []
+    days: list[str] = []
+    for match in re.finditer(rf"\b(\d{{1,2}})(?:st|nd|rd|th)?\s+({month_pattern})\.?(?:\s+(\d{{4}}))?\b", text):
+        day_text, month_text, year_text = match.groups()
+        month_number = MONTH_NAMES[month_text.rstrip(".")]
+        label = f"{int(day_text)} {month_text.title()}"
+        if year_text:
+            label = f"{label} {year_text}"
+            try:
+                days.append(datetime(int(year_text), month_number, int(day_text)).strftime("%A"))
+            except ValueError:
+                pass
+        dates.append(label)
+    return tuple(dict.fromkeys(dates)), tuple(dict.fromkeys(days))
+
+
+def _clock_minutes(hour: int, minute: int, suffix: str | None) -> int | None:
+    """Return minutes after midnight for a parsed clock token."""
+    if minute < 0 or minute > 59 or hour < 0:
+        return None
+    if suffix == "pm" and hour < 12:
+        hour += 12
+    elif suffix == "am" and hour == 12:
+        hour = 0
+    elif suffix is None and hour > 23:
+        return None
+    if hour > 23:
+        return None
+    return hour * 60 + minute
+
+
+def _format_minutes(minutes: int) -> str:
+    """Return HH:MM for minutes after midnight."""
+    hour, minute = divmod(minutes, 60)
+    return f"{hour:02d}:{minute:02d}"
+
+
+def _time_range_duration(start_time: str, end_time: str) -> float:
+    """Return duration in hours for a parsed time range."""
+    start_hour, start_minute = [int(part) for part in start_time.split(":", 1)]
+    end_hour, end_minute = [int(part) for part in end_time.split(":", 1)]
+    return ((end_hour * 60 + end_minute) - (start_hour * 60 + start_minute)) / 60
+
+
+def _best_time_range(
+    start_hour: int,
+    start_minute: int,
+    start_suffix: str | None,
+    end_hour: int,
+    end_minute: int,
+    end_suffix: str | None,
+) -> tuple[str, str] | None:
+    """Infer a sensible same-day time range from partially suffixed text."""
+    start_suffixes = [start_suffix]
+    if start_suffix is None and end_suffix is not None:
+        start_suffixes.append(end_suffix)
+    end_suffixes = [end_suffix]
+    if end_suffix is None and start_suffix is not None:
+        end_suffixes.append(start_suffix)
+        if start_suffix == "am":
+            end_suffixes.append("pm")
+    candidates: list[tuple[int, int]] = []
+    for candidate_start_suffix in dict.fromkeys(start_suffixes):
+        for candidate_end_suffix in dict.fromkeys(end_suffixes):
+            start = _clock_minutes(start_hour, start_minute, candidate_start_suffix)
+            end = _clock_minutes(end_hour, end_minute, candidate_end_suffix)
+            if start is None or end is None:
+                continue
+            if 0 < end - start <= 12 * 60:
+                candidates.append((start, end))
+    if not candidates:
+        return None
+    start, end = min(candidates, key=lambda item: (item[1] - item[0], item[0]))
+    return _format_minutes(start), _format_minutes(end)
+
+
+def _parse_time_ranges(text: str) -> list[tuple[str, str, tuple[int, int]]]:
+    """Return explicit time ranges and their source spans."""
+    token = r"(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?"
+    ranges: list[tuple[str, str, tuple[int, int]]] = []
+    for match in re.finditer(rf"\b{token}\s*(?:-|–|—|\bto\b)\s*{token}\b", text):
+        start_hour, start_minute, start_suffix, end_hour, end_minute, end_suffix = match.groups()
+        if start_suffix is None and end_suffix is None:
+            continue
+        parsed = _best_time_range(
+            int(start_hour),
+            int(start_minute or "0"),
+            start_suffix,
+            int(end_hour),
+            int(end_minute or "0"),
+            end_suffix,
+        )
+        if parsed is not None:
+            ranges.append((*parsed, match.span()))
+    return ranges
+
+
+def _parse_single_times(text: str, range_spans: list[tuple[int, int]]) -> list[str]:
+    """Return explicit single clock times outside already parsed ranges."""
+    times: list[str] = []
+    for match in re.finditer(r"\b(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?\b", text):
+        if any(start <= match.start() < end for start, end in range_spans):
+            continue
+        hour_text, minute_text, suffix = match.groups()
+        if suffix is None and minute_text is None:
+            continue
+        minutes = _clock_minutes(int(hour_text), int(minute_text or "0"), suffix)
+        if minutes is not None:
+            times.append(_format_minutes(minutes))
+    return times
+
+
+def _detect_fixed_time(raw: str, text: str, req: RemarkRequirements, items: list[RemarkInterpretation]) -> None:
+    """Detect explicit fixed day, date and time-range requests."""
+    explicit_dates, date_days = _explicit_date_info(text)
+    days = tuple(dict.fromkeys([*_detected_weekdays(text), *date_days]))
+    time_ranges = _parse_time_ranges(text)
+    range_spans = [span for _, _, span in time_ranges]
+    single_times = _parse_single_times(text, range_spans)
+    starts = [start for start, _, _ in time_ranges] + single_times
+    ends = [end for _, end, _ in time_ranges]
+
+    if _has_soft_word(text) and (days or starts or explicit_dates):
         items.append(
             _interpretation(
                 raw,
                 text,
                 "fixed_day_time",
-                {"fixed_days": list(days), "fixed_start_times": [], "explicit": False, "complete": True, "representable": True},
+                {
+                    "fixed_days": list(days),
+                    "fixed_start_times": starts,
+                    "fixed_end_times": ends,
+                    "explicit_dates": list(explicit_dates),
+                    "explicit": False,
+                    "complete": True,
+                    "representable": True,
+                },
                 RemarkEnforcement.SOFT,
                 RemarkConfidence.HIGH,
                 "Detected a day/time preference; it will not block scheduling.",
             )
         )
         return
-    if not explicit_request:
+
+    explicit_request = (
+        _has_hard_word(text)
+        or bool(time_ranges)
+        or bool(single_times and (days or explicit_dates))
+        or "only available" in text
+    )
+    if not explicit_request or not (days or starts or explicit_dates):
         return
     if days:
         req.fixed_days = tuple(dict.fromkeys([*req.fixed_days, *days]))
-    if times:
-        req.fixed_start_times = tuple(dict.fromkeys([*req.fixed_start_times, times[0]]))
-    if days or times:
-        items.append(
-            _interpretation(
-                raw,
-                text,
-                "fixed_day_time",
-                {"fixed_days": list(days), "fixed_start_times": times[:1], "explicit": True, "complete": bool(days or times), "representable": True},
-                RemarkEnforcement.HARD,
-                RemarkConfidence.HIGH,
-                "Detected fixed day or start-time wording.",
-            )
+    if starts:
+        req.fixed_start_times = tuple(dict.fromkeys([*req.fixed_start_times, *starts]))
+    if ends:
+        req.fixed_end_times = tuple(dict.fromkeys([*req.fixed_end_times, *ends]))
+    if time_ranges:
+        req.fixed_time_ranges = tuple(
+            dict.fromkeys([*req.fixed_time_ranges, *[(start, end) for start, end, _ in time_ranges]])
         )
+        durations = {_time_range_duration(start, end) for start, end, _ in time_ranges}
+        if len(durations) == 1:
+            req.duration_override_hours = durations.pop()
+        if len(time_ranges) > 1:
+            req.needs_manual_review = True
+            req.review_reason = req.review_reason or "Multiple explicit time ranges were parsed; confirm any group-specific split before submission."
+    if explicit_dates:
+        req.explicit_dates = tuple(dict.fromkeys([*req.explicit_dates, *explicit_dates]))
+
+    items.append(
+        _interpretation(
+            raw,
+            text,
+            "fixed_day_time",
+            {
+                "fixed_days": list(days),
+                "fixed_start_times": starts,
+                "fixed_end_times": ends,
+                "fixed_time_ranges": [(start, end) for start, end, _ in time_ranges],
+                "duration_override_hours": req.duration_override_hours,
+                "explicit_dates": list(explicit_dates),
+                "explicit": True,
+                "complete": bool(days or starts or explicit_dates),
+                "representable": True,
+            },
+            RemarkEnforcement.HARD,
+            RemarkConfidence.HIGH,
+            "Detected explicit fixed date, day or time-range wording.",
+        )
+    )
 
 
 def _detect_duration(raw: str, text: str, req: RemarkRequirements, items: list[RemarkInterpretation]) -> None:
@@ -649,8 +830,21 @@ def scheduling_requirements(requirements: RemarkRequirements) -> RemarkRequireme
         elif interpretation.rule_name == "fixed_day_time":
             days = [str(value) for value in interpretation.parameters.get("fixed_days", [])]
             times = [str(value) for value in interpretation.parameters.get("fixed_start_times", [])]
+            ends = [str(value) for value in interpretation.parameters.get("fixed_end_times", [])]
+            ranges = [
+                (str(value[0]), str(value[1]))
+                for value in interpretation.parameters.get("fixed_time_ranges", [])
+                if isinstance(value, (list, tuple)) and len(value) == 2
+            ]
+            dates = [str(value) for value in interpretation.parameters.get("explicit_dates", [])]
             filtered.fixed_days = tuple(dict.fromkeys([*filtered.fixed_days, *days]))
             filtered.fixed_start_times = tuple(dict.fromkeys([*filtered.fixed_start_times, *times]))
+            filtered.fixed_end_times = tuple(dict.fromkeys([*filtered.fixed_end_times, *ends]))
+            filtered.fixed_time_ranges = tuple(dict.fromkeys([*filtered.fixed_time_ranges, *ranges]))
+            duration = interpretation.parameters.get("duration_override_hours")
+            if duration is not None:
+                filtered.duration_override_hours = float(duration)
+            filtered.explicit_dates = tuple(dict.fromkeys([*filtered.explicit_dates, *dates]))
     return filtered
 
 
@@ -682,22 +876,74 @@ def remark_unscheduled_reason(course: "Course") -> str:
         return "Explicit recording-capable room requirement could not be satisfied."
     if requirements.required_room_types:
         return f"Explicit required room type could not be satisfied: {', '.join(requirements.required_room_types)}."
-    if requirements.fixed_days or requirements.fixed_start_times:
+    if requirements.fixed_days or requirements.fixed_start_times or requirements.fixed_end_times:
         parts = []
         if requirements.fixed_days:
             parts.append(f"day {', '.join(requirements.fixed_days)}")
         if requirements.fixed_start_times:
             parts.append(f"start {', '.join(requirements.fixed_start_times)}")
+        if requirements.fixed_end_times:
+            parts.append(f"end {', '.join(requirements.fixed_end_times)}")
         return f"Explicit fixed {' and '.join(parts)} request could not be satisfied."
+    if requirements.duration_override_hours is not None:
+        return f"Explicit duration {requirements.duration_override_hours:g} hour(s) could not be satisfied."
     return ""
+
+
+def _duration_conflict_reason(course: "Course", requirements: RemarkRequirements) -> str:
+    """Return a review reason for fixed-session duration conflicts."""
+    expected = requirements.duration_override_hours
+    if expected is None:
+        return ""
+    if abs(float(course.duration_hrs) - expected) <= 0.01:
+        return ""
+    if not (getattr(course, "is_fixed_requirement", False) or getattr(course, "fixed_source", None)):
+        return ""
+    starts = ", ".join(requirements.fixed_start_times) or "explicit start"
+    ends = ", ".join(requirements.fixed_end_times) or "explicit end"
+    return (
+        f"Explicit remark requests {starts}-{ends} ({expected:g} hour(s)), "
+        f"but the authoritative structured duration is {float(course.duration_hrs):g} hour(s)."
+    )
+
+
+def _requirements_with_course_context(course: "Course", requirements: RemarkRequirements) -> RemarkRequirements:
+    """Apply course-level evidence unavailable during raw remark parsing."""
+    reason = _duration_conflict_reason(course, requirements)
+    if not reason:
+        return requirements
+    requirements.needs_manual_review = True
+    requirements.review_reason = requirements.review_reason or reason
+    for interpretation in requirements.interpretations:
+        if interpretation.rule_name == "fixed_day_time" and interpretation.parameters.get("duration_override_hours") is not None:
+            interpretation.parameters["conflicting"] = True
+            interpretation.parameters["duration_conflict"] = reason
+            interpretation.parameters["instruction_treatment"] = "CONFLICT_REQUIRES_REVIEW"
+    return requirements
 
 
 def course_remark_requirements(course: "Course") -> RemarkRequirements:
     """Return cached remark requirements for a course when present."""
     cached = getattr(course, "remark_requirements", None)
     if isinstance(cached, RemarkRequirements):
-        return cached
-    return interpret_remarks(getattr(course, "remarks", ""))
+        return _requirements_with_course_context(course, cached)
+    return _requirements_with_course_context(course, interpret_remarks(getattr(course, "remarks", "")))
+
+
+def course_with_effective_remark_duration(course: "Course", *, enabled: bool = True) -> "Course":
+    """Return a course copy using an explicit safe remark duration."""
+    if not enabled or getattr(course, "is_fixed_requirement", False) or getattr(course, "fixed_source", None):
+        return course
+    requirements = course_scheduling_requirements(course)
+    expected = requirements.duration_override_hours
+    if expected is None or abs(float(course.duration_hrs) - expected) <= 0.01:
+        return course
+    return replace(course, duration_hrs=float(expected))
+
+
+def courses_with_effective_remark_durations(courses: list["Course"], *, enabled: bool = True) -> list["Course"]:
+    """Return courses with enforceable explicit duration ranges applied."""
+    return [course_with_effective_remark_duration(course, enabled=enabled) for course in courses]
 
 
 def room_matches_type(room: "Room", room_type: str) -> bool:
@@ -726,6 +972,150 @@ def assignment_room_ids(assignment: "Assignment") -> str:
     return ", ".join(room.room_id for room in assignment_rooms(assignment))
 
 
+def _assignment_end_time(assignment: "Assignment") -> str:
+    """Return an assignment end time without importing the constraint checker."""
+    if assignment.timeslot is None:
+        return ""
+    start_hour, start_minute = [int(part) for part in assignment.timeslot.start_time.split(":", 1)]
+    end_minutes = start_hour * 60 + start_minute + int(round(float(assignment.course.duration_hrs) * 60))
+    return _format_minutes(end_minutes)
+
+
+def _normalise_module_for_match(value: str) -> str:
+    """Return a conservative module key for fixed-override evidence."""
+    text = str(value or "").strip().upper()
+    match = re.match(r"([A-Z]{2,4}\d{4}[A-Z]?)", text)
+    return match.group(1) if match else text
+
+
+def _normalise_programme_for_match(value: str) -> str:
+    """Return a compact programme/year key for fixed-override evidence."""
+    text = re.sub(r"\s+", " ", str(value or "").upper().replace("YEAR", "Y").replace("YR", "Y")).strip()
+    text = text.replace(" / ", "/").replace(" /", "/").replace("/ ", "/")
+    return re.sub(r"\bY\s*([0-9])\b", r"Y\1", text)
+
+
+def _fixed_assignment_matches_course(course: "Course", assignment: "Assignment") -> bool:
+    """Return True when a fixed assignment plausibly anchors a remarked course."""
+    if not getattr(assignment, "is_fixed", False) or assignment.timeslot is None:
+        return False
+    if _normalise_module_for_match(course.module_code) != _normalise_module_for_match(assignment.course.module_code):
+        return False
+    course_programme = _normalise_programme_for_match(course.prog_yr)
+    fixed_programme = _normalise_programme_for_match(assignment.course.prog_yr)
+    if course_programme not in fixed_programme and fixed_programme not in course_programme:
+        return False
+    if assignment.timeslot.week not in set(course.teaching_weeks):
+        return False
+    return True
+
+
+def _requested_placement_text(interpretation: RemarkInterpretation) -> str:
+    """Return the requested day/date/time placement in one audit string."""
+    days = [str(value) for value in interpretation.parameters.get("fixed_days", [])]
+    starts = [str(value) for value in interpretation.parameters.get("fixed_start_times", [])]
+    ends = [str(value) for value in interpretation.parameters.get("fixed_end_times", [])]
+    ranges = [
+        f"{value[0]}-{value[1]}"
+        for value in interpretation.parameters.get("fixed_time_ranges", [])
+        if isinstance(value, (list, tuple)) and len(value) == 2
+    ]
+    dates = [str(value) for value in interpretation.parameters.get("explicit_dates", [])]
+    parts = []
+    if dates:
+        parts.append(f"date {', '.join(dates)}")
+    if days:
+        parts.append(f"day {', '.join(days)}")
+    if ranges:
+        parts.append(f"time range {', '.join(ranges)}")
+    elif starts:
+        time_text = ", ".join(starts)
+        if ends:
+            time_text = f"{time_text}-{', '.join(ends)}"
+        parts.append(f"time {time_text}")
+    return "; ".join(parts)
+
+
+def _assignment_placement_text(assignment: "Assignment") -> str:
+    """Return the final fixed placement in one audit string."""
+    if assignment.timeslot is None:
+        return ""
+    return (
+        f"{assignment.timeslot.day} {assignment.timeslot.start_time}-{_assignment_end_time(assignment)} "
+        f"week {assignment.timeslot.week}; rooms {assignment_room_ids(assignment)}"
+    )
+
+
+def fixed_session_override_rows(
+    courses: list["Course"],
+    assignments: list["Assignment"],
+) -> list[dict[str, object]]:
+    """Return audit rows where an official fixed session overrides a remark."""
+    rows: list[dict[str, object]] = []
+    seen: set[tuple[object, ...]] = set()
+    fixed_assignments = [assignment for assignment in assignments if getattr(assignment, "is_fixed", False)]
+    for course in courses:
+        raw = getattr(course, "remarks", "")
+        if not str(raw or "").strip():
+            continue
+        requirements = course_remark_requirements(course)
+        for interpretation in requirements.interpretations:
+            if interpretation.rule_name != "fixed_day_time" or not is_hard_enforceable(interpretation):
+                continue
+            requested = _requested_placement_text(interpretation)
+            if not requested:
+                continue
+            for assignment in fixed_assignments:
+                if not _fixed_assignment_matches_course(course, assignment):
+                    continue
+                if assignment_satisfies_interpretation(assignment, interpretation):
+                    continue
+                key = (
+                    getattr(course, "source_file", ""),
+                    getattr(course, "source_sheet", ""),
+                    getattr(course, "source_row", ""),
+                    course.module_code,
+                    course.prog_yr,
+                    interpretation.rule_name,
+                    str(interpretation.parameters),
+                    assignment.fixed_source,
+                    assignment.timeslot.day if assignment.timeslot else "",
+                    assignment.timeslot.start_time if assignment.timeslot else "",
+                    _assignment_end_time(assignment),
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                final_placement = _assignment_placement_text(assignment)
+                rows.append(
+                    {
+                        "source workbook": getattr(course, "source_file", ""),
+                        "source sheet": getattr(course, "source_sheet", ""),
+                        "source row": getattr(course, "source_row", ""),
+                        "programme/year": course.prog_yr,
+                        "module": course.module_code,
+                        "activity": course.activity,
+                        "raw remark": interpretation.raw_text,
+                        "normalised remark": interpretation.normalised_text,
+                        "detected pattern": _category_for_interpretation(interpretation),
+                        "proposed rule type": interpretation.enforcement.value,
+                        "confidence": interpretation.confidence.value,
+                        "supported or unsupported": "supported",
+                        "rule name": interpretation.rule_name,
+                        "parameters": str(interpretation.parameters),
+                        "explanation": "Official fixed-session placement overrides the free-text remark.",
+                        "review reason": "Authoritative fixed-session placement retained.",
+                        "applied status": "FIXED_SESSION_OVERRIDES_REMARK",
+                        "instruction treatment": "OVERRIDDEN_BY_STRUCTURED_FIXED_SESSION",
+                        "requested placement": requested,
+                        "authoritative fixed placement": final_placement,
+                        "final placement": final_placement,
+                        "override source": assignment.fixed_source or "",
+                    }
+                )
+    return rows
+
+
 def assignment_satisfies_interpretation(assignment: "Assignment", interpretation: RemarkInterpretation) -> bool:
     """Return True when a final assignment satisfies one interpreted rule."""
     if assignment.room is None or assignment.timeslot is None:
@@ -746,11 +1136,20 @@ def assignment_satisfies_interpretation(assignment: "Assignment", interpretation
     if interpretation.rule_name == "fixed_day_time":
         fixed_days = tuple(str(value) for value in interpretation.parameters.get("fixed_days", req.fixed_days))
         fixed_start_times = tuple(str(value) for value in interpretation.parameters.get("fixed_start_times", req.fixed_start_times))
-        if not fixed_days and not fixed_start_times:
+        fixed_end_times = tuple(str(value) for value in interpretation.parameters.get("fixed_end_times", req.fixed_end_times))
+        fixed_time_ranges = tuple(
+            (str(value[0]), str(value[1]))
+            for value in interpretation.parameters.get("fixed_time_ranges", req.fixed_time_ranges)
+            if isinstance(value, (list, tuple)) and len(value) == 2
+        )
+        if not fixed_days and not fixed_start_times and not fixed_end_times and not fixed_time_ranges:
             return False
         day_ok = not fixed_days or assignment.timeslot.day in fixed_days
         time_ok = not fixed_start_times or assignment.timeslot.start_time in fixed_start_times
-        return day_ok and time_ok
+        end_time = _assignment_end_time(assignment)
+        end_ok = not fixed_end_times or end_time in fixed_end_times
+        range_ok = not fixed_time_ranges or (assignment.timeslot.start_time, end_time) in fixed_time_ranges
+        return day_ok and time_ok and end_ok and range_ok
     if interpretation.enforcement == RemarkEnforcement.REVIEW:
         return False
     return not assignment.hard_violations
@@ -780,7 +1179,33 @@ def _category_for_interpretation(interpretation: RemarkInterpretation) -> str:
     return mapping.get(interpretation.rule_name, "Unclear or unsupported")
 
 
-def remarks_audit_rows(courses: list["Course"]) -> list[dict[str, object]]:
+REMARKS_AUDIT_COLUMNS = [
+    "source workbook",
+    "source sheet",
+    "source row",
+    "programme/year",
+    "module",
+    "activity",
+    "raw remark",
+    "normalised remark",
+    "detected pattern",
+    "proposed rule type",
+    "confidence",
+    "supported or unsupported",
+    "rule name",
+    "parameters",
+    "explanation",
+    "review reason",
+    "applied status",
+    "instruction treatment",
+    "requested placement",
+    "authoritative fixed placement",
+    "final placement",
+    "override source",
+]
+
+
+def remarks_audit_rows(courses: list["Course"], assignments: list["Assignment"] | None = None) -> list[dict[str, object]]:
     """Return workbook-audit rows for all non-empty course remarks."""
     rows: list[dict[str, object]] = []
     for course in courses:
@@ -807,40 +1232,37 @@ def remarks_audit_rows(courses: list["Course"]) -> list[dict[str, object]]:
                     "parameters": str(interpretation.parameters),
                     "explanation": interpretation.explanation,
                     "review reason": requirements.review_reason,
+                    "applied status": "",
+                    "instruction treatment": str(interpretation.parameters.get("instruction_treatment", "")),
+                    "requested placement": _requested_placement_text(interpretation)
+                    if interpretation.rule_name == "fixed_day_time"
+                    else "",
+                    "authoritative fixed placement": "",
+                    "final placement": "",
+                    "override source": "",
                 }
             )
+    if assignments is not None:
+        rows.extend(fixed_session_override_rows(courses, assignments))
     return rows
 
 
-def export_remarks_audit(courses: list["Course"], output_path: Path) -> None:
+def export_remarks_audit(courses: list["Course"], output_path: Path, assignments: list["Assignment"] | None = None) -> None:
     """Export deterministic remark interpretations for development audit."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    rows = remarks_audit_rows(courses)
+    rows = remarks_audit_rows(courses, assignments=assignments)
     if not rows:
-        rows = [
-            {
-                "source workbook": "",
-                "source sheet": "",
-                "source row": "",
-                "programme/year": "",
-                "module": "",
-                "activity": "",
-                "raw remark": "",
-                "normalised remark": "",
-                "detected pattern": "No remarks found",
-                "proposed rule type": "",
-                "confidence": "",
-                "supported or unsupported": "",
-                "rule name": "",
-                "parameters": "",
-                "explanation": "",
-                "review reason": "",
-            }
-        ]
+        rows = [{column: "" for column in REMARKS_AUDIT_COLUMNS}]
+        rows[0]["detected pattern"] = "No remarks found"
+    df = pd.DataFrame(rows)
+    for column in REMARKS_AUDIT_COLUMNS:
+        if column not in df.columns:
+            df[column] = ""
+    df = df[REMARKS_AUDIT_COLUMNS]
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
-        pd.DataFrame(rows).to_excel(writer, sheet_name="Remarks Audit", index=False)
+        df.to_excel(writer, sheet_name="Remarks Audit", index=False)
         summary = (
-            pd.DataFrame(rows)
+            df
             .groupby(["detected pattern", "supported or unsupported"], dropna=False)
             .size()
             .reset_index(name="count")

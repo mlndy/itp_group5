@@ -14,6 +14,7 @@ from openpyxl.utils import get_column_letter
 from config import ACTIVITY_TYPE_CODES, DAY_ABBREVIATIONS, DEFAULT_TEMPLATE2_FILE, ENABLE_REMARK_INTERPRETATION
 from data.models import Assignment
 from engine.constraint_checker import annotate_schedule_violations, assignment_end_time
+from engine.programme_year import programme_year_report_value_from_source
 from engine.remarks_interpreter import assignment_room_ids, assignment_rooms
 
 
@@ -94,6 +95,9 @@ def _template_row_values(assignment: Assignment) -> dict[str, object]:
 
     room_id = _room_id(assignment)
     room2_id = _room2_id(assignment)
+    programme_year = programme_year_report_value_from_source(course.prog_yr, course.source_file)
+    if programme_year.startswith("UNRESOLVED"):
+        programme_year = course.prog_yr
     return {
         "Module": course.module_code,
         "Class Type": course.activity,
@@ -127,7 +131,7 @@ def _template_row_values(assignment: Assignment) -> dict[str, object]:
         "Location Suitability ID": "#N/A",
         "Location Hostkey": room_id,
         "Location Hostkey.1": room_id,
-        "Programme/Year": course.prog_yr,
+        "Programme/Year": programme_year,
         "Delivery Mode": assignment.selected_delivery_mode or course.delivery_mode,
         "Status": assignment.status,
     }
@@ -148,7 +152,36 @@ def _template_cell_value(header: str, occurrence: int, row_values: dict[str, obj
     return row_values.get(header)
 
 
-def _write_template_timetable_sheet(workbook, assignments: list[Assignment]) -> None:
+def _sort_week_text(value: object) -> str:
+    """Return comma-separated teaching weeks in numeric order."""
+    weeks: list[int] = []
+    for part in str(value or "").replace(" ", "").split(","):
+        if part.isdigit():
+            weeks.append(int(part))
+    return ",".join(str(week) for week in sorted(set(weeks)))
+
+
+def _aggregate_template_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Combine identical Template 2 placements by teaching week only."""
+    grouped: dict[tuple[tuple[str, object], ...], dict[str, object]] = {}
+    week_values: dict[tuple[tuple[str, object], ...], list[object]] = defaultdict(list)
+    excluded_from_key = {"Tri Week", "Remark", "Status"}
+    for row in rows:
+        key = tuple(sorted((name, value) for name, value in row.items() if name not in excluded_from_key))
+        grouped.setdefault(key, dict(row))
+        week_values[key].append(row.get("Tri Week"))
+    result: list[dict[str, object]] = []
+    for key, row in grouped.items():
+        row["Tri Week"] = _sort_week_text(",".join(str(value or "") for value in week_values[key]))
+        result.append(row)
+    return result
+
+
+def _write_template_timetable_sheet(
+    workbook,
+    assignments: list[Assignment],
+    aggregate_teaching_weeks: bool = False,
+) -> None:
     """Populate the Template 2 Timetable sheet in-place."""
     if "Timetable" not in workbook.sheetnames:
         workbook.create_sheet("Timetable")
@@ -161,8 +194,10 @@ def _write_template_timetable_sheet(workbook, assignments: list[Assignment]) -> 
     for row in sheet.iter_rows(min_row=2, max_row=sheet.max_row, max_col=sheet.max_column):
         for cell in row:
             cell.value = None
-    for row_index, assignment in enumerate(assignments, start=2):
-        row_values = _template_row_values(assignment)
+    rows = [_template_row_values(assignment) for assignment in assignments]
+    if aggregate_teaching_weeks:
+        rows = _aggregate_template_rows(rows)
+    for row_index, row_values in enumerate(rows, start=2):
         header_counts: dict[str, int] = defaultdict(int)
         for column_index, header in enumerate(headers, start=1):
             if header is None:
@@ -180,6 +215,7 @@ def assignment_to_row(assignment: Assignment) -> dict[str, object]:
 def assignments_to_dataframe(
     assignments: list[Assignment],
     enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
+    aggregate_teaching_weeks: bool = False,
 ) -> pd.DataFrame:
     """Convert assignments to a timetable DataFrame."""
     snapshot = _annotated_snapshot(
@@ -187,6 +223,8 @@ def assignments_to_dataframe(
         enable_remark_interpretation=enable_remark_interpretation,
     )
     rows = [assignment_to_row(assignment) for assignment in snapshot]
+    if aggregate_teaching_weeks:
+        rows = _aggregate_template_rows(rows)
     return pd.DataFrame(rows)
 
 
@@ -273,6 +311,7 @@ def export_schedule(
     output_path: str | Path,
     template2_path: str | Path | None = None,
     enable_remark_interpretation: bool = ENABLE_REMARK_INTERPRETATION,
+    aggregate_teaching_weeks: bool = False,
 ) -> None:
     """Export the final timetable, preferring the provided Template 2 workbook."""
     output_path = Path(output_path)
@@ -285,13 +324,14 @@ def export_schedule(
 
     if template2_path.exists():
         workbook = load_workbook(template2_path)
-        _write_template_timetable_sheet(workbook, snapshot)
+        _write_template_timetable_sheet(workbook, snapshot, aggregate_teaching_weeks=aggregate_teaching_weeks)
         workbook.save(output_path)
         return
 
     timetable_df = assignments_to_dataframe(
         snapshot,
         enable_remark_interpretation=enable_remark_interpretation,
+        aggregate_teaching_weeks=aggregate_teaching_weeks,
     )
     hard_df = violations_to_dataframe(snapshot, "hard")
     soft_df = violations_to_dataframe(snapshot, "soft")

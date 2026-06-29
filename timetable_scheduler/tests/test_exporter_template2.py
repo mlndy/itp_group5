@@ -125,6 +125,33 @@ def test_online_assignment_exports_online_room(tmp_path: Path, monkeypatch) -> N
     assert row["Location Hostkey"] == "ONLINE_ROOM"
 
 
+def test_submission_ready_export_can_aggregate_identical_weekly_rows(tmp_path: Path, monkeypatch) -> None:
+    """Identical placements should combine only their teaching weeks when requested."""
+    monkeypatch.setattr(exporter, "DEFAULT_TEMPLATE2_FILE", DEFAULT_TEMPLATE2_FILE)
+    course = make_course(group_ids=["ENG/YR 1"], staff_names=["Tutor"], teaching_weeks=[1, 2, 3])
+    room = Room("PGB-LT-01", 120, "physical")
+    assignments = [
+        Assignment(course=course, room=room, timeslot=TimeSlot("Monday", "09:00", 1)),
+        Assignment(course=course, room=room, timeslot=TimeSlot("Monday", "09:00", 2)),
+        Assignment(course=course, room=room, timeslot=TimeSlot("Tuesday", "09:00", 3)),
+    ]
+    output = tmp_path / "submission_ready.xlsx"
+
+    export_schedule(assignments, output, aggregate_teaching_weeks=True)
+
+    workbook = load_workbook(output)
+    headers = _headers(workbook["Timetable"])
+    rows = [
+        dict(zip(headers, [workbook["Timetable"].cell(row, idx + 1).value for idx in range(len(headers))], strict=False))
+        for row in range(2, 4)
+    ]
+
+    assert rows[0]["Day"] == "Mon"
+    assert rows[0]["Tri Week"] == "1,2"
+    assert rows[1]["Day"] == "Tue"
+    assert rows[1]["Tri Week"] == "3"
+
+
 def test_unscheduled_assignment_keeps_room1_blank(tmp_path: Path, monkeypatch) -> None:
     """Unscheduled assignments should not invent a room ID."""
     monkeypatch.setattr(exporter, "DEFAULT_TEMPLATE2_FILE", DEFAULT_TEMPLATE2_FILE)

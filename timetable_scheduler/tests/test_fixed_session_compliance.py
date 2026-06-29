@@ -316,6 +316,68 @@ def test_genuine_fixed_overlap_still_conflicts() -> None:
     assert any("Room clash" in issue["problem"] for issue in conflicts)
 
 
+def test_authoritative_fixed_session_can_span_lunch() -> None:
+    """Official fixed sessions may keep an exact lunch-spanning source placement."""
+    rooms = [Room("R1", 100, "physical", "Laboratory")]
+    session = make_fixed_session(start_time="09:00", duration_hours=9.0, locations=("R1",))
+
+    assignments, mapping_issues = create_fixed_assignments([session], rooms)
+    issues = validate_fixed_assignments(assignments)
+
+    assert mapping_issues == []
+    assert assignments[0].hard_violations == []
+    assert not any(issue["severity"] == "critical" for issue in issues)
+    assert any("AUTHORITATIVE_FIXED_LUNCH_SPAN" in issue["problem"] for issue in issues)
+
+
+def test_authoritative_fixed_session_can_end_after_1800() -> None:
+    """Official fixed sessions may keep exact source times beyond generated slots."""
+    rooms = [Room("R1", 100, "physical", "Laboratory")]
+    session = make_fixed_session(start_time="18:00", duration_hours=2.0, locations=("R1",))
+
+    assignments, mapping_issues = create_fixed_assignments([session], rooms)
+    issues = validate_fixed_assignments(assignments)
+
+    assert mapping_issues == []
+    assert assignments[0].timeslot == TimeSlot("Monday", "18:00", 1)
+    assert assignments[0].course.duration_hrs == 2.0
+    assert assignments[0].hard_violations == []
+    assert not any(issue["severity"] == "critical" for issue in issues)
+    assert any("AUTHORITATIVE_FIXED_AFTER_1800" in issue["problem"] for issue in issues)
+
+
+def test_non_fixed_long_session_still_obeys_lunch_policy() -> None:
+    """The fixed-source exception must not weaken non-fixed scheduling policy."""
+    assignment = Assignment(
+        course=make_course(duration_hrs=9.0, group_ids=["ENG/Y1/P1"]),
+        room=Room("R1", 100, "physical", "Laboratory"),
+        timeslot=TimeSlot("Monday", "09:00", 1),
+    )
+
+    violations = check_hard_constraints(assignment, [], enable_remark_interpretation=False)
+
+    assert any("no free lunch block" in violation for violation in violations)
+
+
+def test_fixed_tutor_and_group_clashes_still_fail() -> None:
+    """Official fixed-window exceptions must not hide real resource clashes."""
+    rooms = [Room("R1", 100, "physical", "Laboratory"), Room("R2", 100, "physical", "Laboratory")]
+    tutor_sessions = [
+        make_fixed_session(module_code="ENG1001", locations=("R1",), staff_ids=("Tutor A",), staff_names=("Tutor A",), source_row=2),
+        make_fixed_session(module_code="ENG1002", locations=("R2",), staff_ids=("Tutor A",), staff_names=("Tutor A",), group_id="P2", source_row=3),
+    ]
+    group_sessions = [
+        make_fixed_session(module_code="ENG1003", locations=("R1",), staff_ids=("Tutor A",), staff_names=("Tutor A",), source_row=4),
+        make_fixed_session(module_code="ENG1004", locations=("R2",), staff_ids=("Tutor B",), staff_names=("Tutor B",), source_row=5),
+    ]
+
+    tutor_assignments, _mapping_issues = create_fixed_assignments(tutor_sessions, rooms)
+    group_assignments, _mapping_issues = create_fixed_assignments(group_sessions, rooms)
+
+    assert any("Staff clash" in issue["problem"] for issue in validate_fixed_assignments(tutor_assignments))
+    assert any("Student group clash" in issue["problem"] for issue in validate_fixed_assignments(group_assignments))
+
+
 def test_guarded_conflict_quarantines_both_linked_fixed_assignments() -> None:
     """Unresolved fixed conflicts should exclude every linked fixed assignment."""
     rooms = [Room("R1", 100, "physical", "Laboratory")]

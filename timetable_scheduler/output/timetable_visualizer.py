@@ -11,7 +11,6 @@ from pathlib import Path
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
-from openpyxl.worksheet.table import Table, TableStyleInfo
 
 from config import EARLIEST_START_HOUR, LATEST_END_HOUR, VALID_DAYS
 from data.models import Assignment, Room
@@ -64,6 +63,7 @@ class VisualTimetableEntry:
     submission_ready_status: str = ""
     room_capacity_status: str = ""
     lecturer_keys: tuple[str, ...] = ()
+    source_occurrence_ids: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)
@@ -85,6 +85,8 @@ class VisualExportResult:
     unexpected_entries: int
     invalid_overlaps: int
     sheet_name_issues: int
+    max_weekday_lanes: int = 0
+    lane_warnings: int = 0
     errors: list[str] = field(default_factory=list)
 
 
@@ -133,7 +135,7 @@ def allocate_lanes(entries: list[VisualTimetableEntry]) -> dict[str, int]:
     for entry in sorted(entries, key=_entry_sort_key):
         placed = False
         for lane_index, lane_entries in enumerate(lanes):
-            if not any(_clock_overlaps(entry, other) for other in lane_entries):
+            if not any(_entries_conflict_for_lane(entry, other) for other in lane_entries):
                 lane_entries.append(entry)
                 allocation[entry.assignment_id] = lane_index
                 placed = True
@@ -142,6 +144,48 @@ def allocate_lanes(entries: list[VisualTimetableEntry]) -> dict[str, int]:
             lanes.append([entry])
             allocation[entry.assignment_id] = len(lanes) - 1
     return allocation
+
+
+def aggregate_visual_entries(entries: list[VisualTimetableEntry]) -> list[VisualTimetableEntry]:
+    """Combine identical recurring placements into readable visual blocks."""
+    grouped: dict[tuple[object, ...], list[VisualTimetableEntry]] = defaultdict(list)
+    for entry in entries:
+        grouped[_aggregation_key(entry)].append(entry)
+
+    aggregated: list[VisualTimetableEntry] = []
+    for items in grouped.values():
+        first = sorted(items, key=_entry_sort_key)[0]
+        weeks = tuple(sorted({week for item in items for week in item.teaching_weeks}))
+        source_ids = tuple(sorted({source_id for item in items for source_id in _source_occurrence_ids(item)}))
+        aggregated.append(
+            VisualTimetableEntry(
+                assignment_id=_aggregated_assignment_id(first, weeks),
+                programme=first.programme,
+                academic_year=first.academic_year,
+                programme_year=first.programme_year,
+                module_code=first.module_code,
+                activity=first.activity,
+                groups=first.groups,
+                lecturers=first.lecturers,
+                rooms=first.rooms,
+                day=first.day,
+                start_time=first.start_time,
+                end_time=first.end_time,
+                teaching_weeks=weeks,
+                is_fixed=first.is_fixed,
+                delivery_mode=first.delivery_mode,
+                is_external=first.is_external,
+                is_shared=first.is_shared,
+                location_type=first.location_type,
+                source_reference=first.source_reference,
+                programme_status=first.programme_status,
+                submission_ready_status=first.submission_ready_status,
+                room_capacity_status=first.room_capacity_status,
+                lecturer_keys=first.lecturer_keys,
+                source_occurrence_ids=source_ids,
+            )
+        )
+    return sorted(aggregated, key=_entry_sort_key)
 
 
 def build_programme_visual_entries(
@@ -200,9 +244,9 @@ def export_timetable_visuals(
     validation_path: Path,
 ) -> VisualExportResult:
     """Export programme, tutor and room visual timetable workbooks."""
-    programme_entries = build_programme_visual_entries(assignments, programme_rows)
-    tutor_entries = build_tutor_visual_entries(assignments)
-    room_entries = build_room_visual_entries(assignments)
+    programme_entries = aggregate_visual_entries(build_programme_visual_entries(assignments, programme_rows))
+    tutor_entries = aggregate_visual_entries(build_tutor_visual_entries(assignments))
+    room_entries = aggregate_visual_entries(build_room_visual_entries(assignments))
 
     programme_sheets = _export_entity_workbook(
         path=programme_path,
@@ -256,6 +300,8 @@ def export_timetable_visuals(
         unexpected_entries=len(validation["unexpected"]),
         invalid_overlaps=len(validation["overlaps"]),
         sheet_name_issues=len(validation["sheet_names"]),
+        max_weekday_lanes=int(validation["max_weekday_lanes"]),
+        lane_warnings=len(validation["lane_quality_warnings"]),
         errors=[str(row.get("Issue")) for row in validation["export_status"] if row.get("Status") == "FAIL"],
     )
     export_visualisation_validation_report(result, validation, validation_path)
@@ -287,6 +333,9 @@ def export_visualisation_failure_report(validation_path: Path, error: Exception)
         "programme": [],
         "tutor": [],
         "room": [],
+        "lane_quality": [],
+        "lane_quality_warnings": [],
+        "max_weekday_lanes": 0,
         "missing": [],
         "unexpected": [],
         "overlaps": [],
@@ -311,14 +360,14 @@ def validate_visual_exports(
 ) -> dict[str, object]:
     """Return validation rows for exported timetable visuals."""
     scheduled_ids = {scheduled_assignment_id(item) for item in _scheduled_valid_assignments(assignments)}
-    programme_ids = {entry.assignment_id for entry in programme_entries}
-    tutor_ids = {entry.assignment_id for entry in tutor_entries}
+    programme_ids = _entry_occurrence_id_set(programme_entries)
+    tutor_ids = _entry_occurrence_id_set(tutor_entries)
     physical_ids = {
         scheduled_assignment_id(item)
         for item in _scheduled_valid_assignments(assignments)
         if any(room.room_type != "virtual" for room in assignment_rooms(item))
     }
-    room_ids = {entry.assignment_id for entry in room_entries}
+    room_ids = _entry_occurrence_id_set(room_entries)
     missing = _missing_rows("programme", scheduled_ids - programme_ids)
     missing.extend(_missing_rows("tutor", scheduled_ids - tutor_ids))
     missing.extend(_missing_rows("room", physical_ids - room_ids))
@@ -337,6 +386,15 @@ def validate_visual_exports(
     programme_reconciliation = _programme_reconciliation_rows(programme_entries, programme_rows)
     tutor_reconciliation = _entity_reconciliation_rows("Tutor", _group_tutors(tutor_entries))
     room_reconciliation = _entity_reconciliation_rows("Room", _group_rooms(room_entries), rooms)
+    lane_quality = _lane_quality_rows(
+        {
+            "Programme": _group_programmes(programme_entries),
+            "Tutor": _group_tutors(tutor_entries),
+            "Room": _group_rooms(room_entries),
+        }
+    )
+    lane_warnings = [row for row in lane_quality if row.get("Status") == "WARN"]
+    max_weekday_lanes = max((int(row.get("Maximum Weekday Lanes") or 0) for row in lane_quality), default=0)
     status = "PASS" if not missing and not unexpected and not overlaps and not sheet_names else "FAIL"
     result_stub = VisualExportResult(
         programme_path=Path(""),
@@ -354,11 +412,18 @@ def validate_visual_exports(
         unexpected_entries=len(unexpected),
         invalid_overlaps=len(overlaps),
         sheet_name_issues=len(sheet_names),
+        max_weekday_lanes=max_weekday_lanes,
+        lane_warnings=len(lane_warnings),
     )
     export_status = [
         {"Workbook": "Programme_Timetable_Visuals.xlsx", "Status": "PASS" if programme_sheets else "FAIL", "Issue": ""},
         {"Workbook": "Tutor_Timetable_Visuals.xlsx", "Status": "PASS" if tutor_sheets else "FAIL", "Issue": ""},
         {"Workbook": "Room_Timetable_Visuals.xlsx", "Status": "PASS" if room_sheets >= 0 else "FAIL", "Issue": ""},
+        {
+            "Workbook": "Lane quality",
+            "Status": "WARN" if lane_warnings else "PASS",
+            "Issue": f"{len(lane_warnings)} sheet/day combination(s) exceed four lanes." if lane_warnings else "",
+        },
         {"Workbook": "timetable_visualisation_validation.xlsx", "Status": status, "Issue": "" if status == "PASS" else "Review validation sheets."},
     ]
     return {
@@ -367,6 +432,9 @@ def validate_visual_exports(
         "programme": programme_reconciliation,
         "tutor": tutor_reconciliation,
         "room": room_reconciliation,
+        "lane_quality": lane_quality,
+        "lane_quality_warnings": lane_warnings,
+        "max_weekday_lanes": max_weekday_lanes,
         "missing": missing,
         "unexpected": unexpected,
         "overlaps": overlaps,
@@ -389,6 +457,11 @@ def export_visualisation_validation_report(
     _write_table(workbook.create_sheet("Programme Reconciliation"), list(_programme_reconciliation_columns()), validation.get("programme", []))
     _write_table(workbook.create_sheet("Tutor Reconciliation"), list(_entity_reconciliation_columns("Tutor")), validation.get("tutor", []))
     _write_table(workbook.create_sheet("Room Reconciliation"), list(_entity_reconciliation_columns("Room")), validation.get("room", []))
+    _write_table(
+        workbook.create_sheet("Lane Quality"),
+        ["Entity Type", "Entity", "Day", "Maximum Weekday Lanes", "Status", "Issue"],
+        validation.get("lane_quality", []),
+    )
     _write_table(workbook.create_sheet("Missing Visual Entries"), ["View", "Assignment ID"], validation.get("missing", []))
     _write_table(workbook.create_sheet("Unexpected Visual Entries"), ["View", "Assignment ID"], validation.get("unexpected", []))
     _write_table(
@@ -488,7 +561,7 @@ def _write_week_grid(sheet, entries: list[VisualTimetableEntry], start_row: int)
         first_col = current_col
         for lane in range(lane_count):
             columns[(day, lane)] = current_col
-            sheet.cell(row=start_row + 1, column=current_col, value=f"Lane {lane + 1}" if lane_count > 1 else "")
+            sheet.cell(row=start_row + 1, column=current_col, value=f"{day} {lane + 1}" if lane_count > 1 else "")
             current_col += 1
         sheet.cell(row=start_row, column=first_col, value=day)
         if current_col - first_col > 1:
@@ -596,16 +669,6 @@ def _write_table(sheet, columns: list[str], rows: object, start_row: int = 1) ->
         for column_index, header in enumerate(columns, start=1):
             value = row.get(header, "") if isinstance(row, dict) else ""
             sheet.cell(row=start_row + row_offset, column=column_index, value=value)
-    if columns:
-        end_row = max(start_row + len(row_list), start_row + 1)
-        table_ref = f"A{start_row}:{get_column_letter(len(columns))}{end_row}"
-        table_name = _safe_table_name(f"{sheet.title}_{start_row}")
-        table = Table(displayName=table_name, ref=table_ref)
-        table.tableStyleInfo = TableStyleInfo(name="TableStyleMedium2", showRowStripes=True, showColumnStripes=False)
-        try:
-            sheet.add_table(table)
-        except ValueError:
-            pass
     sheet.freeze_panes = f"A{start_row + 1}"
     sheet.auto_filter.ref = f"A{start_row}:{get_column_letter(len(columns))}{max(start_row + len(row_list), start_row)}"
 
@@ -639,6 +702,7 @@ def _entry_from_assignment(
     statuses: dict[str, dict[str, str]],
 ) -> VisualTimetableEntry:
     """Build one visual entry from a scheduled assignment."""
+    assignment_id = scheduled_assignment_id(assignment)
     rooms = assignment_rooms(assignment)
     primary_room = rooms[0] if rooms else assignment.room
     room_ids = tuple(room.room_id for room in rooms)
@@ -646,7 +710,7 @@ def _entry_from_assignment(
     academic_year = _academic_year(programme_year)
     status = statuses.get(normalise_programme_year(programme_year), {})
     return VisualTimetableEntry(
-        assignment_id=scheduled_assignment_id(assignment),
+        assignment_id=assignment_id,
         programme=programme,
         academic_year=academic_year,
         programme_year=normalise_programme_year(programme_year),
@@ -669,6 +733,7 @@ def _entry_from_assignment(
         programme_status=status.get("status", ""),
         submission_ready_status=status.get("submission", ""),
         room_capacity_status=_capacity_status(primary_room),
+        source_occurrence_ids=(assignment_id,),
     )
 
 
@@ -698,6 +763,7 @@ def _replace_rooms(entry: VisualTimetableEntry, room_ids: tuple[str, ...], room:
         programme_status=entry.programme_status,
         submission_ready_status=entry.submission_ready_status,
         room_capacity_status=_capacity_status(room),
+        source_occurrence_ids=entry.source_occurrence_ids,
     )
 
 
@@ -779,6 +845,83 @@ def _group_by(entries: list[VisualTimetableEntry], key_fn) -> dict[str, list[Vis
     for entry in entries:
         grouped[key_fn(entry)].append(entry)
     return {key: sorted(value, key=_entry_sort_key) for key, value in grouped.items()}
+
+
+def _source_occurrence_ids(entry: VisualTimetableEntry) -> tuple[str, ...]:
+    """Return source occurrence IDs represented by one visual block."""
+    return entry.source_occurrence_ids or (entry.assignment_id,)
+
+
+def _entry_occurrence_id_set(entries: list[VisualTimetableEntry]) -> set[str]:
+    """Return all scheduled occurrence IDs represented by visual blocks."""
+    return {source_id for entry in entries for source_id in _source_occurrence_ids(entry)}
+
+
+def _aggregation_key(entry: VisualTimetableEntry) -> tuple[object, ...]:
+    """Return the fields that must match before recurring entries can merge."""
+    return (
+        entry.programme_year,
+        entry.module_code,
+        entry.activity,
+        entry.groups,
+        entry.lecturers,
+        entry.lecturer_keys,
+        entry.rooms,
+        entry.delivery_mode,
+        entry.day,
+        entry.start_time,
+        entry.end_time,
+        entry.is_fixed,
+        entry.is_shared,
+        entry.is_external,
+        entry.location_type,
+        entry.source_reference,
+        entry.programme_status,
+        entry.submission_ready_status,
+        entry.room_capacity_status,
+    )
+
+
+def _aggregated_assignment_id(entry: VisualTimetableEntry, weeks: tuple[int, ...]) -> str:
+    """Return a compact trace ID for one aggregated visual block."""
+    return "|".join(
+        str(part)
+        for part in (
+            entry.source_reference,
+            entry.programme_year,
+            entry.module_code,
+            entry.activity,
+            entry.day,
+            _format_time(entry.start_time),
+            _format_time(entry.end_time),
+            f"weeks={_weeks_text(weeks)}",
+        )
+        if str(part).strip()
+    )
+
+
+def _lane_quality_rows(group_sets: dict[str, dict[str, list[VisualTimetableEntry]]]) -> list[dict[str, object]]:
+    """Return lane-count quality rows for visual workbook validation."""
+    rows: list[dict[str, object]] = []
+    for entity_type, groups in group_sets.items():
+        for entity, entries in sorted(groups.items()):
+            for day in VALID_DAYS:
+                day_entries = [entry for entry in entries if entry.day == day]
+                if not day_entries:
+                    continue
+                lanes = allocate_lanes(day_entries)
+                lane_count = max(lanes.values(), default=0) + 1
+                rows.append(
+                    {
+                        "Entity Type": entity_type,
+                        "Entity": entity,
+                        "Day": day,
+                        "Maximum Weekday Lanes": lane_count,
+                        "Status": "WARN" if lane_count > 4 else "PASS",
+                        "Issue": "More than four true overlapping lane(s) are required by the current data." if lane_count > 4 else "",
+                    }
+                )
+    return rows
 
 
 def _entity_status(entity_type: str, entity: str, entries: list[VisualTimetableEntry], programme_rows: list[dict[str, object]]) -> str:
@@ -893,6 +1036,7 @@ def _entry_detail_row(entry: VisualTimetableEntry) -> dict[str, object]:
         "Fixed/Generated": "Fixed" if entry.is_fixed else "Generated",
         "Shared Session": "Yes" if entry.is_shared else "No",
         "Source Reference": entry.source_reference,
+        "Source Occurrence IDs": " ; ".join(_source_occurrence_ids(entry)),
     }
 
 
@@ -914,6 +1058,7 @@ def _detail_columns() -> list[str]:
         "Fixed/Generated",
         "Shared Session",
         "Source Reference",
+        "Source Occurrence IDs",
     ]
 
 
@@ -993,6 +1138,11 @@ def _weeks_overlap(left: VisualTimetableEntry, right: VisualTimetableEntry) -> b
     return bool(set(left.teaching_weeks) & set(right.teaching_weeks))
 
 
+def _entries_conflict_for_lane(left: VisualTimetableEntry, right: VisualTimetableEntry) -> bool:
+    """Return True when two visual blocks need separate day lanes."""
+    return _clock_overlaps(left, right)
+
+
 def _entry_sort_key(entry: VisualTimetableEntry) -> tuple[object, ...]:
     """Return deterministic sorting key."""
     return (
@@ -1039,20 +1189,24 @@ def _programme_reconciliation_rows(
     programme_rows: list[dict[str, object]],
 ) -> list[dict[str, object]]:
     """Return programme visual count reconciliation rows."""
-    counts = Counter(entry.programme_year for entry in entries)
-    programmes = sorted(set(counts) | {normalise_programme_year(str(row.get("Programme/Year") or "")) for row in programme_rows})
+    block_counts = Counter(entry.programme_year for entry in entries)
+    occurrence_counts: Counter[str] = Counter()
+    for entry in entries:
+        occurrence_counts[entry.programme_year] += len(_source_occurrence_ids(entry))
+    programmes = sorted(set(block_counts) | {normalise_programme_year(str(row.get("Programme/Year") or "")) for row in programme_rows})
     rows: list[dict[str, object]] = []
     for programme in programmes:
         if not programme:
             continue
         row = _programme_row(programme, programme_rows) or {}
-        expected = row.get("Valid Exported Rows", counts[programme])
+        expected = row.get("Valid Exported Rows", occurrence_counts[programme])
         rows.append(
             {
                 "Programme/Year": programme,
-                "Expected Scheduled Visual Rows": expected,
-                "Programme Visual Entries": counts[programme],
-                "Status": "PASS" if int(expected or counts[programme]) == counts[programme] else "WARN",
+                "Expected Scheduled Visual Occurrences": expected,
+                "Programme Visual Occurrences": occurrence_counts[programme],
+                "Programme Visual Blocks": block_counts[programme],
+                "Status": "PASS" if int(expected or occurrence_counts[programme]) == occurrence_counts[programme] else "WARN",
             }
         )
     return rows
@@ -1085,7 +1239,7 @@ def _entity_reconciliation_rows(
 
 def _programme_reconciliation_columns() -> tuple[str, ...]:
     """Return programme reconciliation columns."""
-    return ("Programme/Year", "Expected Scheduled Visual Rows", "Programme Visual Entries", "Status")
+    return ("Programme/Year", "Expected Scheduled Visual Occurrences", "Programme Visual Occurrences", "Programme Visual Blocks", "Status")
 
 
 def _entity_reconciliation_columns(label: str) -> tuple[str, ...]:
@@ -1117,6 +1271,8 @@ def _summary_rows(result: VisualExportResult, scheduled_received: int) -> list[d
         {"Metric": "missing entries", "Value": result.missing_entries},
         {"Metric": "unexpected entries", "Value": result.unexpected_entries},
         {"Metric": "invalid overlaps", "Value": result.invalid_overlaps},
+        {"Metric": "maximum weekday lanes per sheet", "Value": result.max_weekday_lanes},
+        {"Metric": "weekday lane warnings", "Value": result.lane_warnings},
         {"Metric": "visual export status", "Value": result.status},
     ]
 
@@ -1213,15 +1369,6 @@ def _capacity_status(room: Room | None) -> str:
 def _weeks_text(weeks: tuple[int, ...]) -> str:
     """Return compact teaching-week text."""
     return ", ".join(str(week) for week in weeks)
-
-
-def _safe_table_name(value: str) -> str:
-    """Return a safe Excel table display name."""
-    cleaned = re.sub(r"[^A-Za-z0-9_]", "_", value)
-    cleaned = re.sub(r"_+", "_", cleaned).strip("_")
-    if not cleaned or not cleaned[0].isalpha():
-        cleaned = f"T_{cleaned}"
-    return cleaned[:240]
 
 
 def _sheet_prefix(entity_type: str) -> str:

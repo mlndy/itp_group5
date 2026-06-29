@@ -200,7 +200,14 @@ class TimetableSchedulerApp:
 
         metrics = ttk.Frame(frame, style="App.TFrame")
         metrics.grid(row=2, column=0, sticky="ew")
-        metric_labels = ["Coverage", "Scheduled classes", "Classes needing review", "Hard conflicts", "Visual timetables"]
+        metric_labels = [
+            "Coverage of schedulable teaching occurrences",
+            "Scheduled teaching occurrences",
+            "Scheduling requirements needing review",
+            "Scheduler placement failures",
+            "Hard conflicts",
+            "Visual timetable status",
+        ]
         for col in range(len(metric_labels)):
             metrics.columnconfigure(col, weight=1)
         for col, label in enumerate(metric_labels):
