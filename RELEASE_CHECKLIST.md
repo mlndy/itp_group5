@@ -1,6 +1,6 @@
 # Release Checklist
 
-Use this checklist before final v1.1 submission and GitHub release. The current completeness-gate branch is blocked until Template 2 readiness passes.
+Use this checklist before final v1.1 submission and GitHub release. The current completeness-gate branch is eligible only after tests, validation, Template 2 readiness and packaging checks pass.
 
 ## Repository
 
@@ -58,42 +58,42 @@ Use this checklist before final v1.1 submission and GitHub release. The current 
 - [ ] Test result is at least:
 
 ```text
-296 passed
+304 passed
 ```
 
 - [ ] The guarded Engineering run completes twice with unchanged metrics:
 
 ```text
 Total teaching occurrences: 3562
-Schedulable occurrences: 3160
-Quarantined input occurrences: 402
-Scheduled occurrences: 3046
-Scheduler search failures: 114
+Schedulable occurrences: 3323
+Quarantined input occurrences: 239
+Scheduled occurrences: 3214
+Scheduler search failures: 109
 Scheduled hard-constraint violations: 0
 ```
 
 - [ ] Template 2 validation matches:
 
 ```text
-Proposed timetable rows: 2838
-All-valid scheduled Template 2 rows: 2817
-Submission-ready Template 2 rows: 111
+Proposed timetable rows: 3006
+All-valid scheduled Template 2 rows: 2980
+Submission-ready Template 2 rows: 212
 Template 2 invalid rows: 0
-Qualifying submission-ready programme-years: 17
+Qualifying submission-ready programme-years: 23
 Minimum required programme-year schedules: 20
-Template 2 readiness: FAIL
+Template 2 readiness: PASS
 ```
 
 - [ ] Do not proceed to release until qualifying submission-ready programme-years is at least `20` and Template 2 readiness is `PASS`.
 - [ ] Visual timetable validation matches:
 
 ```text
-Programme visual sheets: 80
-Tutor visual sheets: 221
-Room visual sheets: 43
-Programme visual entries: 608
-Tutor visual entries: 554
-Room visual entries: 471
+Programme visual sheets: 86
+Tutor visual sheets: 235
+Room visual sheets: 48
+Programme visual entries: 680
+Tutor visual entries: 616
+Room visual entries: 535
 Missing visual entries: 0
 Unexpected visual entries: 0
 Invalid overlaps: 0

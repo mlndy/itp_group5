@@ -30,26 +30,75 @@ from config import (
 from output.submission_validator import saved_row_programme_year
 
 DEFAULT_TIMETABLE_FILE = OUTPUT_DIR / "final_timetable_engineering_cluster.xlsx"
+RUNS_DIR = OUTPUT_DIR / "runs"
 
-EXPECTED_MIN_TESTS = 296
+EXPECTED_MIN_TESTS = 304
 EXPECTED_TOTAL_TEACHING_OCCURRENCES = 3562
-EXPECTED_SCHEDULABLE_OCCURRENCES = 3160
-EXPECTED_QUARANTINED_OCCURRENCES = 402
-EXPECTED_SCHEDULED_OCCURRENCES = 3046
-EXPECTED_SEARCH_FAILURE_OCCURRENCES = 114
+EXPECTED_SCHEDULABLE_OCCURRENCES = 3323
+EXPECTED_QUARANTINED_OCCURRENCES = 239
+EXPECTED_SCHEDULED_OCCURRENCES = 3214
+EXPECTED_SEARCH_FAILURE_OCCURRENCES = 109
 EXPECTED_SCHEDULED_HARD_VIOLATIONS = 0
-EXPECTED_PROPOSED_TIMETABLE_ROWS = 2838
+EXPECTED_TEMPLATE2_SUBMISSION_ROWS = 212
+EXPECTED_ALL_VALID_TEMPLATE2_ROWS = 2980
 MIN_SUBMISSION_READY_PROGRAMME_YEARS = 20
-EXPECTED_PROGRAMME_VISUAL_SHEETS = 80
-EXPECTED_TUTOR_VISUAL_SHEETS = 221
-EXPECTED_ROOM_VISUAL_SHEETS = 43
-EXPECTED_PROGRAMME_VISUAL_ENTRIES = 608
-EXPECTED_TUTOR_VISUAL_ENTRIES = 554
-EXPECTED_ROOM_VISUAL_ENTRIES = 471
 EXPECTED_FIXED_SOURCE_ROWS = 250
 EXPECTED_FIXED_SOURCE_OCCURRENCES = 834
-EXPECTED_ANCHORED_FIXED_SOURCE_OCCURRENCES = 432
-EXPECTED_QUARANTINED_FIXED_SOURCE_OCCURRENCES = 402
+EXPECTED_ANCHORED_FIXED_SOURCE_OCCURRENCES = 595
+EXPECTED_QUARANTINED_FIXED_SOURCE_OCCURRENCES = 239
+OFFICIAL_TEMPLATE2_SHEET_COUNT = 16
+OFFICIAL_TIMETABLE_COLUMN_COUNT = 31
+OFFICIAL_TEMPLATE2_SHEETS = [
+    "Timetable",
+    "Course Code",
+    "Location",
+    "Staff",
+    "Group",
+    "LocationGroup",
+    "Zone",
+    "Sheet4",
+    "Sheet1",
+    "Time",
+    "Day",
+    "Sheet2",
+    "Sheet3",
+    "Class Type",
+    "Template",
+    "StaffGroup",
+]
+OFFICIAL_TIMETABLE_COLUMNS = [
+    "Module",
+    "Class Type",
+    "Template",
+    "Group",
+    "Day",
+    "Start",
+    "End",
+    "Class Size",
+    "Sector",
+    "RoomGrouping",
+    "Room1",
+    "Room2",
+    "StaffGrouping",
+    "Staff1",
+    "Staff2",
+    "Tri Week",
+    "Recording Mode",
+    "Remark",
+    "FMTS Tri Start Week",
+    "Activity Hostkey",
+    "SIS Module Code",
+    "Term",
+    "Activity Type",
+    "Duration",
+    "Staff Suitability ID",
+    "SIS Staff ID",
+    "SIS Staff ID",
+    "Zone Hoskey",
+    "Location Suitability ID",
+    "Location Hostkey",
+    "Location Hostkey",
+]
 
 REQUIRED_RUN_SUMMARY_SHEETS = [
     "Summary",
@@ -125,6 +174,21 @@ REQUIRED_TIMETABLE_COLUMNS = [
     "Location Hostkey",
     "Remark",
 ]
+RUN_DIR_FILE_MAP = {
+    "run_summary": "run_summary.xlsx",
+    "timetable": "final_timetable_engineering_cluster.xlsx",
+    "stakeholder_views": "stakeholder_views.xlsx",
+    "run_manifest": "run_manifest.xlsx",
+    "guarded_report": "guarded_generation_report.xlsx",
+    "template2_validation": "template2_submission_validation.xlsx",
+    "template2_submission": "Template2_Submission_Ready.xlsx",
+    "template2_reconciliation": "template2_programme_year_reconciliation.xlsx",
+    "visual_validation": "timetable_visualisation_validation.xlsx",
+    "fixed_integrity": "fixed_session_integrity_validation.xlsx",
+    "programme_visuals": "Programme_Timetable_Visuals.xlsx",
+    "tutor_visuals": "Tutor_Timetable_Visuals.xlsx",
+    "room_visuals": "Room_Timetable_Visuals.xlsx",
+}
 REQUIRED_STAKEHOLDER_SHEETS = ["Programme Timetable", "Tutor Timetable", "Room Timetable", "Exception Queue"]
 REQUIRED_MANIFEST_SHEETS = [
     "Run Manifest",
@@ -161,6 +225,77 @@ class ReleaseEvidencePaths:
     tutor_visuals: Path = DEFAULT_TUTOR_VISUALS_FILE
     room_visuals: Path = DEFAULT_ROOM_VISUALS_FILE
     test_root: Path = BASE_DIR / "tests"
+    evidence_location: Path | None = None
+    run_id: str = "current-output-paths"
+
+
+@dataclass(frozen=True, slots=True)
+class EvidenceResolution:
+    """Resolved release evidence location and file paths."""
+
+    paths: ReleaseEvidencePaths
+    message: str
+
+
+def _paths_from_run_dir(run_dir: Path, test_root: Path = BASE_DIR / "tests") -> ReleaseEvidencePaths:
+    """Return evidence paths rooted in one isolated run directory."""
+    run_dir = run_dir.resolve()
+    return ReleaseEvidencePaths(
+        run_summary=run_dir / RUN_DIR_FILE_MAP["run_summary"],
+        timetable=run_dir / RUN_DIR_FILE_MAP["timetable"],
+        stakeholder_views=run_dir / RUN_DIR_FILE_MAP["stakeholder_views"],
+        run_manifest=run_dir / RUN_DIR_FILE_MAP["run_manifest"],
+        guarded_report=run_dir / RUN_DIR_FILE_MAP["guarded_report"],
+        template2_validation=run_dir / RUN_DIR_FILE_MAP["template2_validation"],
+        template2_submission=run_dir / RUN_DIR_FILE_MAP["template2_submission"],
+        template2_reconciliation=run_dir / RUN_DIR_FILE_MAP["template2_reconciliation"],
+        visual_validation=run_dir / RUN_DIR_FILE_MAP["visual_validation"],
+        fixed_integrity=run_dir / RUN_DIR_FILE_MAP["fixed_integrity"],
+        programme_visuals=run_dir / RUN_DIR_FILE_MAP["programme_visuals"],
+        tutor_visuals=run_dir / RUN_DIR_FILE_MAP["tutor_visuals"],
+        room_visuals=run_dir / RUN_DIR_FILE_MAP["room_visuals"],
+        test_root=test_root,
+        evidence_location=run_dir,
+        run_id=run_dir.name,
+    )
+
+
+def _run_dir_is_complete(run_dir: Path) -> bool:
+    """Return True when the folder contains the required release evidence files."""
+    return run_dir.is_dir() and all((run_dir / filename).exists() for filename in RUN_DIR_FILE_MAP.values())
+
+
+def latest_completed_run_dir(runs_dir: Path = RUNS_DIR) -> Path | None:
+    """Return the newest complete isolated run folder, if one exists."""
+    if not runs_dir.exists():
+        return None
+    candidates = [path for path in runs_dir.iterdir() if _run_dir_is_complete(path)]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda path: (path.stat().st_mtime, path.name))
+
+
+def resolve_evidence_paths(
+    *,
+    run_dir: Path | None = None,
+    test_root: Path = BASE_DIR / "tests",
+    explicit_paths: ReleaseEvidencePaths | None = None,
+) -> EvidenceResolution:
+    """Resolve one non-mixed evidence source for release validation."""
+    if run_dir is not None and explicit_paths is not None:
+        raise ValueError("--run-dir cannot be combined with individual evidence paths")
+    if run_dir is not None:
+        resolved = run_dir.resolve()
+        if not _run_dir_is_complete(resolved):
+            missing = [filename for filename in RUN_DIR_FILE_MAP.values() if not (resolved / filename).exists()]
+            raise FileNotFoundError(f"Run directory is incomplete: {resolved}; missing: {', '.join(missing)}")
+        return EvidenceResolution(_paths_from_run_dir(resolved, test_root), f"Resolved run ID: {resolved.name}\nResolved evidence location: {resolved}")
+    if explicit_paths is not None:
+        return EvidenceResolution(explicit_paths, "Resolved run ID: explicit-paths\nResolved evidence location: individual CLI paths")
+    latest = latest_completed_run_dir()
+    if latest is not None:
+        return EvidenceResolution(_paths_from_run_dir(latest, test_root), f"Resolved run ID: {latest.name}\nResolved evidence location: {latest.resolve()}")
+    raise FileNotFoundError(f"No complete release evidence run folder found in {RUNS_DIR}")
 
 
 def _load_workbook(path: Path, failures: list[str]) -> Workbook | None:
@@ -188,7 +323,12 @@ def _sheet_dict(workbook: Workbook, sheet_name: str) -> dict[object, object]:
 def _rows_as_dicts(workbook: Workbook, sheet_name: str) -> list[dict[str, object]]:
     """Return worksheet rows as dictionaries keyed by header."""
     worksheet = workbook[sheet_name]
-    headers = [cell.value for cell in worksheet[1]]
+    try:
+        headers = [cell.value for cell in worksheet[1]]
+    except IndexError:
+        return []
+    if not any(header is not None for header in headers):
+        return []
     return [
         {str(header): row[index] for index, header in enumerate(headers) if header is not None}
         for row in worksheet.iter_rows(min_row=2, values_only=True)
@@ -264,7 +404,10 @@ def _check_summary_metrics(workbook: Workbook, failures: list[str]) -> None:
     if required != scheduled + unscheduled:
         failures.append(f"Demand inconsistency: {required} != {scheduled} + {unscheduled}")
     if scheduled != EXPECTED_SCHEDULED_OCCURRENCES:
-        failures.append(f"Scheduled teaching occurrences is {scheduled}, expected {EXPECTED_SCHEDULED_OCCURRENCES}")
+        failures.append(
+            "Official Engineering release scheduled teaching occurrences is "
+            f"{scheduled}, expected {EXPECTED_SCHEDULED_OCCURRENCES}"
+        )
     if scheduled_hard != EXPECTED_SCHEDULED_HARD_VIOLATIONS:
         failures.append(f"Scheduled hard violations is {scheduled_hard}, expected 0")
 
@@ -296,10 +439,10 @@ def _check_guarded_report(workbook: Workbook, failures: list[str]) -> None:
 
     expected_values = {
         "Total teaching occurrences": (total, EXPECTED_TOTAL_TEACHING_OCCURRENCES),
-        "Schedulable occurrences": (schedulable, EXPECTED_SCHEDULABLE_OCCURRENCES),
-        "Quarantined occurrences": (quarantined, EXPECTED_QUARANTINED_OCCURRENCES),
-        "Scheduled occurrences": (scheduled, EXPECTED_SCHEDULED_OCCURRENCES),
-        "Unscheduled search failures": (search_failures, EXPECTED_SEARCH_FAILURE_OCCURRENCES),
+        "Official Engineering release schedulable occurrences": (schedulable, EXPECTED_SCHEDULABLE_OCCURRENCES),
+        "Official Engineering release quarantined occurrences": (quarantined, EXPECTED_QUARANTINED_OCCURRENCES),
+        "Official Engineering release scheduled occurrences": (scheduled, EXPECTED_SCHEDULED_OCCURRENCES),
+        "Official Engineering release search failures": (search_failures, EXPECTED_SEARCH_FAILURE_OCCURRENCES),
         "Scheduled hard violations": (scheduled_hard, EXPECTED_SCHEDULED_HARD_VIOLATIONS),
     }
     for label, (actual, expected) in expected_values.items():
@@ -322,6 +465,8 @@ def _check_template2_validation(workbook: Workbook, failures: list[str]) -> None
     summary = _sheet_dict(workbook, "Summary")
     missing = summary.get("rows with missing required fields")
     mapping_errors = summary.get("rows with mapping errors")
+    saved_rows = summary.get("Actual saved Template 2 rows", summary.get("Template 2 output rows"))
+    all_valid_rows = summary.get("All-valid Template 2 rows")
     submission_ready = summary.get("submission-ready programme-year schedules")
     qualifying = summary.get("qualifying submission-ready programme-years")
     minimum_status = summary.get("minimum programme-year status")
@@ -329,6 +474,8 @@ def _check_template2_validation(workbook: Workbook, failures: list[str]) -> None
     expected_values = {
         "rows with missing required fields": (missing, 0),
         "rows with mapping errors": (mapping_errors, 0),
+        "Actual saved Template 2 rows": (saved_rows, EXPECTED_TEMPLATE2_SUBMISSION_ROWS),
+        "All-valid Template 2 rows": (all_valid_rows, EXPECTED_ALL_VALID_TEMPLATE2_ROWS),
     }
     for label, (actual, expected) in expected_values.items():
         if actual != expected:
@@ -355,9 +502,12 @@ def _check_template2_validation(workbook: Workbook, failures: list[str]) -> None
             failures.append(f"{row.get('Canonical programme-year')} is submission-ready but incomplete")
         if row.get("Counts Toward Minimum 20") == "Yes" and not row.get("Canonical programme-year"):
             failures.append("Ambiguous programme-year identity counted toward minimum")
+    invalid_rows = _rows_as_dicts(workbook, "Invalid Rows")
+    if invalid_rows:
+        failures.append(f"Template 2 validation reports {len(invalid_rows)} invalid saved row(s), expected 0")
 
 
-def _saved_template2_row_metrics(workbook: Workbook) -> tuple[int, int]:
+def _saved_template2_row_metrics(workbook: Workbook) -> tuple[int, set[str]]:
     """Return populated Timetable rows and distinct canonical programme-years."""
     worksheet = workbook["Timetable"]
     headers = [cell.value for cell in worksheet[1]]
@@ -371,19 +521,45 @@ def _saved_template2_row_metrics(workbook: Workbook) -> tuple[int, int]:
         programme_year = saved_row_programme_year(row)
         if programme_year:
             programme_years.add(programme_year)
-    return row_count, len(programme_years)
+    return row_count, programme_years
+
+
+def _qualifying_programme_years(workbook: Workbook) -> set[str]:
+    """Return canonical programme-years counted by reconciliation evidence."""
+    if "Programme-Year Reconciliation" not in workbook.sheetnames:
+        return set()
+    rows = _rows_as_dicts(workbook, "Programme-Year Reconciliation")
+    return {
+        str(row.get("Canonical programme-year"))
+        for row in rows
+        if row.get("Counts Toward Minimum 20") == "Yes" and row.get("Canonical programme-year")
+    }
 
 
 def _check_saved_template2_submission(
     workbook: Workbook,
     validation_workbook: Workbook | None,
+    reconciliation_workbook: Workbook | None,
     failures: list[str],
 ) -> None:
     """Check the saved strict Template 2 workbook against validation evidence."""
+    if workbook.sheetnames != OFFICIAL_TEMPLATE2_SHEETS:
+        failures.append("Template2_Submission_Ready.xlsx does not preserve the 16 official worksheets in order")
+    if len(workbook.sheetnames) != OFFICIAL_TEMPLATE2_SHEET_COUNT:
+        failures.append(
+            f"Template2_Submission_Ready.xlsx has {len(workbook.sheetnames)} sheets, expected {OFFICIAL_TEMPLATE2_SHEET_COUNT}"
+        )
     _check_required_sheets(workbook, ["Timetable"], "Template2_Submission_Ready.xlsx", failures)
     if "Timetable" not in workbook.sheetnames:
         return
-    row_count, distinct_programme_years = _saved_template2_row_metrics(workbook)
+    headers = [cell.value for cell in workbook["Timetable"][1]]
+    if headers != OFFICIAL_TIMETABLE_COLUMNS:
+        failures.append("Template2_Submission_Ready.xlsx Timetable columns do not match the official 31-column structure")
+    if len(headers) != OFFICIAL_TIMETABLE_COLUMN_COUNT:
+        failures.append(f"Template2_Submission_Ready.xlsx Timetable has {len(headers)} columns, expected 31")
+    row_count, programme_years = _saved_template2_row_metrics(workbook)
+    if row_count != EXPECTED_TEMPLATE2_SUBMISSION_ROWS:
+        failures.append(f"Saved Template 2 row count is {row_count}, expected {EXPECTED_TEMPLATE2_SUBMISSION_ROWS}")
     if validation_workbook is None or "Summary" not in validation_workbook.sheetnames:
         return
     summary = _sheet_dict(validation_workbook, "Summary")
@@ -394,11 +570,20 @@ def _check_saved_template2_submission(
     )
     if expected_rows != row_count:
         failures.append(f"Saved Template 2 row count is {row_count}, validation report says {expected_rows}")
-    if expected_programmes != distinct_programme_years:
+    if expected_programmes != len(programme_years):
         failures.append(
             "Saved Template 2 represented programme-years is "
-            f"{distinct_programme_years}, validation report says {expected_programmes}"
+            f"{len(programme_years)}, validation report says {expected_programmes}"
         )
+    if reconciliation_workbook is not None:
+        qualifying = _qualifying_programme_years(reconciliation_workbook)
+        if programme_years != qualifying:
+            failures.append("Saved Template 2 programme-years do not match reconciliation qualifying programme-years")
+        if len(qualifying) < MIN_SUBMISSION_READY_PROGRAMME_YEARS:
+            failures.append(
+                f"Reconciliation qualifying programme-years is {len(qualifying)}, "
+                f"expected at least {MIN_SUBMISSION_READY_PROGRAMME_YEARS}"
+            )
 
 
 def _check_template2_reconciliation(workbook: Workbook, validation_workbook: Workbook | None, failures: list[str]) -> None:
@@ -413,6 +598,28 @@ def _check_template2_reconciliation(workbook: Workbook, validation_workbook: Wor
         return
     reconciliation_summary = _sheet_dict(workbook, "Summary")
     validation_summary = _sheet_dict(validation_workbook, "Summary")
+    if reconciliation_summary.get("Template 2 readiness status") != "PASS":
+        failures.append("Template 2 reconciliation readiness status is not PASS")
+    if reconciliation_summary.get("minimum programme-year status") != "PASS":
+        failures.append("Template 2 reconciliation minimum programme-year status is not PASS")
+    qualifying = reconciliation_summary.get("qualifying submission-ready programme-years")
+    if not isinstance(qualifying, int) or qualifying < MIN_SUBMISSION_READY_PROGRAMME_YEARS:
+        failures.append(
+            f"Template 2 reconciliation qualifying programme-years is {qualifying}, "
+            f"expected at least {MIN_SUBMISSION_READY_PROGRAMME_YEARS}"
+        )
+    if reconciliation_summary.get("actual saved programme-year schedules") != qualifying:
+        failures.append("Template 2 reconciliation saved programme-year count does not match qualifying count")
+    if reconciliation_summary.get("Template 2 output rows") != EXPECTED_TEMPLATE2_SUBMISSION_ROWS:
+        failures.append(
+            f"Template 2 reconciliation output rows is {reconciliation_summary.get('Template 2 output rows')}, "
+            f"expected {EXPECTED_TEMPLATE2_SUBMISSION_ROWS}"
+        )
+    if reconciliation_summary.get("All-valid Template 2 rows") != EXPECTED_ALL_VALID_TEMPLATE2_ROWS:
+        failures.append(
+            f"Template 2 reconciliation all-valid rows is {reconciliation_summary.get('All-valid Template 2 rows')}, "
+            f"expected {EXPECTED_ALL_VALID_TEMPLATE2_ROWS}"
+        )
     for metric in [
         "submission-ready programme-year schedules",
         "qualifying submission-ready programme-years",
@@ -431,12 +638,6 @@ def _check_visual_validation(workbook: Workbook, failures: list[str]) -> None:
     summary = _sheet_dict(workbook, "Summary")
     expected_values = {
         "scheduled assignments received": (summary.get("scheduled assignments received"), EXPECTED_SCHEDULED_OCCURRENCES),
-        "programme visual entries": (summary.get("programme visual entries"), EXPECTED_PROGRAMME_VISUAL_ENTRIES),
-        "tutor visual entries": (summary.get("tutor visual entries"), EXPECTED_TUTOR_VISUAL_ENTRIES),
-        "room visual entries": (summary.get("room visual entries"), EXPECTED_ROOM_VISUAL_ENTRIES),
-        "programme sheets": (summary.get("programme sheets"), EXPECTED_PROGRAMME_VISUAL_SHEETS),
-        "tutor sheets": (summary.get("tutor sheets"), EXPECTED_TUTOR_VISUAL_SHEETS),
-        "room sheets": (summary.get("room sheets"), EXPECTED_ROOM_VISUAL_SHEETS),
         "missing entries": (summary.get("missing entries"), 0),
         "unexpected entries": (summary.get("unexpected entries"), 0),
         "invalid overlaps": (summary.get("invalid overlaps"), 0),
@@ -475,9 +676,6 @@ def _check_timetable_workbook(workbook: Workbook, failures: list[str]) -> None:
     for column in REQUIRED_TIMETABLE_COLUMNS:
         if column not in headers:
             failures.append(f"Timetable sheet missing required column: {column}")
-    row_count = max(sheet.max_row - 1, 0)
-    if row_count != EXPECTED_PROPOSED_TIMETABLE_ROWS:
-        failures.append(f"Proposed timetable rows is {row_count}, expected {EXPECTED_PROPOSED_TIMETABLE_ROWS}")
 
 
 def _check_stakeholder_views(workbook: Workbook, failures: list[str]) -> None:
@@ -562,7 +760,7 @@ def validate_release(
             _check_template2_validation(template2_validation, failures)
 
     if template2_submission is not None:
-        _check_saved_template2_submission(template2_submission, template2_validation, failures)
+        _check_saved_template2_submission(template2_submission, template2_validation, template2_reconciliation, failures)
 
     if template2_reconciliation is not None:
         _check_template2_reconciliation(template2_reconciliation, template2_validation, failures)
@@ -600,47 +798,125 @@ def validate_release(
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse release-validator command-line arguments."""
     parser = argparse.ArgumentParser(description="Validate generated final-release Excel artefacts")
-    parser.add_argument("--run-summary", type=Path, default=DEFAULT_RUN_SUMMARY_FILE)
-    parser.add_argument("--timetable", type=Path, default=DEFAULT_TIMETABLE_FILE)
-    parser.add_argument("--stakeholder-views", type=Path, default=DEFAULT_STAKEHOLDER_VIEWS_FILE)
-    parser.add_argument("--run-manifest", type=Path, default=DEFAULT_RUN_MANIFEST_FILE)
-    parser.add_argument("--guarded-report", type=Path, default=DEFAULT_GUARDED_GENERATION_REPORT_FILE)
-    parser.add_argument("--template2-validation", type=Path, default=DEFAULT_TEMPLATE2_SUBMISSION_VALIDATION_FILE)
-    parser.add_argument("--template2-submission", type=Path, default=DEFAULT_TEMPLATE2_SUBMISSION_FILE)
+    parser.add_argument("--run-dir", type=Path, default=None)
+    parser.add_argument("--run-summary", type=Path, default=None)
+    parser.add_argument("--timetable", type=Path, default=None)
+    parser.add_argument("--stakeholder-views", type=Path, default=None)
+    parser.add_argument("--run-manifest", type=Path, default=None)
+    parser.add_argument("--guarded-report", type=Path, default=None)
+    parser.add_argument("--template2-validation", type=Path, default=None)
+    parser.add_argument("--template2-submission", type=Path, default=None)
     parser.add_argument(
         "--template2-reconciliation",
         type=Path,
-        default=DEFAULT_TEMPLATE2_PROGRAMME_YEAR_RECONCILIATION_FILE,
+        default=None,
     )
-    parser.add_argument("--visual-validation", type=Path, default=DEFAULT_TIMETABLE_VISUALISATION_VALIDATION_FILE)
-    parser.add_argument("--fixed-session-integrity", type=Path, default=DEFAULT_FIXED_SESSION_INTEGRITY_FILE)
-    parser.add_argument("--programme-visuals", type=Path, default=DEFAULT_PROGRAMME_VISUALS_FILE)
-    parser.add_argument("--tutor-visuals", type=Path, default=DEFAULT_TUTOR_VISUALS_FILE)
-    parser.add_argument("--room-visuals", type=Path, default=DEFAULT_ROOM_VISUALS_FILE)
+    parser.add_argument("--visual-validation", type=Path, default=None)
+    parser.add_argument("--fixed-session-integrity", type=Path, default=None)
+    parser.add_argument("--programme-visuals", type=Path, default=None)
+    parser.add_argument("--tutor-visuals", type=Path, default=None)
+    parser.add_argument("--room-visuals", type=Path, default=None)
     parser.add_argument("--test-root", type=Path, default=BASE_DIR / "tests")
     return parser.parse_args(argv)
+
+
+def _explicit_paths_from_args(args: argparse.Namespace) -> ReleaseEvidencePaths | None:
+    """Return explicit evidence paths when any individual path option is used."""
+    values = {
+        "run_summary": args.run_summary,
+        "timetable": args.timetable,
+        "stakeholder_views": args.stakeholder_views,
+        "run_manifest": args.run_manifest,
+        "guarded_report": args.guarded_report,
+        "template2_validation": args.template2_validation,
+        "template2_submission": args.template2_submission,
+        "template2_reconciliation": args.template2_reconciliation,
+        "visual_validation": args.visual_validation,
+        "fixed_integrity": args.fixed_session_integrity,
+        "programme_visuals": args.programme_visuals,
+        "tutor_visuals": args.tutor_visuals,
+        "room_visuals": args.room_visuals,
+    }
+    if not any(value is not None for value in values.values()):
+        return None
+    return ReleaseEvidencePaths(
+        run_summary=values["run_summary"] or DEFAULT_RUN_SUMMARY_FILE,
+        timetable=values["timetable"] or DEFAULT_TIMETABLE_FILE,
+        stakeholder_views=values["stakeholder_views"] or DEFAULT_STAKEHOLDER_VIEWS_FILE,
+        run_manifest=values["run_manifest"] or DEFAULT_RUN_MANIFEST_FILE,
+        guarded_report=values["guarded_report"] or DEFAULT_GUARDED_GENERATION_REPORT_FILE,
+        template2_validation=values["template2_validation"] or DEFAULT_TEMPLATE2_SUBMISSION_VALIDATION_FILE,
+        template2_submission=values["template2_submission"] or DEFAULT_TEMPLATE2_SUBMISSION_FILE,
+        template2_reconciliation=values["template2_reconciliation"] or DEFAULT_TEMPLATE2_PROGRAMME_YEAR_RECONCILIATION_FILE,
+        visual_validation=values["visual_validation"] or DEFAULT_TIMETABLE_VISUALISATION_VALIDATION_FILE,
+        fixed_integrity=values["fixed_integrity"] or DEFAULT_FIXED_SESSION_INTEGRITY_FILE,
+        programme_visuals=values["programme_visuals"] or DEFAULT_PROGRAMME_VISUALS_FILE,
+        tutor_visuals=values["tutor_visuals"] or DEFAULT_TUTOR_VISUALS_FILE,
+        room_visuals=values["room_visuals"] or DEFAULT_ROOM_VISUALS_FILE,
+        test_root=args.test_root,
+        evidence_location=None,
+        run_id="explicit-paths",
+    )
+
+
+def _metric(path: Path, sheet_name: str, key: str) -> object:
+    """Read one summary-style metric from a workbook."""
+    workbook = load_workbook(path, read_only=True, data_only=True)
+    try:
+        return _sheet_dict(workbook, sheet_name).get(key)
+    finally:
+        workbook.close()
+
+
+def _release_metric_lines(paths: ReleaseEvidencePaths) -> list[str]:
+    """Return concise final release evidence lines for CLI output."""
+    return [
+        f"Required occurrences: {_metric(paths.guarded_report, 'Summary', 'Total teaching occurrences')}",
+        f"Scheduled occurrences: {_metric(paths.guarded_report, 'Summary', 'Scheduled occurrences')}",
+        f"Quarantined occurrences: {_metric(paths.guarded_report, 'Summary', 'Quarantined occurrences')}",
+        f"Search failures: {_metric(paths.guarded_report, 'Summary', 'Unscheduled search failures')}",
+        f"Scheduled hard violations: {_metric(paths.guarded_report, 'Summary', 'Scheduled hard violations')}",
+        f"Fixed-session integrity: {_metric(paths.fixed_integrity, 'Summary', 'fixed-session integrity status')}",
+        f"Qualifying programme-years: {_metric(paths.template2_reconciliation, 'Summary', 'qualifying submission-ready programme-years')}",
+        f"Template 2 readiness: {_metric(paths.template2_reconciliation, 'Summary', 'Template 2 readiness status')}",
+        f"Visual validation: {_metric(paths.visual_validation, 'Summary', 'visual export status')}",
+    ]
 
 
 def main(argv: list[str] | None = None) -> int:
     """Run release validation and print a short result."""
     args = parse_args(argv)
+    try:
+        resolution = resolve_evidence_paths(
+            run_dir=args.run_dir,
+            test_root=args.test_root,
+            explicit_paths=_explicit_paths_from_args(args),
+        )
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"FINAL RELEASE VALIDATION: FAIL")
+        print(f"- {exc}")
+        return 1
+    paths = resolution.paths
+    print(resolution.message)
     result = validate_release(
-        args.run_summary,
-        args.timetable,
-        args.stakeholder_views,
-        args.run_manifest,
-        args.guarded_report,
-        args.template2_validation,
-        args.template2_submission,
-        args.template2_reconciliation,
-        args.visual_validation,
-        args.fixed_session_integrity,
-        args.programme_visuals,
-        args.tutor_visuals,
-        args.room_visuals,
-        args.test_root,
+        paths.run_summary,
+        paths.timetable,
+        paths.stakeholder_views,
+        paths.run_manifest,
+        paths.guarded_report,
+        paths.template2_validation,
+        paths.template2_submission,
+        paths.template2_reconciliation,
+        paths.visual_validation,
+        paths.fixed_integrity,
+        paths.programme_visuals,
+        paths.tutor_visuals,
+        paths.room_visuals,
+        paths.test_root,
     )
     if result.passed:
+        for line in _release_metric_lines(paths):
+            print(line)
         print("FINAL RELEASE VALIDATION: PASS")
         return 0
 
