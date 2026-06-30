@@ -317,11 +317,15 @@ def _create_run_manifest(path: Path, validation_status: str = "PASS", template_s
     workbook.save(path)
 
 
-def _create_release_workbooks(tmp_path: Path) -> dict[str, Path]:
+def _create_release_workbooks(
+    tmp_path: Path,
+    *,
+    timetable_filename: str = validate_release.LEGACY_TIMETABLE_FILENAME,
+) -> dict[str, Path]:
     """Create all workbook paths needed by the release validator."""
     paths = {
         "run_summary": tmp_path / "run_summary.xlsx",
-        "timetable": tmp_path / "final_timetable_engineering_cluster.xlsx",
+        "timetable": tmp_path / timetable_filename,
         "stakeholder_views": tmp_path / "stakeholder_views.xlsx",
         "run_manifest": tmp_path / "run_manifest.xlsx",
         "guarded_report": tmp_path / "guarded_generation_report.xlsx",
@@ -388,7 +392,106 @@ def test_run_dir_resolution_uses_one_complete_evidence_folder(tmp_path: Path) ->
 
     assert resolution.paths.run_id == tmp_path.name
     assert resolution.paths.run_summary == paths["run_summary"].resolve()
+    assert resolution.paths.timetable == paths["timetable"].resolve()
     assert "Resolved run ID" in resolution.message
+    assert f"Resolved timetable filename: {validate_release.LEGACY_TIMETABLE_FILENAME}" in resolution.message
+
+
+def test_run_dir_resolution_prefers_current_timetable_filename(tmp_path: Path) -> None:
+    """A current pipeline run should resolve Proposed_Timetable.xlsx."""
+    paths = _create_release_workbooks(tmp_path, timetable_filename=validate_release.CURRENT_TIMETABLE_FILENAME)
+
+    resolution = validate_release.resolve_evidence_paths(run_dir=tmp_path, test_root=Path(__file__).resolve().parent)
+
+    assert resolution.paths.timetable == paths["timetable"].resolve()
+    assert resolution.paths.timetable.name == validate_release.CURRENT_TIMETABLE_FILENAME
+    assert f"Resolved timetable filename: {validate_release.CURRENT_TIMETABLE_FILENAME}" in resolution.message
+
+
+def test_run_dir_resolution_accepts_legacy_timetable_filename(tmp_path: Path) -> None:
+    """Legacy run folders should still resolve final_timetable_engineering_cluster.xlsx."""
+    paths = _create_release_workbooks(tmp_path, timetable_filename=validate_release.LEGACY_TIMETABLE_FILENAME)
+
+    resolution = validate_release.resolve_evidence_paths(run_dir=tmp_path, test_root=Path(__file__).resolve().parent)
+
+    assert resolution.paths.timetable == paths["timetable"].resolve()
+    assert resolution.paths.timetable.name == validate_release.LEGACY_TIMETABLE_FILENAME
+
+
+def test_run_dir_resolution_rejects_missing_timetable_filename(tmp_path: Path) -> None:
+    """A run folder must contain either the current or legacy timetable workbook."""
+    paths = _create_release_workbooks(tmp_path)
+    paths["timetable"].unlink()
+
+    try:
+        validate_release.resolve_evidence_paths(run_dir=tmp_path, test_root=Path(__file__).resolve().parent)
+    except FileNotFoundError as exc:
+        message = str(exc)
+    else:  # pragma: no cover - defensive
+        raise AssertionError("Expected FileNotFoundError")
+
+    assert validate_release.CURRENT_TIMETABLE_FILENAME in message
+    assert validate_release.LEGACY_TIMETABLE_FILENAME in message
+
+
+def test_run_dir_resolution_accepts_identical_current_and_legacy_timetables(tmp_path: Path) -> None:
+    """A copied legacy/current pair should resolve to the current filename."""
+    paths = _create_release_workbooks(tmp_path, timetable_filename=validate_release.LEGACY_TIMETABLE_FILENAME)
+    current = tmp_path / validate_release.CURRENT_TIMETABLE_FILENAME
+    current.write_bytes(paths["timetable"].read_bytes())
+
+    resolution = validate_release.resolve_evidence_paths(run_dir=tmp_path, test_root=Path(__file__).resolve().parent)
+
+    assert resolution.paths.timetable == current.resolve()
+
+
+def test_run_dir_resolution_rejects_inconsistent_current_and_legacy_timetables(tmp_path: Path) -> None:
+    """Mixed timetable evidence should fail when current and legacy files differ."""
+    _create_release_workbooks(tmp_path, timetable_filename=validate_release.LEGACY_TIMETABLE_FILENAME)
+    _create_timetable(tmp_path / validate_release.CURRENT_TIMETABLE_FILENAME)
+    # Add a byte-level difference while preserving a readable workbook.
+    workbook = Workbook()
+    sheet = _replace_default_sheet(workbook, "Timetable")
+    sheet.append(validate_release.REQUIRED_TIMETABLE_COLUMNS)
+    sheet.append(["DIFFERENT"] + [""] * (len(validate_release.REQUIRED_TIMETABLE_COLUMNS) - 1))
+    workbook.save(tmp_path / validate_release.CURRENT_TIMETABLE_FILENAME)
+
+    try:
+        validate_release.resolve_evidence_paths(run_dir=tmp_path, test_root=Path(__file__).resolve().parent)
+    except ValueError as exc:
+        message = str(exc)
+    else:  # pragma: no cover - defensive
+        raise AssertionError("Expected ValueError")
+
+    assert "ambiguous mixed timetable evidence" in message
+
+
+def test_no_argument_latest_run_resolution_uses_newest_complete_run(tmp_path: Path, monkeypatch) -> None:
+    """No-argument resolution should select the newest complete run folder."""
+    older = tmp_path / "20260630_010000_old"
+    newer = tmp_path / "20260630_020000_new"
+    _create_release_workbooks(older)
+    paths = _create_release_workbooks(newer, timetable_filename=validate_release.CURRENT_TIMETABLE_FILENAME)
+    monkeypatch.setattr(validate_release, "RUNS_DIR", tmp_path)
+
+    resolution = validate_release.resolve_evidence_paths(test_root=Path(__file__).resolve().parent)
+
+    assert resolution.paths.run_id == newer.name
+    assert resolution.paths.timetable == paths["timetable"].resolve()
+
+
+def test_explicit_run_dir_cli_resolution_prints_timetable_filename(tmp_path: Path, capsys) -> None:
+    """The CLI should print the resolved timetable filename for explicit run folders."""
+    _create_release_workbooks(tmp_path, timetable_filename=validate_release.CURRENT_TIMETABLE_FILENAME)
+
+    exit_code = validate_release.main(
+        ["--run-dir", str(tmp_path), "--test-root", str(Path(__file__).resolve().parent)]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert f"Resolved timetable filename: {validate_release.CURRENT_TIMETABLE_FILENAME}" in captured.out
+    assert "FINAL RELEASE VALIDATION: PASS" in captured.out
 
 
 def test_saved_template2_programmes_must_match_reconciliation(tmp_path: Path) -> None:

@@ -134,6 +134,7 @@ def test_export_remarks_coverage_comparison_creates_expected_workbook(tmp_path: 
         "Indirect Remark Effects",
         "Unchanged Unscheduled",
         "Enhanced Improvements",
+        "Attribution Diagnostics",
         "Attribution Reconciliation",
     ]
     reconciliation = {row[0]: row[2] for row in workbook["Attribution Reconciliation"].iter_rows(min_row=2, values_only=True)}
@@ -151,6 +152,26 @@ def test_comparison_tracks_recoveries_in_reconciliation() -> None:
 
     assert len(comparison.enhanced_improvement_rows) == 1
     assert comparison.attribution_reconciles is True
+
+
+def test_comparison_synthesises_missing_unscheduled_placeholders(tmp_path: Path) -> None:
+    """Demand-derived unscheduled occurrences should reconcile even without placeholders."""
+    output = tmp_path / "remarks_coverage_comparison.xlsx"
+    course = make_course(remarks="Need 2 rooms")
+    baseline = [
+        Assignment(course, Room("R1", 100, "physical"), TimeSlot("Monday", "09:00", 1)),
+    ]
+    enhanced: list[Assignment] = []
+
+    comparison = export_remarks_coverage_comparison([course], baseline, enhanced, output)
+
+    assert len(comparison.newly_unscheduled_rows) == 1
+    assert comparison.attribution_reconciles is True
+    assert len(comparison.attribution_diagnostic_rows) == 1
+    assert comparison.attribution_diagnostic_rows[0]["Classification"] == "MISSING_ATTRIBUTION"
+    workbook = load_workbook(output)
+    diagnostics = list(workbook["Attribution Diagnostics"].iter_rows(min_row=2, values_only=True))
+    assert len(diagnostics) == 1
 
 
 def test_comparison_exports_run_fingerprints(tmp_path: Path) -> None:

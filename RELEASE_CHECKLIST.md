@@ -58,7 +58,7 @@ Use this checklist before final v1.1 submission and GitHub release. The current 
 - [ ] Test result is at least:
 
 ```text
-304 passed
+314 passed
 ```
 
 - [ ] The guarded Engineering run completes twice with unchanged metrics:

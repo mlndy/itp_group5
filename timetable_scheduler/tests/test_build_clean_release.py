@@ -32,17 +32,25 @@ def create_required_release_tree(root: Path) -> None:
         "README.md",
         "ADDITIONAL_REQUIREMENTS_COMPLIANCE.md",
         "DEMO.md",
+        "DEMO_RUNBOOK.md",
         "EVIDENCE_README.md",
         "AI_USAGE_LOG.md",
         "AI_ASSISTANCE_STATEMENT.md",
         "DEMO_SCRIPT.md",
         "FINAL_RESULTS.md",
+        "FINAL_REQUIREMENTS_TRACEABILITY.md",
+        "OPTIMISER_EVIDENCE.md",
         "PRESENTATION_EVIDENCE.md",
         "pytest.ini",
         "RELEASE_CHECKLIST.md",
         "REPORT_EVIDENCE.md",
         "requirements.txt",
         "validate_release.py",
+        "scripts/build_clean_release.py",
+        "scripts/export_final_metrics.py",
+        "scripts/run_controlled_demo.py",
+        "scripts/run_demo.ps1",
+        "scripts/verify_final_release.ps1",
         "timetable_scheduler/AGENTS.md",
         "timetable_scheduler/main.py",
         "timetable_scheduler/run_ui.py",
@@ -75,11 +83,14 @@ def test_clean_release_zip_excludes_runtime_and_development_folders(tmp_path: Pa
         "timetable_scheduler/generated/run_summary.xlsx",
         "timetable_scheduler/output_files/template2.xlsx",
         "dist/old.zip",
+        "final_verification/final_release_metrics.json",
         ".vscode/settings.json",
         ".idea/workspace.xml",
         ".DS_Store",
         "Thumbs.db",
         "~$Template.xlsx",
+        "module.pyo",
+        "native.pyd",
         "scratch.tmp",
         "notes.temp",
         "run.log",
@@ -101,11 +112,12 @@ def test_clean_release_zip_excludes_runtime_and_development_folders(tmp_path: Pa
     assert not any("__pycache__/" in name or ".pytest_cache/" in name for name in names)
     assert not any("generated/" in name or "output_files/" in name for name in names)
     assert not any(name.startswith("dist/") for name in names)
+    assert not any(name.startswith("final_verification/") for name in names)
     assert not any(name.startswith(".vscode/") or name.startswith(".idea/") for name in names)
     assert ".DS_Store" not in names
     assert "Thumbs.db" not in names
     assert not any(
-        name.endswith((".pyc", ".tmp", ".temp", ".log", ".zip")) or name.startswith("~$")
+        name.endswith((".pyc", ".pyo", ".pyd", ".tmp", ".temp", ".log", ".zip")) or name.startswith("~$")
         for name in names
     )
     assert result.file_count == len(names)

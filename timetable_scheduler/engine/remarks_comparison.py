@@ -13,7 +13,7 @@ from typing import TypeAlias
 import pandas as pd
 
 from data.models import Assignment, Course
-from engine.demand_metrics import DemandMetrics, build_demand_metrics
+from engine.demand_metrics import DemandMetrics, build_demand_metrics, consolidated_requirements
 from engine.remarks_interpreter import (
     RemarkInterpretation,
     course_remark_requirements,
@@ -22,6 +22,11 @@ from engine.remarks_interpreter import (
 from generator.scheduler import schedulable_weeks
 
 OccurrenceKey: TypeAlias = tuple[str, str, str, int, tuple[str, ...], str, object]
+SynthesisedUnscheduled: TypeAlias = tuple[OccurrenceKey, Assignment, str]
+
+SYNTHESISED_UNSCHEDULED_REASON = (
+    "Required occurrence was unscheduled by demand metrics, but no unscheduled placeholder assignment was emitted."
+)
 
 ATTRIBUTION_CATEGORIES = [
     "multiple-room requirement",
@@ -62,6 +67,22 @@ EFFECT_COLUMNS = [
 FINGERPRINT_COLUMNS = ["Run", "Metric", "Value"]
 OVERALL_COLUMNS = ["Metric", "Baseline", "Enhanced", "Difference"]
 RECONCILIATION_COLUMNS = ["Metric", "Value", "Status", "Notes"]
+DIAGNOSTIC_COLUMNS = [
+    "Assignment or Requirement ID",
+    "Programme-Year",
+    "Module",
+    "Class Type",
+    "Group",
+    "Weeks",
+    "Current Status",
+    "Expected Attribution",
+    "Actual Attribution",
+    "Source Workbook",
+    "Source Sheet",
+    "Source Row",
+    "Reason for Difference",
+    "Classification",
+]
 
 
 @dataclass(slots=True)
@@ -74,6 +95,7 @@ class RemarksComparison:
     indirect_remark_effect_rows: list[dict[str, object]]
     unchanged_unscheduled_rows: list[dict[str, object]]
     enhanced_improvement_rows: list[dict[str, object]]
+    attribution_diagnostic_rows: list[dict[str, object]]
     rule_attribution: dict[str, int]
     scheduled_hard_violations: int
     baseline_fingerprint: dict[str, object]
@@ -122,13 +144,13 @@ def _occurrence_key(course: Course, week: int) -> OccurrenceKey:
     return (module, activity, programme, int(week), groups, source_file, source_row)
 
 
-def _scheduled_occurrences(assignments: list[Assignment]) -> dict[OccurrenceKey, Assignment]:
+def _scheduled_occurrences(assignments: list[Assignment]) -> dict[OccurrenceKey, list[Assignment]]:
     """Return scheduled week occurrences keyed by stable identity."""
-    rows: dict[OccurrenceKey, Assignment] = {}
+    rows: dict[OccurrenceKey, list[Assignment]] = {}
     for assignment in assignments:
         if assignment.room is None or assignment.timeslot is None:
             continue
-        rows.setdefault(_occurrence_key(assignment.course, assignment.timeslot.week), assignment)
+        rows.setdefault(_occurrence_key(assignment.course, assignment.timeslot.week), []).append(assignment)
     return rows
 
 
@@ -143,16 +165,47 @@ def _weeks_from_reasons(assignment: Assignment) -> list[int]:
     return weeks
 
 
-def _unscheduled_occurrences(assignments: list[Assignment]) -> dict[OccurrenceKey, Assignment]:
-    """Return unscheduled placeholders expanded into week occurrences."""
-    rows: dict[OccurrenceKey, Assignment] = {}
+def _assignment_unscheduled_occurrences(assignments: list[Assignment]) -> dict[OccurrenceKey, list[Assignment]]:
+    """Return emitted unscheduled placeholders expanded into week occurrences."""
+    rows: dict[OccurrenceKey, list[Assignment]] = {}
     for assignment in assignments:
         if assignment.room is not None and assignment.timeslot is not None:
             continue
         weeks = _weeks_from_reasons(assignment) or schedulable_weeks(assignment.course.teaching_weeks)
         for week in weeks:
-            rows.setdefault(_occurrence_key(assignment.course, week), assignment)
+            rows.setdefault(_occurrence_key(assignment.course, week), []).append(assignment)
     return rows
+
+
+def _unscheduled_occurrences(
+    courses: list[Course],
+    assignments: list[Assignment],
+    run_label: str,
+) -> tuple[dict[OccurrenceKey, list[Assignment]], list[SynthesisedUnscheduled]]:
+    """Return demand-derived unscheduled occurrences and synthetic diagnostics."""
+    emitted = _assignment_unscheduled_occurrences(assignments)
+    scheduled = _scheduled_occurrences(assignments)
+    rows: dict[OccurrenceKey, list[Assignment]] = {}
+    synthesised: list[SynthesisedUnscheduled] = []
+    for course in consolidated_requirements(courses):
+        for week in schedulable_weeks(course.teaching_weeks):
+            key = _occurrence_key(course, week)
+            if scheduled.get(key):
+                continue
+            candidates = emitted.get(key, [])
+            if candidates:
+                rows.setdefault(key, []).append(candidates[0])
+                continue
+            assignment = Assignment(
+                course,
+                None,
+                None,
+                hard_violations=[SYNTHESISED_UNSCHEDULED_REASON],
+                base_unscheduled_reason=SYNTHESISED_UNSCHEDULED_REASON,
+            )
+            rows.setdefault(key, []).append(assignment)
+            synthesised.append((key, assignment, run_label))
+    return rows, synthesised
 
 
 def _assignment_room_text(assignment: Assignment | None) -> str:
@@ -299,6 +352,43 @@ def _improvement_row(key: OccurrenceKey, baseline: Assignment, enhanced: Assignm
     return row
 
 
+def _occurrence_identifier(key: OccurrenceKey, assignment: Assignment | None) -> str:
+    """Return a compact identifier for one compared occurrence."""
+    course = assignment.course if assignment is not None else None
+    source_sheet = course.source_sheet if course is not None else ""
+    return f"{key[5]}:{source_sheet}:{key[6]}:{key[0]}:{key[1]}:week-{key[3]}"
+
+
+def _diagnostic_row(
+    key: OccurrenceKey,
+    assignment: Assignment | None,
+    *,
+    current_status: str,
+    expected_attribution: str,
+    actual_attribution: str,
+    reason: str,
+    classification: str,
+) -> dict[str, object]:
+    """Return a row-level attribution diagnostic."""
+    course = assignment.course if assignment is not None else None
+    return {
+        "Assignment or Requirement ID": _occurrence_identifier(key, assignment),
+        "Programme-Year": course.prog_yr if course else key[2],
+        "Module": course.module_code if course else key[0],
+        "Class Type": course.activity if course else key[1],
+        "Group": ", ".join(course.group_ids) if course else ", ".join(key[4]),
+        "Weeks": key[3],
+        "Current Status": current_status,
+        "Expected Attribution": expected_attribution,
+        "Actual Attribution": actual_attribution,
+        "Source Workbook": course.source_file if course else key[5],
+        "Source Sheet": course.source_sheet if course else "",
+        "Source Row": course.source_row if course else key[6],
+        "Reason for Difference": reason,
+        "Classification": classification,
+    }
+
+
 def _scheduled_hard_violations(assignments: list[Assignment]) -> int:
     """Count hard violations on scheduled rows only."""
     return sum(
@@ -374,28 +464,64 @@ def compare_remark_runs(
     enhanced_metrics = build_demand_metrics(courses, enhanced_assignments, input_course_records=input_course_records)
     baseline_scheduled = _scheduled_occurrences(baseline_assignments)
     enhanced_scheduled = _scheduled_occurrences(enhanced_assignments)
-    baseline_unscheduled = _unscheduled_occurrences(baseline_assignments)
-    enhanced_unscheduled = _unscheduled_occurrences(enhanced_assignments)
+    baseline_unscheduled, baseline_synthesised = _unscheduled_occurrences(courses, baseline_assignments, "Baseline")
+    enhanced_unscheduled, enhanced_synthesised = _unscheduled_occurrences(courses, enhanced_assignments, "Enhanced")
 
     direct_rows: list[dict[str, object]] = []
     indirect_rows: list[dict[str, object]] = []
-    for key in sorted(set(baseline_scheduled) - set(enhanced_scheduled)):
-        baseline = baseline_scheduled[key]
-        enhanced = enhanced_unscheduled.get(key)
-        category = _attribution_category(_primary_interpretation((enhanced or baseline).course, enhanced), enhanced)
-        row = _effect_row(key, baseline, enhanced, category)
-        if category == "indirect search displacement":
-            indirect_rows.append(row)
-        else:
-            direct_rows.append(row)
+    diagnostic_rows: list[dict[str, object]] = [
+        _diagnostic_row(
+            key,
+            assignment,
+            current_status=f"{run_label} demand metrics mark this occurrence unscheduled",
+            expected_attribution="Unscheduled occurrence should have an emitted placeholder assignment",
+            actual_attribution="No unscheduled placeholder assignment was emitted; diagnostic row synthesised from demand",
+            reason=SYNTHESISED_UNSCHEDULED_REASON,
+            classification="MISSING_ATTRIBUTION",
+        )
+        for key, assignment, run_label in [*baseline_synthesised, *enhanced_synthesised]
+    ]
+    for key in sorted(set(baseline_scheduled) | set(enhanced_scheduled)):
+        baseline_rows = baseline_scheduled.get(key, [])
+        enhanced_rows = enhanced_scheduled.get(key, [])
+        enhanced_unscheduled_rows = enhanced_unscheduled.get(key, [])
+        lost_count = max(0, len(baseline_rows) - len(enhanced_rows))
+        legacy_count = 1 if baseline_rows and not enhanced_rows else 0
+        collapsed_count = max(0, lost_count - legacy_count)
+        for index in range(lost_count):
+            baseline = baseline_rows[min(len(enhanced_rows) + index, len(baseline_rows) - 1)]
+            enhanced = enhanced_unscheduled_rows[index] if index < len(enhanced_unscheduled_rows) else None
+            category = _attribution_category(_primary_interpretation((enhanced or baseline).course, enhanced), enhanced)
+            row = _effect_row(key, baseline, enhanced, category)
+            if category == "indirect search displacement":
+                indirect_rows.append(row)
+            else:
+                direct_rows.append(row)
+            if index >= lost_count - collapsed_count:
+                diagnostic_rows.append(
+                    _diagnostic_row(
+                        key,
+                        enhanced or baseline,
+                        current_status="Enhanced run has fewer scheduled occurrences for this duplicate key",
+                        expected_attribution="Count every occurrence represented by the duplicate key",
+                        actual_attribution="Legacy report counted at most one occurrence per key",
+                        reason=(
+                            "The previous remarks comparison used a dictionary keyed by occurrence identity, "
+                            "which collapsed duplicate scheduled occurrences before reconciliation."
+                        ),
+                        classification="CALCULATION_DEFECT",
+                    )
+                )
 
     unchanged_rows = [
-        _unchanged_row(key, baseline_unscheduled[key], enhanced_unscheduled[key])
+        _unchanged_row(key, baseline_unscheduled[key][index], enhanced_unscheduled[key][index])
         for key in sorted(set(baseline_unscheduled) & set(enhanced_unscheduled))
+        for index in range(min(len(baseline_unscheduled[key]), len(enhanced_unscheduled[key])))
     ]
     improvement_rows = [
-        _improvement_row(key, baseline_unscheduled[key], enhanced_scheduled[key])
+        _improvement_row(key, baseline_unscheduled[key][index], enhanced_scheduled[key][index])
         for key in sorted(set(baseline_unscheduled) & set(enhanced_scheduled))
+        for index in range(min(len(baseline_unscheduled[key]), len(enhanced_scheduled[key])))
     ]
 
     counts = Counter(str(row["Attribution Category"]) for row in direct_rows + indirect_rows)
@@ -407,6 +533,7 @@ def compare_remark_runs(
         indirect_remark_effect_rows=indirect_rows,
         unchanged_unscheduled_rows=unchanged_rows,
         enhanced_improvement_rows=improvement_rows,
+        attribution_diagnostic_rows=diagnostic_rows,
         rule_attribution=attribution,
         scheduled_hard_violations=_scheduled_hard_violations(enhanced_assignments),
         baseline_fingerprint=_run_fingerprint(
@@ -505,6 +632,11 @@ def _rows_df(rows: list[dict[str, object]]) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=EFFECT_COLUMNS)
 
 
+def _diagnostics_df(rows: list[dict[str, object]]) -> pd.DataFrame:
+    """Return attribution diagnostics with stable columns."""
+    return pd.DataFrame(rows, columns=DIAGNOSTIC_COLUMNS)
+
+
 def export_remarks_coverage_comparison(
     courses: list[Course],
     baseline_assignments: list[Assignment],
@@ -529,5 +661,6 @@ def export_remarks_coverage_comparison(
         _rows_df(comparison.indirect_remark_effect_rows).to_excel(writer, sheet_name="Indirect Remark Effects", index=False)
         _rows_df(comparison.unchanged_unscheduled_rows).to_excel(writer, sheet_name="Unchanged Unscheduled", index=False)
         _rows_df(comparison.enhanced_improvement_rows).to_excel(writer, sheet_name="Enhanced Improvements", index=False)
+        _diagnostics_df(comparison.attribution_diagnostic_rows).to_excel(writer, sheet_name="Attribution Diagnostics", index=False)
         _attribution_reconciliation_df(comparison).to_excel(writer, sheet_name="Attribution Reconciliation", index=False)
     return comparison

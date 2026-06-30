@@ -13,6 +13,7 @@ __pycache__/
 generated/
 output_files/
 dist/
+final_verification/
 
 # Editor and temporary files
 .vscode/
