@@ -117,7 +117,7 @@ The live demonstration should use the non-optimised Engineering command because 
 Current expected test result:
 
 ```text
-304 passed
+314 passed
 ```
 
 Release validation result after generating completeness-gate Engineering evidence:

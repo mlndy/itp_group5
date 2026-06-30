@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import hashlib
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -29,10 +30,12 @@ from config import (
 )
 from output.submission_validator import saved_row_programme_year
 
-DEFAULT_TIMETABLE_FILE = OUTPUT_DIR / "final_timetable_engineering_cluster.xlsx"
+CURRENT_TIMETABLE_FILENAME = "Proposed_Timetable.xlsx"
+LEGACY_TIMETABLE_FILENAME = "final_timetable_engineering_cluster.xlsx"
+DEFAULT_TIMETABLE_FILE = OUTPUT_DIR / LEGACY_TIMETABLE_FILENAME
 RUNS_DIR = OUTPUT_DIR / "runs"
 
-EXPECTED_MIN_TESTS = 304
+EXPECTED_MIN_TESTS = 314
 EXPECTED_TOTAL_TEACHING_OCCURRENCES = 3562
 EXPECTED_SCHEDULABLE_OCCURRENCES = 3323
 EXPECTED_QUARANTINED_OCCURRENCES = 239
@@ -176,7 +179,6 @@ REQUIRED_TIMETABLE_COLUMNS = [
 ]
 RUN_DIR_FILE_MAP = {
     "run_summary": "run_summary.xlsx",
-    "timetable": "final_timetable_engineering_cluster.xlsx",
     "stakeholder_views": "stakeholder_views.xlsx",
     "run_manifest": "run_manifest.xlsx",
     "guarded_report": "guarded_generation_report.xlsx",
@@ -189,6 +191,7 @@ RUN_DIR_FILE_MAP = {
     "tutor_visuals": "Tutor_Timetable_Visuals.xlsx",
     "room_visuals": "Room_Timetable_Visuals.xlsx",
 }
+TIMETABLE_CANDIDATE_FILENAMES = (CURRENT_TIMETABLE_FILENAME, LEGACY_TIMETABLE_FILENAME)
 REQUIRED_STAKEHOLDER_SHEETS = ["Programme Timetable", "Tutor Timetable", "Room Timetable", "Exception Queue"]
 REQUIRED_MANIFEST_SHEETS = [
     "Run Manifest",
@@ -237,12 +240,53 @@ class EvidenceResolution:
     message: str
 
 
+def _file_digest(path: Path) -> str:
+    """Return a stable digest for workbook ambiguity checks."""
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _missing_run_files(run_dir: Path) -> list[str]:
+    """Return required run-folder evidence files missing from a run directory."""
+    missing = [filename for filename in RUN_DIR_FILE_MAP.values() if not (run_dir / filename).exists()]
+    if not any((run_dir / filename).exists() for filename in TIMETABLE_CANDIDATE_FILENAMES):
+        missing.append(f"{CURRENT_TIMETABLE_FILENAME} or {LEGACY_TIMETABLE_FILENAME}")
+    return missing
+
+
+def resolve_run_timetable_path(run_dir: Path) -> Path:
+    """Resolve current or legacy timetable workbook path for one run folder."""
+    current = run_dir / CURRENT_TIMETABLE_FILENAME
+    legacy = run_dir / LEGACY_TIMETABLE_FILENAME
+    current_exists = current.exists()
+    legacy_exists = legacy.exists()
+    if current_exists and legacy_exists:
+        if _file_digest(current) != _file_digest(legacy):
+            raise ValueError(
+                "Run directory contains ambiguous mixed timetable evidence: "
+                f"{CURRENT_TIMETABLE_FILENAME} and {LEGACY_TIMETABLE_FILENAME} both exist but differ"
+            )
+        return current
+    if current_exists:
+        return current
+    if legacy_exists:
+        return legacy
+    raise FileNotFoundError(
+        "Run directory is missing the proposed timetable workbook: expected "
+        f"{CURRENT_TIMETABLE_FILENAME} or {LEGACY_TIMETABLE_FILENAME}"
+    )
+
+
 def _paths_from_run_dir(run_dir: Path, test_root: Path = BASE_DIR / "tests") -> ReleaseEvidencePaths:
     """Return evidence paths rooted in one isolated run directory."""
     run_dir = run_dir.resolve()
+    timetable_path = resolve_run_timetable_path(run_dir)
     return ReleaseEvidencePaths(
         run_summary=run_dir / RUN_DIR_FILE_MAP["run_summary"],
-        timetable=run_dir / RUN_DIR_FILE_MAP["timetable"],
+        timetable=timetable_path,
         stakeholder_views=run_dir / RUN_DIR_FILE_MAP["stakeholder_views"],
         run_manifest=run_dir / RUN_DIR_FILE_MAP["run_manifest"],
         guarded_report=run_dir / RUN_DIR_FILE_MAP["guarded_report"],
@@ -262,17 +306,25 @@ def _paths_from_run_dir(run_dir: Path, test_root: Path = BASE_DIR / "tests") -> 
 
 def _run_dir_is_complete(run_dir: Path) -> bool:
     """Return True when the folder contains the required release evidence files."""
-    return run_dir.is_dir() and all((run_dir / filename).exists() for filename in RUN_DIR_FILE_MAP.values())
+    return run_dir.is_dir() and not _missing_run_files(run_dir)
 
 
-def latest_completed_run_dir(runs_dir: Path = RUNS_DIR) -> Path | None:
+def latest_completed_run_dir(runs_dir: Path | None = None) -> Path | None:
     """Return the newest complete isolated run folder, if one exists."""
+    runs_dir = runs_dir or RUNS_DIR
     if not runs_dir.exists():
         return None
-    candidates = [path for path in runs_dir.iterdir() if _run_dir_is_complete(path)]
-    if not candidates:
-        return None
-    return max(candidates, key=lambda path: (path.stat().st_mtime, path.name))
+    candidates = sorted(
+        (path for path in runs_dir.iterdir() if path.is_dir()),
+        key=lambda path: (path.stat().st_mtime, path.name),
+        reverse=True,
+    )
+    for path in candidates:
+        if _missing_run_files(path):
+            continue
+        resolve_run_timetable_path(path)
+        return path
+    return None
 
 
 def resolve_evidence_paths(
@@ -286,15 +338,32 @@ def resolve_evidence_paths(
         raise ValueError("--run-dir cannot be combined with individual evidence paths")
     if run_dir is not None:
         resolved = run_dir.resolve()
-        if not _run_dir_is_complete(resolved):
-            missing = [filename for filename in RUN_DIR_FILE_MAP.values() if not (resolved / filename).exists()]
+        missing = _missing_run_files(resolved)
+        if missing:
             raise FileNotFoundError(f"Run directory is incomplete: {resolved}; missing: {', '.join(missing)}")
-        return EvidenceResolution(_paths_from_run_dir(resolved, test_root), f"Resolved run ID: {resolved.name}\nResolved evidence location: {resolved}")
+        paths = _paths_from_run_dir(resolved, test_root)
+        return EvidenceResolution(
+            paths,
+            f"Resolved run ID: {resolved.name}\n"
+            f"Resolved evidence location: {resolved}\n"
+            f"Resolved timetable filename: {paths.timetable.name}",
+        )
     if explicit_paths is not None:
-        return EvidenceResolution(explicit_paths, "Resolved run ID: explicit-paths\nResolved evidence location: individual CLI paths")
+        return EvidenceResolution(
+            explicit_paths,
+            f"Resolved run ID: explicit-paths\n"
+            f"Resolved evidence location: individual CLI paths\n"
+            f"Resolved timetable filename: {explicit_paths.timetable.name}",
+        )
     latest = latest_completed_run_dir()
     if latest is not None:
-        return EvidenceResolution(_paths_from_run_dir(latest, test_root), f"Resolved run ID: {latest.name}\nResolved evidence location: {latest.resolve()}")
+        paths = _paths_from_run_dir(latest, test_root)
+        return EvidenceResolution(
+            paths,
+            f"Resolved run ID: {latest.name}\n"
+            f"Resolved evidence location: {latest.resolve()}\n"
+            f"Resolved timetable filename: {paths.timetable.name}",
+        )
     raise FileNotFoundError(f"No complete release evidence run folder found in {RUNS_DIR}")
 
 

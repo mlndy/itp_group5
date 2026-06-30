@@ -131,7 +131,7 @@ cd C:\Users\Admin\Documents\GitHub\itp_group5
 Expected result:
 
 ```text
-304 passed
+314 passed
 ```
 
 Run release validation after generating evidence:

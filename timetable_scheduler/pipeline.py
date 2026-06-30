@@ -77,6 +77,7 @@ from engine.guarded_generation import (
 from engine.input_readiness import build_input_readiness_result, export_input_readiness_report
 from engine.preflight_validator import run_preflight_checks
 from engine.remarks_interpreter import courses_with_effective_remark_durations, export_remarks_audit
+from engine.remarks_comparison import export_remarks_coverage_comparison
 from engine.resource_audit import audit_resources
 from engine.unscheduled_diagnostics import diagnose_unscheduled_assignments, export_unscheduled_diagnostics
 from generator.scheduler import generate_schedule
@@ -134,6 +135,7 @@ class PipelineOptions:
     skip_preflight: bool = False
     audit_demand_metrics: bool = True
     enable_remark_interpretation: bool = True
+    export_remarks_comparison: bool = False
     run_id: str | None = None
     output_dir: Path | None = None
 
@@ -269,6 +271,7 @@ def _run_paths(run_dir: Path) -> dict[str, Path]:
         "run_summary": run_dir / "run_summary.xlsx",
         "stakeholder_views": run_dir / "stakeholder_views.xlsx",
         "remarks_audit": run_dir / "remarks_audit.xlsx",
+        "remarks_comparison": run_dir / "remarks_coverage_comparison.xlsx",
         "unscheduled_diagnostics": run_dir / "unscheduled_diagnostics.xlsx",
         "proposed_timetable": run_dir / "Proposed_Timetable.xlsx",
         "violations": run_dir / "violation_report.xlsx",
@@ -583,6 +586,47 @@ def run_timetable_pipeline(
         enable_remark_interpretation=remarks_enabled,
     )
     export_remarks_audit(courses, paths["remarks_audit"], assignments=final_schedule)
+    remarks_comparison_path: Path | None = None
+    if options.export_remarks_comparison and options.scope == "eng" and remarks_enabled:
+        _emit(progress_callback, "Generating remarks baseline comparison")
+        baseline_schedule = generate_schedule(
+            schedule_courses,
+            rooms,
+            initial_assignments=fixed_assignments,
+            progress_callback=None,
+            progress_interval=options.progress_interval,
+            max_retry_assignments=options.max_retry_assignments,
+            max_candidate_patterns=options.max_candidate_patterns,
+            enable_remark_interpretation=False,
+        )
+        if options.run_optimisation:
+            baseline_result = optimise_schedule_with_stats(
+                baseline_schedule,
+                rooms,
+                max_iterations=options.max_iterations,
+                time_limit_seconds=options.optimisation_time_limit,
+                patience=options.optimisation_patience,
+                enable_remark_interpretation=False,
+            )
+            baseline_schedule = baseline_result.assignments
+        export_remarks_coverage_comparison(
+            demand_courses,
+            baseline_schedule,
+            final_schedule,
+            paths["remarks_comparison"],
+            input_course_records=len(courses),
+            scheduler_metadata={
+                "scope": options.scope,
+                "skip_optimisation": not options.run_optimisation,
+                "max_iterations": options.max_iterations,
+                "optimisation_time_limit": options.optimisation_time_limit,
+                "optimisation_patience": options.optimisation_patience,
+                "max_candidate_patterns": options.max_candidate_patterns,
+                "max_retry_assignments": options.max_retry_assignments,
+                "progress_interval": options.progress_interval,
+            },
+        )
+        remarks_comparison_path = paths["remarks_comparison"]
 
     if not options.skip_unscheduled_diagnostics:
         report = diagnose_unscheduled_assignments(
@@ -689,6 +733,8 @@ def run_timetable_pipeline(
             "remarks_audit": paths["remarks_audit"],
         }
     )
+    if remarks_comparison_path is not None:
+        output_paths["remarks_coverage_comparison"] = remarks_comparison_path
     if not options.skip_preflight:
         output_paths["preflight_report"] = paths["preflight_report"]
     if options.scope == "eng" and DEFAULT_FIXED_SESSION_FILE.exists():

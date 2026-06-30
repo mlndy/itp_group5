@@ -36,7 +36,7 @@ The core prototype is complete through:
 
 Current completeness-gate result:
 
-- Tests: `304 passed`
+- Tests: `314 passed`
 - Release validator: `PASS` because the strict Template 2 completeness gate finds `23` qualifying programme-year schedules
 - Engineering controlled demo: runs successfully with `0` scheduled hard-constraint violations
 - Total teaching occurrences: `3562`
@@ -150,7 +150,7 @@ Preflight, run summary, guarded-generation, Template 2 validation, Template 2 pr
 - Excel sheet names must remain within `31` characters.
 - Generated visual workbooks remain ignored release outputs unless intentionally packaged.
 - Current visualisation validation:
-  - Tests: `304 passed`
+  - Tests: `314 passed`
   - Programme visual sheets: `86`
   - Tutor visual sheets: `235`
   - Room visual sheets: `48`
@@ -738,6 +738,16 @@ Initial pre-reconciliation findings recorded for that task:
 - No release is permitted until the final workbooks open successfully in Microsoft Excel.
 - After this phase, freeze scheduler behaviour and move to academic deliverables.
 
+## Final Code Freeze and Finishing-Touch Policy
+
+- Core scheduler behaviour is frozen.
+- No coverage-chasing changes are permitted.
+- Only validation, evidence, documentation, packaging and demonstration reliability changes are allowed.
+- Any change affecting scheduled occurrences, quarantine, search failures, hard violations or qualifying programme-years must be treated as a regression and investigated.
+- Final metrics must come from one isolated Engineering run.
+- Report, presentation and demonstration materials must use the same frozen evidence.
+- AI-generated claims must be checked against actual workbooks and test output.
+
 ## Important Commands
 
 Run tests from inside the `timetable_scheduler` folder:
@@ -750,7 +760,7 @@ py -m pytest -q
 Expected result:
 
 ```text
-304 passed
+314 passed
 ```
 
 Run DSC demo:
